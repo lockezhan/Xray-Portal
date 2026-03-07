@@ -98,3 +98,69 @@ rules:
 YAML
 
 echo "Clash Verge config written to: $OUT"
+
+# ── Optional: email the generated config ────────────────────────────────────
+read -r -p "Send the config to an email address? [y/N] " SEND_EMAIL
+if [[ "${SEND_EMAIL,,}" == "y" ]]; then
+  read -r -p "Recipient email address: " RCPT_EMAIL
+  read -r -p "SMTP server (e.g. smtp.gmail.com): " SMTP_HOST
+  read -r -p "SMTP port (587 for TLS/STARTTLS, 465 for SSL): " SMTP_PORT
+  read -r -p "Sender email address: " FROM_EMAIL
+  read -r -p "SMTP username (usually your sender address): " SMTP_USER
+  read -r -s -p "SMTP password (app-password recommended): " SMTP_PASS
+  echo
+
+  if [[ "$SMTP_PORT" == "465" ]]; then
+    SMTP_URL="smtps://${SMTP_HOST}:${SMTP_PORT}"
+    CURL_SSL_FLAG=()
+  elif [[ "$SMTP_PORT" == "587" ]]; then
+    SMTP_URL="smtp://${SMTP_HOST}:${SMTP_PORT}"
+    CURL_SSL_FLAG=("--ssl-reqd")
+  else
+    echo "Warning: unexpected SMTP port '$SMTP_PORT'. Proceeding with smtp:// and STARTTLS."
+    SMTP_URL="smtp://${SMTP_HOST}:${SMTP_PORT}"
+    CURL_SSL_FLAG=("--ssl-reqd")
+  fi
+
+  SUBJECT="Clash Verge Config - $(hostname)"
+  BODY="Hi,\n\nPlease find your Clash Verge configuration attached.\n\nGenerated on: $(date)\nHost: $(hostname)\n\n-- VPN-Shadowsocks-libev"
+
+  BOUNDARY="==clash_config_boundary=="
+
+  # Build RFC 2822 multipart/mixed message in a temp file
+  TMPMAIL=$(mktemp /tmp/clash_mail_XXXXXX.eml)
+  trap 'rm -f "$TMPMAIL"' EXIT
+  {
+    printf "From: <%s>\r\n" "$FROM_EMAIL"
+    printf "To: <%s>\r\n" "$RCPT_EMAIL"
+    printf "Subject: %s\r\n" "$SUBJECT"
+    printf "MIME-Version: 1.0\r\n"
+    printf "Content-Type: multipart/mixed; boundary=\"%s\"\r\n" "$BOUNDARY"
+    printf "\r\n"
+    printf "--%s\r\n" "$BOUNDARY"
+    printf "Content-Type: text/plain; charset=utf-8\r\n"
+    printf "\r\n"
+    printf "%b\r\n" "$BODY"
+    printf "\r\n"
+    printf "--%s\r\n" "$BOUNDARY"
+    printf "Content-Type: application/octet-stream; name=\"clash-verge.yaml\"\r\n"
+    printf "Content-Disposition: attachment; filename=\"clash-verge.yaml\"\r\n"
+    printf "\r\n"
+    cat "$OUT"
+    printf "\r\n"
+    printf "--%s--\r\n" "$BOUNDARY"
+  } > "$TMPMAIL"
+
+  echo "Sending email via ${SMTP_URL} ..."
+  if curl --silent --show-error \
+       --url "$SMTP_URL" \
+       "${CURL_SSL_FLAG[@]}" \
+       --mail-from "$FROM_EMAIL" \
+       --mail-rcpt "$RCPT_EMAIL" \
+       --user "${SMTP_USER}:${SMTP_PASS}" \
+       --upload-file "$TMPMAIL"; then
+    echo "Email sent successfully to: $RCPT_EMAIL"
+  else
+    echo "Failed to send email. Please check your SMTP settings and try again."
+  fi
+fi
