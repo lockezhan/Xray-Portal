@@ -76,11 +76,17 @@ change_ports() {
   show_current_ports
   echo
 
-  read -rp "New IPv4 SS-2022 port [leave empty to keep current]: " new_p4
-  read -rp "New IPv6 SS-2022 port [leave empty to keep current]: " new_p6
-  read -rp "New Legacy AES-256-GCM port [leave empty to keep current]: " new_pleg
+  # Save old ports before making any changes
+  local old_p4 old_p6 old_pleg
+  old_p4=$(jq -r '.inbounds[] | select(.tag=="ss-ipv4")   | .port' "$CONFIG_FILE" 2>/dev/null || echo "")
+  old_p6=$(jq -r '.inbounds[] | select(.tag=="ss-ipv6")   | .port' "$CONFIG_FILE" 2>/dev/null || echo "")
+  old_pleg=$(jq -r '.inbounds[] | select(.tag=="ss-legacy") | .port' "$CONFIG_FILE" 2>/dev/null || echo "")
 
-  # helper: validate and apply port
+  read -rp "New IPv4 SS-2022 port [press Enter to keep current]: " new_p4
+  read -rp "New IPv6 SS-2022 port [press Enter to keep current]: " new_p6
+  read -rp "New Legacy AES-256-GCM port [press Enter to keep current]: " new_pleg
+
+  # helper: validate and apply port to JSON
   apply_port() {
     local tag="$1"
     local port="$2"
@@ -110,6 +116,38 @@ change_ports() {
   apply_port "ss-ipv4"   "$new_p4"
   apply_port "ss-ipv6"   "$new_p6"
   apply_port "ss-legacy" "$new_pleg"
+
+  # Update UFW firewall rules for changed ports
+  if command -v ufw >/dev/null 2>&1; then
+    echo -e "[${green}Info${plain}] Updating UFW firewall rules..."
+
+    replace_ufw_port_rules() {
+      local old_port="$1"
+      local new_port="$2"
+
+      # No change requested — nothing to do
+      [[ -z "$new_port" ]] && return 0
+
+      # Port unchanged — skip to avoid disrupting existing rules
+      [[ "$old_port" == "$new_port" ]] && return 0
+
+      # Remove old port rules
+      if [[ -n "$old_port" && "$old_port" != "null" ]]; then
+        ufw delete allow "${old_port}"/tcp >/dev/null 2>&1 || true
+        ufw delete allow "${old_port}"/udp >/dev/null 2>&1 || true
+        echo "  Removed UFW rules for old port ${old_port}"
+      fi
+
+      # Allow new port
+      ufw allow "${new_port}"/tcp >/dev/null 2>&1 || true
+      ufw allow "${new_port}"/udp >/dev/null 2>&1 || true
+      echo "  Added UFW rules for new port ${new_port}"
+    }
+
+    replace_ufw_port_rules "$old_p4"   "$new_p4"
+    replace_ufw_port_rules "$old_p6"   "$new_p6"
+    replace_ufw_port_rules "$old_pleg" "$new_pleg"
+  fi
 
   restart_service
   echo -e "[${green}Done${plain}] Ports updated. Remember to update your clients."
