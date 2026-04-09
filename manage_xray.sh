@@ -121,12 +121,15 @@ change_ports() {
   if command -v ufw >/dev/null 2>&1; then
     echo -e "[${green}Info${plain}] Updating UFW firewall rules..."
 
-    update_ufw_port() {
+    replace_ufw_port_rules() {
       local old_port="$1"
       local new_port="$2"
 
       # No change requested — nothing to do
       [[ -z "$new_port" ]] && return 0
+
+      # Port unchanged — skip to avoid disrupting existing rules
+      [[ "$old_port" == "$new_port" ]] && return 0
 
       # Remove old port rules
       if [[ -n "$old_port" && "$old_port" != "null" ]]; then
@@ -141,9 +144,9 @@ change_ports() {
       echo "  Added UFW rules for new port ${new_port}"
     }
 
-    update_ufw_port "$old_p4"   "$new_p4"
-    update_ufw_port "$old_p6"   "$new_p6"
-    update_ufw_port "$old_pleg" "$new_pleg"
+    replace_ufw_port_rules "$old_p4"   "$new_p4"
+    replace_ufw_port_rules "$old_p6"   "$new_p6"
+    replace_ufw_port_rules "$old_pleg" "$new_pleg"
   fi
 
   restart_service
