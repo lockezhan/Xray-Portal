@@ -15,7 +15,7 @@ META="/etc/xray-meta.conf"
 SUBSCRIBE_DIR="/var/www/clash"
 YAML_SRC="/root/clash-verge.yaml"
 YAML_DST="${SUBSCRIBE_DIR}/clash.yaml"
-SERVE_PORT="${SERVE_PORT:-8899}"
+SERVE_PORT="${SERVE_PORT:-8080}"
 SERVICE_NAME="clash-subscribe"
 
 require_root() {
@@ -113,7 +113,7 @@ usage() {
 
 选项:
   (无参数)            复制 YAML、放行防火墙、安装 systemd 服务并后台运行
-  --port PORT         指定 HTTP 监听端口（默认 8899）
+  --port PORT         指定 HTTP 监听端口（默认 8080）
   --foreground        不安装服务，直接前台运行（调试用）
   --uninstall         停止并删除 systemd 服务
   -h, --help          显示帮助
