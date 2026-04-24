@@ -42,6 +42,18 @@ get_ipv6() {
   echo "${ip:-Unknown}"
 }
 
+prompt_domain() {
+  echo
+  echo -e "[${green}Step${plain}] 可选：使用 Cloudflare 域名替代裸 IP（请在 CF 中将该子域名设为 A 记录 → 灰云/仅DNS）"
+  read -rp "输入已解析到本 VPS 的子域名（如 vpn.example.com），留空则使用 IPv4: " DOMAIN
+  if [[ -n "${DOMAIN}" ]]; then
+    echo -e "  域名: ${green}${DOMAIN}${plain}（将用于 Clash 配置与 ss:// URI）"
+  else
+    DOMAIN="$(get_ipv4)"
+    echo -e "  未输入域名，将使用 IPv4: ${yellow}${DOMAIN}${plain}"
+  fi
+}
+
 prompt_ports() {
   read -rp "Enter IPv4 SS-2022 port [default 20001]: " PORT_V4
   PORT_V4=${PORT_V4:-20001}
@@ -159,6 +171,46 @@ write_xray_config() {
 JSON
 }
 
+write_meta_conf() {
+  echo -e "[${green}Step${plain}] Write /etc/xray-meta.conf"
+  cat >/etc/xray-meta.conf <<META
+DOMAIN=${DOMAIN}
+PORT_V4=${PORT_V4}
+PORT_V6=${PORT_V6}
+PORT_LEGACY=${PORT_LEGACY}
+KEY_V4=${KEY_V4}
+KEY_V6=${KEY_V6}
+KEY_LEGACY=${KEY_LEGACY}
+META
+  chmod 600 /etc/xray-meta.conf
+  echo "  Saved to /etc/xray-meta.conf"
+}
+
+# generate ss:// URI
+# format: ss://BASE64(method:password)@host:port#name
+make_ss_uri() {
+  local method="$1" pass="$2" host="$3" port="$4" name="$5"
+  local userinfo
+  userinfo=$(printf '%s:%s' "${method}" "${pass}" | base64 -w0)
+  printf 'ss://%s@%s:%s#%s\n' "${userinfo}" "${host}" "${port}" "${name}"
+}
+
+show_uris() {
+  echo
+  echo -e "[${green}===== Shadowsocks 快速导入链接 =====${plain}]"
+  local ipv4; ipv4=$(get_ipv4)
+  local ipv6; ipv6=$(get_ipv6)
+  echo "  [IPv4-SS2022]"
+  make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V4}" "${DOMAIN}" "${PORT_V4}" "MyVPS-IPv4"
+  echo "  [IPv6-SS2022]  (域名不含IPv6，直接用IPv6地址)"
+  make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V6}" "${ipv6}" "${PORT_V6}" "MyVPS-IPv6"
+  echo "  [Legacy-AES256]"
+  make_ss_uri "aes-256-gcm" "${KEY_LEGACY}" "${DOMAIN}" "${PORT_LEGACY}" "MyVPS-Legacy"
+  echo
+  echo -e "  ${yellow}提示${plain}: 复制上方 ss:// 链接可直接导入 v2rayN / Shadowrocket / Clash"
+  echo -e "  如需 Clash 订阅 URL，安装完成后运行: sudo ./serve_clash.sh"
+}
+
 restart_xray() {
   echo -e "[${green}Step${plain}] Restart & enable Xray service"
   systemctl daemon-reload || true
@@ -215,6 +267,9 @@ main() {
   echo -e "[${green}Step${plain}] Install Xray"
   install_xray
 
+  echo -e "[${green}Step${plain}] Domain"
+  prompt_domain
+
   echo -e "[${green}Step${plain}] Ports"
   prompt_ports
 
@@ -223,6 +278,9 @@ main() {
 
   echo -e "[${green}Step${plain}] Write config"
   write_xray_config
+
+  echo -e "[${green}Step${plain}] Save meta"
+  write_meta_conf
 
   echo -e "[${green}Step${plain}] Restart Xray"
   restart_xray
@@ -239,8 +297,11 @@ main() {
   echo -e "\nServer IPs:"
   echo "  IPv4: $(get_ipv4)"
   echo "  IPv6: $(get_ipv6)"
+  [[ "${DOMAIN}" != "$(get_ipv4)" ]] && echo "  Domain: ${DOMAIN}"
 
   echo -e "\nNote: If your cloud provider has a Security Group/Firewall, open TCP/UDP ${PORT_V4}-${PORT_LEGACY} there too."
+
+  show_uris
 
   maybe_generate_clash
 
