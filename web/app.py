@@ -94,5 +94,12 @@ def proxy_download():
         abort(502)
 
 if __name__ == '__main__':
+    import sys
+    port = 8080
+    if len(sys.argv) > 1:
+        try:
+            port = int(sys.argv[1])
+        except ValueError:
+            pass
     # Listen on all interfaces so Cloudflare can proxy it
-    app.run(host='0.0.0.0', port=8080, debug=False)
+    app.run(host='0.0.0.0', port=port, debug=False)

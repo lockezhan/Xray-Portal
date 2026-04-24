@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="zh">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>杨柳烟锁古今愁</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        // Configure Tailwind to use class-based dark mode
+        tailwind.config = { darkMode: 'class' };
+    </script>
+    <script>
+        // Apply dark mode before page renders to avoid flash
+        (function () {
+            const stored = localStorage.getItem('theme');
+            if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
+    <style>
+        @keyframes blob {
+            0% { transform: translate(0px, 0px) scale(1); }
+            33% { transform: translate(30px, -50px) scale(1.1); }
+            66% { transform: translate(-20px, 20px) scale(0.9); }
+            100% { transform: translate(0px, 0px) scale(1); }
+        }
+
+        @keyframes fadeInUp {
+            from { opacity: 0; transform: translateY(18px); }
+            to   { opacity: 1; transform: translateY(0); }
+        }
+
+        @keyframes toastIn {
+            from { opacity: 0; transform: translateY(12px) scale(0.95); }
+            to   { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes toastOut {
+            from { opacity: 1; transform: translateY(0) scale(1); }
+            to   { opacity: 0; transform: translateY(8px) scale(0.95); }
+        }
+
+        .animate-blob { animation: blob 7s infinite; }
+        .animation-delay-2000 { animation-delay: 2s; }
+        .animation-delay-4000 { animation-delay: 4s; }
+
+        .fade-in-up { animation: fadeInUp 0.5s ease both; }
+        .fade-delay-1 { animation-delay: 0.08s; }
+        .fade-delay-2 { animation-delay: 0.16s; }
+
+        .bg-slide {
+            position: absolute;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background-size: cover;
+            background-position: center;
+            opacity: 0;
+            transition: opacity 1.5s ease-in-out;
+            transform: scale(1.05);
+        }
+
+        .bg-slide.active {
+            opacity: 1;
+            transform: scale(1);
+            transition: opacity 1.5s ease-in-out, transform 10s linear;
+        }
+
+        .glass-panel {
+            background-color: rgba(255, 255, 255, 0.65);
+            backdrop-filter: blur(20px);
+            -webkit-backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.8);
+            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.05);
+        }
+
+        /* Dark mode glass panel */
+        .dark .glass-panel {
+            background-color: rgba(30, 41, 59, 0.75);
+            border-color: rgba(255, 255, 255, 0.08);
+            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3);
+        }
+
+        /* Toast styles */
+        #toast-container {
+            position: fixed;
+            bottom: 1.5rem;
+            right: 1.5rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            pointer-events: none;
+        }
+
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 0.6rem;
+            padding: 0.75rem 1.1rem;
+            border-radius: 1rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #fff;
+            pointer-events: auto;
+            animation: toastIn 0.28s ease both;
+            box-shadow: 0 8px 24px -4px rgba(0,0,0,0.18);
+            min-width: 220px;
+            max-width: 320px;
+        }
+
+        .toast.success { background: linear-gradient(135deg, #6366f1, #a855f7); }
+        .toast.error   { background: linear-gradient(135deg, #ef4444, #f97316); }
+        .toast.leaving { animation: toastOut 0.28s ease both; }
+
+        /* Carousel dot indicators */
+        .carousel-dot {
+            width: 6px; height: 6px;
+            border-radius: 9999px;
+            background: rgba(255,255,255,0.45);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: none;
+            padding: 0;
+        }
+        .carousel-dot.active {
+            background: #fff;
+            width: 18px;
+        }
+
+        /* Dark mode overrides for text/bg */
+        .dark body { color: #e2e8f0; }
+        .dark .dark-text { color: #cbd5e1; }
+        .dark .nav-item:hover { background: rgba(255,255,255,0.07) !important; }
+        .dark .inbound-card { background: rgba(255,255,255,0.05) !important; border-color: rgba(255,255,255,0.08) !important; }
+        .dark .link-row { background: rgba(255,255,255,0.04) !important; border-color: rgba(255,255,255,0.1) !important; }
+        .dark .link-row:hover { background: rgba(255,255,255,0.1) !important; border-color: #818cf8 !important; }
+        .dark .bg-blob-1 { background-color: rgba(139,92,246,0.25); }
+        .dark .bg-blob-2 { background-color: rgba(59,130,246,0.25); }
+        .dark .bg-blob-3 { background-color: rgba(236,72,153,0.25); }
+
+        /* Mobile modal scroll smoothing */
+        .modal-scroll { -webkit-overflow-scrolling: touch; }
+
+        /* Version-detail modal animations */
+        @keyframes backdropFadeIn {
+            from { opacity: 0; }
+            to   { opacity: 1; }
+        }
+        @keyframes backdropFadeOut {
+            from { opacity: 1; }
+            to   { opacity: 0; }
+        }
+        @keyframes modalCardIn {
+            from { opacity: 0; transform: translateY(14px) scale(0.96); }
+            to   { opacity: 1; transform: translateY(0)    scale(1);    }
+        }
+        @keyframes modalCardOut {
+            from { opacity: 1; transform: translateY(0)   scale(1);    }
+            to   { opacity: 0; transform: translateY(8px) scale(0.97); }
+        }
+
+        #version-modal                 { animation: backdropFadeIn  0.22s ease both; }
+        #version-modal.modal-closing   { animation: backdropFadeOut 0.2s  ease both; }
+        #version-modal .modal-card     { animation: modalCardIn  0.28s cubic-bezier(0.34, 1.3, 0.64, 1) both; }
+        #version-modal.modal-closing .modal-card { animation: modalCardOut 0.2s ease both; }
+
+        /* Constrain the modal card height within the viewport */
+        .modal-card-inner { max-height: min(88vh, 540px); }
+
+        /* Collapsible nav category styles */
+        .nav-category-body {
+            overflow: hidden;
+            transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
+            max-height: 0;
+            opacity: 0;
+        }
+        .nav-category-body.open {
+            max-height: 1000px;
+            opacity: 1;
+        }
+        .nav-category-chevron {
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .nav-category-chevron.open {
+            transform: rotate(180deg);
+        }
+    </style>
+</head>
+
+<body
+    class="text-slate-800 dark:text-slate-200 font-sans antialiased min-h-screen relative overflow-x-hidden selection:bg-indigo-200 selection:text-indigo-900 dark:bg-slate-900 transition-colors duration-300">
+
+    {% include 'partials/toast.html' %}
+    {% include 'partials/version_modal.html' %}
+    {% include 'partials/background_blobs.html' %}
+
+    {% block content %}{% endblock %}
+
+    <script>
+        // Collapsible nav category toggle
+        function toggleNavCategory(id) {
+            const body = document.getElementById(id);
+            const chevron = document.getElementById(id + '-chevron');
+            if (!body) return;
+            const isOpen = body.classList.contains('open');
+            body.classList.toggle('open', !isOpen);
+            if (chevron) chevron.classList.toggle('open', !isOpen);
+        }
+
+        // Toast notification system
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+
+            const iconSvg = type === 'success'
+                ? `<svg style="width:18px;height:18px;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>`
+                : `<svg style="width:18px;height:18px;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>`;
+
+            toast.innerHTML = iconSvg + `<span>${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add('leaving');
+                toast.addEventListener('animationend', () => toast.remove(), { once: true });
+            }, 3000);
+        }
+
+        // Clipboard copy helper
+        function copyToClipboard(text) {
+            const copyText = typeof text === 'object' ? JSON.stringify(text, null, 2) : text;
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(copyText)
+                    .then(() => showToast('已成功复制订阅链接！请前往 Clash / FlClash 导入。'))
+                    .catch(() => showToast('复制失败，请手动复制。', 'error'));
+            } else {
+                const textArea = document.createElement('textarea');
+                textArea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
+                textArea.value = copyText;
+                document.body.appendChild(textArea);
+                textArea.select();
+                try {
+                    document.execCommand('copy');
+                    showToast('已成功复制订阅链接！请前往 Clash / FlClash 导入。');
+                } catch (err) {
+                    showToast('复制失败，请手动复制。', 'error');
+                }
+                textArea.remove();
+            }
+        }
+
+        // Real-time clock
+        function updateClock() {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const ss = String(now.getSeconds()).padStart(2, '0');
+            const timeEl = document.getElementById('clock-time');
+            if (timeEl) timeEl.textContent = `${hh}:${mm}:${ss}`;
+
+            const days = ['日', '一', '二', '三', '四', '五', '六'];
+            const dateEl = document.getElementById('clock-date');
+            if (dateEl) {
+                dateEl.textContent = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 星期${days[now.getDay()]}`;
+            }
+        }
+        updateClock();
+        setInterval(updateClock, 1000);
+
+        // Dark mode toggle
+        const themeToggle = document.getElementById('theme-toggle');
+        const iconSun = document.getElementById('icon-sun');
+        const iconMoon = document.getElementById('icon-moon');
+
+        function applyTheme(isDark) {
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+                iconSun?.classList.remove('hidden');
+                iconMoon?.classList.add('hidden');
+            } else {
+                document.documentElement.classList.remove('dark');
+                iconSun?.classList.add('hidden');
+                iconMoon?.classList.remove('hidden');
+            }
+        }
+
+        // Sync icon with current state on page load
+        applyTheme(document.documentElement.classList.contains('dark'));
+
+        if (themeToggle) {
+            themeToggle.addEventListener('click', () => {
+                const isDark = document.documentElement.classList.contains('dark');
+                localStorage.setItem('theme', isDark ? 'light' : 'dark');
+                applyTheme(!isDark);
+            });
+        }
+
+        // Wallpaper carousel with dot indicators
+        const wallpapers = {{ wallpapers | tojson | safe }};
+        const container = document.getElementById('slider-container');
+        const dotsContainer = document.getElementById('carousel-dots');
+        let currentIndex = 0;
+
+        const imagePool = (wallpapers && wallpapers.length > 0) ? wallpapers : [];
+
+        if (imagePool && imagePool.length > 0 && container && dotsContainer) {
+            imagePool.forEach((url, index) => {
+                const div = document.createElement('div');
+                div.className = 'bg-slide';
+
+                const preload = new Image();
+                preload.onload = () => { div.style.backgroundImage = `url('${url}')`; };
+                preload.src = url;
+
+                if (index === 0) div.classList.add('active');
+                container.appendChild(div);
+
+                // Create dot indicator
+                const dot = document.createElement('button');
+                dot.className = 'carousel-dot' + (index === 0 ? ' active' : '');
+                dot.setAttribute('aria-label', `切换到第 ${index + 1} 张壁纸`);
+                dot.addEventListener('click', () => goToSlide(index));
+                dotsContainer.appendChild(dot);
+            });
+
+            const slides = document.querySelectorAll('.bg-slide');
+            const dots = document.querySelectorAll('.carousel-dot');
+
+            function goToSlide(index) {
+                slides[currentIndex].classList.remove('active');
+                dots[currentIndex].classList.remove('active');
+                currentIndex = index;
+                slides[currentIndex].classList.add('active');
+                dots[currentIndex].classList.add('active');
+            }
+
+            if (slides.length > 1) {
+                setInterval(() => {
+                    goToSlide((currentIndex + 1) % slides.length);
+                }, 8000);
+            }
+        }
+
+        // Version detail modal for categorized downloads
+        const downloadsData = {{ downloads | tojson | safe }};
+        const modal = document.getElementById('version-modal');
+        const modalTitle = document.getElementById('modal-title');
+        const modalSubtitle = document.getElementById('modal-subtitle');
+        const modalBody = document.getElementById('modal-body');
+
+        function openVersionModal(label) {
+            if (!downloadsData || !Array.isArray(downloadsData) || !modal || !modalTitle || !modalSubtitle || !modalBody) return;
+            const repo = downloadsData.find(r => r.label === label);
+            if (!repo) return;
+
+            modalTitle.textContent = `${repo.label} · ${repo.version}`;
+            modalSubtitle.textContent = `${repo.platform}${repo.published_at ? ` · 发布于 ${repo.published_at}` : ''}`;
+
+            modalBody.innerHTML = '';
+            if (!repo.assets || repo.assets.length === 0) {
+                modalBody.innerHTML = '<p class="text-sm text-slate-500 dark:text-slate-400">暂无可下载的文件。</p>';
+            } else {
+                repo.assets.forEach(asset => {
+                    const row = document.createElement('a');
+                    row.className = 'flex items-center justify-between p-3 pl-4 rounded-xl bg-slate-50/60 dark:bg-white/5 border border-slate-100 dark:border-white/10 hover:border-emerald-300 dark:hover:border-emerald-600 hover:bg-white dark:hover:bg-white/10 transition-all';
+                    row.href = `/proxy-download?repo=${encodeURIComponent(repo.label)}&filename=${encodeURIComponent(asset.name)}`;
+                    row.innerHTML = `
+                        <div class="flex items-center min-w-0 mr-2">
+                            <svg class="w-4 h-4 mr-2 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
+                            </svg>
+                            <div class="truncate">
+                                <div class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">${asset.name}</div>
+                                <div class="text-[11px] text-slate-400 dark:text-slate-500">${asset.size || ''}</div>
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-emerald-500">
+                            <span class="text-xs">免费直连下载</span>
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                            </svg>
+                        </div>`;
+                    modalBody.appendChild(row);
+                });
+            }
+
+            modal.classList.remove('modal-closing');
+            void modal.offsetWidth; // trigger layout recalculation
+            modal.classList.remove('hidden');
+        }
+
+        function closeVersionModal() {
+            if (!modal) return;
+            if (modal.classList.contains('modal-closing')) return;
+            modal.classList.add('modal-closing');
+            modal.addEventListener('animationend', (e) => {
+                if (e.target !== modal) return;
+                modal.classList.add('hidden');
+                modal.classList.remove('modal-closing');
+            }, { once: true });
+        }
+
+        window.openVersionModal = openVersionModal;
+        window.closeVersionModal = closeVersionModal;
+        modal?.addEventListener('click', (e) => {
+            if (e.target === modal) closeVersionModal();
+        });
+    </script>
+</body>
+
+</html>

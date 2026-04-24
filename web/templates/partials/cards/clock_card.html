@@ -1,0 +1,24 @@
+<!-- Real-time clock widget -->
+<div class="glass-panel p-5 rounded-[2rem] fade-in-up fade-delay-1">
+    <div class="flex items-center justify-between">
+        <div>
+            <div id="clock-time"
+                class="text-3xl font-extrabold tracking-tight text-slate-800 dark:text-slate-100 tabular-nums">
+                --:--:--
+            </div>
+            <div id="clock-date" class="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium"></div>
+        </div>
+        <button id="theme-toggle" title="切换深色/浅色模式"
+            class="w-10 h-10 rounded-full flex items-center justify-center bg-slate-100 dark:bg-slate-700 text-slate-600 dark:text-yellow-300 hover:scale-110 transition-all shadow-sm border border-slate-200 dark:border-slate-600">
+            <svg id="icon-sun" class="w-5 h-5 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z">
+                </path>
+            </svg>
+            <svg id="icon-moon" class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                    d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"></path>
+            </svg>
+        </button>
+    </div>
+</div>

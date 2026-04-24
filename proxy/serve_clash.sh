@@ -94,7 +94,7 @@ After=network.target
 Type=simple
 User=root
 WorkingDirectory=/usr/local/vpn-web
-ExecStart=/usr/local/vpn-web/venv/bin/python app.py
+ExecStart=/usr/local/vpn-web/venv/bin/python app.py ${SERVE_PORT}
 Restart=on-failure
 RestartSec=5
 
@@ -115,7 +115,7 @@ start_foreground() {
   echo -e "[${green}Info${plain}] 前台启动 HTTP 服务（Ctrl+C 退出），访问入口:"
   echo -e "  ${green}http://${DOMAIN}:${SERVE_PORT}/${plain}"
   cd /usr/local/vpn-web || exit
-  exec ./venv/bin/python app.py
+  exec ./venv/bin/python app.py "${SERVE_PORT}"
 }
 
 print_subscribe_url() {
