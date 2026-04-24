@@ -105,6 +105,8 @@ apt_init() {
 
 install_xray() {
   echo -e "[${green}Step${plain}] Install Xray-core via official script"
+  # 强制删除已有的 xray 二进制文件，避免官方安装脚本因为检测到同版本号而跳过 systemd 服务的覆盖安装
+  rm -f /usr/local/bin/xray /usr/bin/xray 2>/dev/null || true
   bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)
 }
 

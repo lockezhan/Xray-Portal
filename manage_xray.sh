@@ -203,7 +203,14 @@ uninstall_xray_full() {
     exit 0
   fi
 
-  # 停止 & 禁用服务
+  # 优先调用官方卸载脚本（如果存在），让其按照自己的逻辑清理二进制和 systemd 文件
+  # 以免我们先删除了 systemd 惹得官方脚本执行报错中途退出而没有删掉 xray 二进制
+  if [[ -x "/usr/local/bin/xray" ]] || [[ -x "/usr/bin/xray" ]]; then
+    echo -e "[${green}Info${plain}] 尝试使用官方脚本卸载 Xray..."
+    bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) remove || true
+  fi
+
+  # 停止 & 禁用服务（作为补充）
   if command -v systemctl >/dev/null 2>&1; then
     systemctl stop "${SERVICE_NAME}" 2>/dev/null || true
     systemctl disable "${SERVICE_NAME}" 2>/dev/null || true
@@ -239,12 +246,6 @@ uninstall_xray_full() {
 
   # 清理 BBR 配置
   cleanup_sysctl_bbr
-
-  # 调用官方卸载脚本（如果存在）
-  if [[ -x "/usr/local/bin/xray" ]] || [[ -x "/usr/bin/xray" ]]; then
-    echo -e "[${green}Info${plain}] 尝试使用官方脚本卸载 Xray（如果可用）..."
-    bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh) remove || true
-  fi
 
   echo -e "[${green}Done${plain}] 已尽力清理由本脚本安装的 Xray 部署。"
   echo "如需再次确认，可执行："
