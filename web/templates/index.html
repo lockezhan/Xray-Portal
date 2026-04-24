@@ -1,0 +1,17 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div
+    class="max-w-7xl mx-auto p-4 md:p-8 grid grid-cols-1 lg:grid-cols-12 gap-6 lg:gap-10 relative z-10 min-h-[90vh] items-start mt-4">
+
+    <div class="lg:col-span-4 space-y-6">
+        {% include 'partials/cards/hero_wallpaper.html' %}
+        {% include 'partials/cards/clock_card.html' %}
+        {# We removed nav_sites.html since it's unrelated to VPN service #}
+    </div>
+
+    <div class="lg:col-span-8 space-y-6 fade-in-up fade-delay-1">
+        {% include 'partials/main_content.html' %}
+    </div>
+</div>
+{% endblock %}

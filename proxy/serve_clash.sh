@@ -61,17 +61,40 @@ open_firewall() {
 }
 
 install_systemd_service() {
+  echo -e "[${green}Step${plain}] 准备 Web 部署环境与 Python 依赖..."
+  if ! command -v pip3 >/dev/null 2>&1 || ! python3 -m venv -h >/dev/null 2>&1; then
+      apt-get update -y >/dev/null 2>&1
+      apt-get install -y python3-pip python3-venv >/dev/null 2>&1
+  fi
+  
+  echo -e "[${green}Step${plain}] 部署前端代码到 /usr/local/vpn-web ..."
+  rm -rf /usr/local/vpn-web
+  # 获取脚本所在目录的上一级中的 web 文件夹
+  local SCRIPT_DIR
+  SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+  if [[ -d "${SCRIPT_DIR}/../web" ]]; then
+    cp -r "${SCRIPT_DIR}/../web" /usr/local/vpn-web
+  else
+    echo -e "[${yellow}Warn${plain}] 找不到 ${SCRIPT_DIR}/../web，依赖项可能不完整。"
+    mkdir -p /usr/local/vpn-web
+  fi
+
+  echo -e "[${green}Step${plain}] 初始化虚拟环境并安装依赖..."
+  python3 -m venv /usr/local/vpn-web/venv
+  /usr/local/vpn-web/venv/bin/pip install --upgrade pip >/dev/null 2>&1
+  /usr/local/vpn-web/venv/bin/pip install flask requests urllib3 >/dev/null 2>&1
+
   echo -e "[${green}Step${plain}] 创建 systemd 服务: ${SERVICE_NAME}"
   cat > "/etc/systemd/system/${SERVICE_NAME}.service" <<EOF
 [Unit]
-Description=Clash Subscription YAML HTTP Server
+Description=Clash Subscription YAML Web Panel
 After=network.target
 
 [Service]
 Type=simple
 User=root
-WorkingDirectory=${SUBSCRIBE_DIR}
-ExecStart=/usr/bin/python3 -m http.server ${SERVE_PORT} --directory ${SUBSCRIBE_DIR}
+WorkingDirectory=/usr/local/vpn-web
+ExecStart=/usr/local/vpn-web/venv/bin/python app.py
 Restart=on-failure
 RestartSec=5
 
@@ -89,21 +112,21 @@ EOF
 }
 
 start_foreground() {
-  echo -e "[${green}Info${plain}] 前台启动 HTTP 服务（Ctrl+C 退出），订阅 URL:"
-  echo -e "  ${green}http://${DOMAIN}:${SERVE_PORT}/clash.yaml${plain}"
-  cd "${SUBSCRIBE_DIR}"
-  exec python3 -m http.server "${SERVE_PORT}"
+  echo -e "[${green}Info${plain}] 前台启动 HTTP 服务（Ctrl+C 退出），访问入口:"
+  echo -e "  ${green}http://${DOMAIN}:${SERVE_PORT}/${plain}"
+  cd /usr/local/vpn-web || exit
+  exec ./venv/bin/python app.py
 }
 
 print_subscribe_url() {
   echo
   echo -e "======================================================"
-  echo -e " ${green}Clash 订阅 URL（复制到 Clash Verge → 订阅）:${plain}"
-  echo -e "   http://${DOMAIN}:${SERVE_PORT}/clash.yaml"
+  echo -e " ${green}全新 Web 管理面板已上线:${plain}"
+  echo -e "   http://${DOMAIN}:${SERVE_PORT}/"
   echo -e "======================================================"
-  echo -e " ${yellow}提示${plain}: 此 URL 是明文 HTTP，仅用于下发配置。"
+  echo -e " ${yellow}提示${plain}: 可直接在浏览器打开此链接获取节点信息和客户端下载。"
   echo -e " 请确保云服务商安全组已放行 TCP ${SERVE_PORT}。"
-  echo -e " 若 Cloudflare 使用灰云，HTTP 订阅链接也可正常下载。"
+  echo -e " 若 Cloudflare 使用代理（橙云），该面板依然能完美加速访问！"
   echo
 }
 
