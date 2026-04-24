@@ -1,0 +1,4 @@
+import os
+
+PORTAL_PASSWORD = "12345"
+SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", PORTAL_PASSWORD)
