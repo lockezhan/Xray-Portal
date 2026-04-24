@@ -93,6 +93,21 @@ def get_clash_releases():
             for asset in data.get("assets", []):
                 name = asset.get("name", "")
                 download_url = asset.get("browser_download_url", "")
+                
+                # 过滤安装包
+                name_lower = name.lower()
+                if repo_info["label"] == "ClashVergeRev":
+                    # Clash Verge：只保留 Windows 版 exe 和 zip（屏蔽便携版或安装版之外的多余包），以及不保留 linux/mac 包
+                    if not (name_lower.endswith('.exe') or name_lower.endswith('.zip')):
+                        continue
+                    if 'arm64' in name_lower or 'aarch64' in name_lower:
+                        continue
+                elif repo_info["label"] == "FlClash":
+                    # FlClash：只保留 Android 版 apk
+                    if not name_lower.endswith('.apk'):
+                        continue
+                    # 如果有分架构的 apk，可以保留全部或者只保留 arm64
+                    
                 size_bytes = asset.get("size", 0)
                 if size_bytes >= 1024 * 1024:
                     size_str = f"{size_bytes / (1024 * 1024):.1f} MB"

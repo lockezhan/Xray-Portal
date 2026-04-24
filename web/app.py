@@ -1,12 +1,13 @@
 import os
 import requests
-from flask import Flask, request, render_template, Response, abort
+from flask import Flask, request, render_template, Response, abort, session, redirect
 from flask import stream_with_context
 from urllib.parse import quote as url_quote
 import utils
+import config
 
 app = Flask(__name__)
-app.secret_key = "vpn_super_secret_key"
+app.secret_key = config.SECRET_KEY
 
 app.jinja_env.filters['url_quote'] = url_quote
 
@@ -15,18 +16,36 @@ _ALLOWED_REPO_LABELS = frozenset({'ClashVergeRev', 'FlClash'})
 
 @app.route('/', methods=['GET'])
 def index():
-    # Fetch fallback or dynamic wallpapers
     wallpapers = utils.get_random_wallpapers()
     downloads = utils.get_clash_releases()
     
-    # Generate subscription URL dynamically based on host
+    if not session.get('logged_in'):
+        return render_template('index.html', logged_in=False, wallpapers=wallpapers, downloads=downloads)
+
     current_host = request.host
     sub_url = f"http://{current_host}/clash.yaml"
 
     return render_template('index.html', 
+                           logged_in=True,
                            sub_url=sub_url,
                            wallpapers=wallpapers, 
                            downloads=downloads)
+
+@app.route('/login', methods=['POST'])
+def login():
+    password = request.form.get('password')
+    if password == config.PORTAL_PASSWORD:
+        session['logged_in'] = True
+        return redirect('/')
+    else:
+        return render_template('index.html', logged_in=False, error="密码错误。",
+                               wallpapers=utils.get_random_wallpapers(),
+                               downloads=utils.get_clash_releases())
+
+@app.route('/logout')
+def logout():
+    session.pop('logged_in', None)
+    return redirect('/')
 
 @app.route('/clash.yaml', methods=['GET'])
 def serve_clash_yaml():

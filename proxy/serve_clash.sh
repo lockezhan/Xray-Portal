@@ -15,7 +15,7 @@ META="/etc/xray-meta.conf"
 SUBSCRIBE_DIR="/var/www/clash"
 YAML_SRC="/root/clash-verge.yaml"
 YAML_DST="${SUBSCRIBE_DIR}/clash.yaml"
-SERVE_PORT="${SERVE_PORT:-8080}"
+SERVE_PORT="${SERVE_PORT:-80}"
 SERVICE_NAME="clash-subscribe"
 
 require_root() {

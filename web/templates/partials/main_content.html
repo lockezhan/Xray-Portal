@@ -1,16 +1,47 @@
 <div class="glass-panel p-8 md:p-10 rounded-[2rem]">
+    {% if not logged_in %}
+    <div class="max-w-md mx-auto my-10 md:my-20">
+        <div class="text-center mb-8">
+            <div class="inline-flex items-center justify-center w-16 h-16 rounded-full bg-gradient-to-tr from-indigo-500 to-purple-500 text-white mb-4 shadow-lg">
+                <svg class="w-8 h-8" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
+                </svg>
+            </div>
+            <h2 class="text-3xl font-extrabold text-slate-800 dark:text-slate-100">面板访问控制</h2>
+            <p class="text-slate-500 dark:text-slate-400 mt-2">请输入您的私密凭证</p>
+        </div>
+
+        {% if error %}
+        <div class="bg-red-50/80 dark:bg-red-900/30 border border-red-200 dark:border-red-700 text-red-600 dark:text-red-400 px-4 py-3 rounded-2xl mb-6 text-sm text-center">
+            {{ error }}
+        </div>
+        {% endif %}
+
+        <form method="POST" action="/login" class="space-y-6">
+            <div>
+                <input type="password" name="password" class="w-full px-5 py-4 border border-white dark:border-slate-600 bg-white/50 dark:bg-slate-800/60 backdrop-blur-sm rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-400 focus:bg-white dark:focus:bg-slate-800 text-slate-800 dark:text-slate-100 transition-all shadow-inner placeholder:text-slate-400 dark:placeholder:text-slate-500" placeholder="Enter Proxy Password" required>
+            </div>
+            <button type="submit" class="w-full bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white font-bold py-4 rounded-2xl shadow-lg hover:shadow-xl transition-all duration-300 transform hover:-translate-y-0.5">
+                验证解锁
+            </button>
+        </form>
+    </div>
+    {% else %}
     <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 border-b border-slate-200/60 dark:border-slate-700/60 pb-5">
         <div>
             <h2 class="text-3xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">网络节点配置</h2>
             <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">云端 Clash 配置代理服务已启动，节点可直接导入终端使用。</p>
         </div>
+        <a href="/logout" class="mt-4 sm:mt-0 px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-700 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center">
+            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1"></path></svg>锁定断开
+        </a>
     </div>
 
     <div class="space-y-5">
         <div class="inbound-card bg-white/80 dark:bg-white/5 border border-white dark:border-white/8 p-6 rounded-[1.5rem] shadow-sm hover:shadow-md transition-all duration-300 group">
             <div class="flex flex-col md:flex-row md:justify-between md:items-center mb-4 gap-3">
                 <div>
-                    <h4 class="font-extrabold text-xl text-slate-800 dark:text-slate-100">Clash 订阅地址</h4>
+                    <h4 class="font-extrabold text-xl text-slate-800 dark:text-slate-100">Clash / FlClash 高级订阅</h4>
                     <div class="flex items-center mt-2 space-x-2 flex-wrap gap-y-1">
                         <span class="flex items-center text-emerald-600 dark:text-emerald-400 text-xs font-bold px-2 py-1"><span class="w-1.5 h-1.5 rounded-full bg-emerald-500 mr-1.5 animate-pulse"></span>Active</span>
                         <span class="text-[10px] bg-slate-800 dark:bg-slate-600 text-white px-2 py-0.5 rounded-full font-mono font-bold tracking-wider">YAML</span>
@@ -24,16 +55,16 @@
                     <span class="text-slate-700 dark:text-slate-300 font-mono text-sm truncate mb-3 sm:mb-0 w-full sm:w-2/3 flex items-center">
                         <span class="w-8 h-8 rounded-full bg-indigo-100 dark:bg-indigo-900/60 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mr-3 shrink-0">
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path>
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path>
                             </svg>
                         </span>
-                        {{ sub_url }}
+                        【订阅内容已通过服务端校验保护】
                     </span>
                     <button onclick='copyToClipboard("{{ sub_url }}")' class="bg-gradient-to-r from-indigo-500 to-purple-600 text-white px-5 py-2.5 rounded-xl text-sm hover:from-indigo-600 hover:to-purple-700 transition-all shadow-md hover:shadow-lg font-bold flex items-center justify-center shrink-0">
                         <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2v-1M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2m0 0h2a2 2 0 012 2v3m2 4H10m0 0l3-3m-3 3l3 3"></path>
                         </svg>
-                        复制订阅链接
+                        提取到剪贴板
                     </button>
                 </div>
             </div>
@@ -43,16 +74,16 @@
                 <h5 class="text-sm font-bold text-slate-800 dark:text-slate-200 mb-2 flex items-center">
                     <svg class="w-4 h-4 mr-1.5 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                    </svg>使用指南
+                    </svg>快速引导
                 </h5>
                 <ul class="text-xs text-slate-600 dark:text-slate-400 space-y-1.5 list-disc pl-5">
-                    <li>点击上方按钮复制订阅链接，然后在 Clash Verge 或 FlClash 中添加新订阅并粘贴。</li>
-                    <li>每次服务器网络重置或重新生成节点后，由于链接固定，客户端直接右键点击“更新”即可重新获取配置。</li>
-                    <li>若在国内遇到获取订阅失败（被墙拦截），请使用 Cloudflare 给域名打开<span class="text-amber-500 font-bold mx-1">橙云 (Proxied)</span>代理。由于此面板服务开放在 8080 端口，完美兼容 CF 加速。</li>
+                    <li>点击上方按钮即可直接复制包含认证密钥的专属私有地址，妥善保存。</li>
+                    <li>客户端（如 Verge / FlClash 等）通过粘贴上述链接可以自动抓取云端 YAML，实时更新分流逻辑。</li>
                 </ul>
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 {% if downloads %}
