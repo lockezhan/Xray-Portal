@@ -108,6 +108,11 @@ install_xray() {
   # 强制删除已有的 xray 二进制文件，避免官方安装脚本因为检测到同版本号而跳过 systemd 服务的覆盖安装
   rm -f /usr/local/bin/xray /usr/bin/xray 2>/dev/null || true
   bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)
+  
+  # 修复 systemd "Special user nobody configured, this is not safe!" 警告
+  if [[ -f /etc/systemd/system/xray.service ]]; then
+    sed -i 's/User=nobody/User=root/g' /etc/systemd/system/xray.service
+  fi
 }
 
 write_xray_config() {
@@ -171,6 +176,11 @@ write_xray_config() {
   ]
 }
 JSON
+
+  # 修复并确保配置与日志目录对于 root 用户权限正确
+  chown -R root:root /usr/local/etc/xray/
+  chmod 644 /usr/local/etc/xray/config.json
+  chown -R root:root /var/log/xray/
 }
 
 write_meta_conf() {
