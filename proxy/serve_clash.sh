@@ -74,6 +74,9 @@ install_systemd_service() {
   SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
   if [[ -d "${SCRIPT_DIR}/../web" ]]; then
     cp -r "${SCRIPT_DIR}/../web" /usr/local/vpn-web
+    if [[ ! -f "/usr/local/vpn-web/config.py" ]] && [[ -f "/usr/local/vpn-web/config.py.example" ]]; then
+      cp /usr/local/vpn-web/config.py.example /usr/local/vpn-web/config.py
+    fi
   else
     echo -e "[${yellow}Warn${plain}] 找不到 ${SCRIPT_DIR}/../web，依赖项可能不完整。"
     mkdir -p /usr/local/vpn-web
