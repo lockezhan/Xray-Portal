@@ -209,6 +209,10 @@ def build_base_config() -> dict:
                 'pool.ntp.org', '*.pool.ntp.org',
             ],
             'nameserver': [
+                '223.5.5.5',
+                '119.29.29.29',
+                'https://dns.alidns.com/dns-query',
+                'https://doh.pub/dns-query',
                 'https://cloudflare-dns.com/dns-query',
                 'https://dns.google/dns-query',
             ],
