@@ -1,0 +1,28 @@
+[Unit]
+Description=Telegram to QQ Bridge Bot (Pyrogram & NapCat)
+# 确保在网络完全连接后启动
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# 建议不要使用 root 运行，替换为你服务器的常规用户名 (例如 ubuntu 或 root)
+User=root
+
+# 脚本所在的完整绝对目录路径，例如 /home/ubuntu/mybot
+WorkingDirectory=/usr/local/tg_bot
+
+# 强制 Python 无缓冲输出，这样在使用 journalctl 查看日志时能实时显示 print 内容
+Environment="PYTHONUNBUFFERED=1"
+
+# 核心：执行命令。前半部分是虚拟环境的 python 绝对路径，后半部分是脚本绝对路径
+# 例如：/home/ubuntu/mybot/venv/bin/python /home/ubuntu/mybot/bridge_bot.py
+ExecStart=/usr/local/vpn-web/venv/bin/python /usr/local/tg_bot/bridge_bot.py
+# 异常退出时自动重启
+Restart=always
+# 重启前的等待时间（秒），防止无限极速重启导致 CPU 占用过高
+RestartSec=5
+
+[Install]
+# 跟随系统多用户模式启动（开机自启）
+WantedBy=multi-user.target

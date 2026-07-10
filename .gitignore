@@ -1,2 +1,59 @@
-#忽略配置文件
-web/config.py
+# ==========================================
+# Xray_portal Git 忽略规则
+# ==========================================
+
+# 本地机密与环境变量 (坚决禁止提交，仓库仅提交 .env.example 模板)
+.env
+.env.*
+!.env.example
+config.env
+secrets/
+credentials/
+private/
+*.token
+*.secret
+
+# SSH 密钥文件 (防止误交 SSH 互信凭据)
+*.pem
+*.key
+id_rsa
+id_rsa.pub
+id_ed25519
+id_ed25519.pub
+subpush_key
+subpush_key.pub
+submirror_key
+submirror_key.pub
+
+# Clash/Mihomo 生产配置文件
+clash.yaml
+*-full.yaml
+proxy-providers/
+rule-providers/
+
+# Python 运行时与缓存
+__pycache__/
+*.py[cod]
+*.log
+logs/
+tmp/
+temp/
+generated/
+published/
+incoming/
+backups/
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+pip-wheel-metadata/
+
+# IDE 与系统文件
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+*.swp
+*.bak

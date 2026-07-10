@@ -1,0 +1,79 @@
+server {
+    server_name test.finalfinal.dpdns.org;
+    listen 80;
+    listen [::]:80;
+
+    # =========================================================================
+    # 1. 【精准放行】Clash 客户端更新链接 (完全公开，无需密码)
+    # =========================================================================
+    # 使用 = 进行精确匹配，确保只有访问 /clash.yaml 时才会触发此规则
+    location = /clash.yaml {
+        proxy_pass http://127.0.0.1:8080; # 默默转发给后端的 clash 服务
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        auth_basic off; # 👈 关键：显式关闭密码认证，方便客户端自动更新
+    }
+
+    # =========================================================================
+    # 2. 【密码保护】代理配置面板首页及所有资源（完美兼容面板结构，绝不乱码/空白）
+    # =========================================================================
+    location / {
+        proxy_pass http://127.0.0.1:8080; # 依然保持在根目录，JS/CSS 路径绝不会错乱
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # =========================================================================
+    # 3. 【其他业务】YouTube 字幕后端（各自独立，完全不受密码影响）
+    # =========================================================================
+    location /api/ {
+        proxy_pass http://127.0.0.1:9000;
+        # ... 保持之前的 600s 超时和跨域配置不变 ...
+    }
+
+    # Certbot 自动托管的 SSL 证书链保持在最下方...
+    listen [::]:443 ssl ipv6only=on;
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/test.finalfinal.dpdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/test.finalfinal.dpdns.org/privkey.pem;
+    # ...
+}
+
+# =========================================================================
+# 4. 【独立物理隔离】专用于 TG Bot 媒体分享的 HTTPS 独立端口服务 (不干扰 443 端口主站)
+# =========================================================================
+server {
+    listen 8083 ssl;
+    listen [::]:8083 ssl;
+    server_name test.finalfinal.dpdns.org;
+
+    ssl_certificate /etc/letsencrypt/live/test.finalfinal.dpdns.org/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/test.finalfinal.dpdns.org/privkey.pem;
+
+    # 当浏览器以 HTTP 协议访问此 HTTPS 端口时，自动跳转到 HTTPS（解决链接去掉协议头后的兼容问题）
+    error_page 497 =301 https://$host:$server_port$request_uri;
+
+    location / {
+        proxy_pass http://127.0.0.1:8082; # 只反代 TGBot 媒体服务，杜绝穿透到其他服务
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off; # 代理请求依然关闭缓存，但实际媒体由下方直接下发
+    }
+
+    # 用于 X-Accel-Redirect 的隐藏高速静态资源下发路径
+    location /protected_media/ {
+        internal;
+        alias /var/lib/tg-bridge-cache/;
+    }
+}
+
+
+
+

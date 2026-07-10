@@ -1,0 +1,14 @@
+[Unit]
+Description=Clash Subscription YAML Web Panel
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/local/vpn-web
+ExecStart=/usr/local/vpn-web/venv/bin/python app.py 8080
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

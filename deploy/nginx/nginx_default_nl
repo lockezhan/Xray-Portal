@@ -1,0 +1,21 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name gpt.finalfinal.dpdns.org;
+
+    # =========================================================================
+    # 荷兰只读备用订阅镜像发布站 (强随机 Token 保护)
+    # =========================================================================
+    location = /21e19027b6671b67301fc520affdb341c748bf9862aafd3aed9a0ad79ad2d8ed/clash.yaml {
+        alias /var/www/sub/21e19027b6671b67301fc520affdb341c748bf9862aafd3aed9a0ad79ad2d8ed/clash.yaml;
+        add_header X-Robots-Tag "noindex, nofollow";
+        add_header Content-Type "text/yaml; charset=utf-8";
+        auth_basic off;
+        autoindex off;
+    }
+
+    # 默认拒绝其它访问
+    location / {
+        return 404;
+    }
+}
