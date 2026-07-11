@@ -624,36 +624,43 @@ _us_install_tg_bot() {
     mkdir -p /opt/napcat/config
     chmod -R 777 /opt/napcat/qq
 
-    local napcat_cfg="/opt/napcat/config/onebot11.json"
-    if [[ ! -f "${napcat_cfg}" ]]; then
-        cat > "${napcat_cfg}" <<'NAPCAT_EOF'
-{
-  "http": {
-    "enable": true,
-    "host": "0.0.0.0",
-    "port": 3000,
-    "secret": "",
-    "enableHeart": false,
-    "enablePost": false,
-    "postUrls": []
+    # 写入并更新 NapCat 最新版 OneBot 11 配置文件（支持 network.httpServers 架构）
+    local napcat_cfg_content='{
+  "enableLocalFile2Url": true,
+  "network": {
+    "httpServers": [
+      {
+        "name": "HTTPServer",
+        "enable": true,
+        "port": 3000,
+        "host": "0.0.0.0",
+        "enableCors": true,
+        "enableWebsocket": false,
+        "messagePostFormat": "array",
+        "token": "",
+        "debug": false
+      }
+    ],
+    "httpSseServers": [],
+    "httpClients": [],
+    "websocketServers": [],
+    "websocketClients": [],
+    "plugins": []
   },
-  "ws": {
-    "enable": false,
-    "host": "0.0.0.0",
-    "port": 3001
-  },
-  "reverseWs": {
-    "enable": false,
-    "urls": []
-  },
-  "debug": false,
-  "heartInterval": 30000,
-  "messagePostFormat": "array",
-  "enableLocalFile2Url": true
-}
-NAPCAT_EOF
-        chmod 644 "${napcat_cfg}"
-    fi
+  "musicSignUrl": "",
+  "parseMultMsg": false,
+  "imageDownloadProxy": ""
+}'
+    echo "${napcat_cfg_content}" > "/opt/napcat/config/onebot11.json"
+    chmod 644 "/opt/napcat/config/onebot11.json"
+
+    # 若存在以 QQ 号命名的已有配置文件 (如 onebot11_3430774280.json) 也一并覆写更新
+    for cfg_file in /opt/napcat/config/onebot11_*.json; do
+        if [[ -f "${cfg_file}" ]]; then
+            echo "${napcat_cfg_content}" > "${cfg_file}"
+            chmod 644 "${cfg_file}"
+        fi
+    done
 
     # 部署源码
     install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/tg_bot.py" /usr/local/tg_bot/tg_bot.py
