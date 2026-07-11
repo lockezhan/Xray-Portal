@@ -619,6 +619,42 @@ _us_install_tg_bot() {
     mkdir -p /var/lib/tg-bridge-cache
     chmod 755 /var/lib/tg-bridge-cache
 
+    log_info "创建 NapCat Docker 挂载目录及 OneBot 11 JSON 配置文件..."
+    mkdir -p /opt/napcat/qq/stickers
+    mkdir -p /opt/napcat/config
+    chmod -R 777 /opt/napcat/qq
+
+    local napcat_cfg="/opt/napcat/config/onebot11.json"
+    if [[ ! -f "${napcat_cfg}" ]]; then
+        cat > "${napcat_cfg}" <<'NAPCAT_EOF'
+{
+  "http": {
+    "enable": true,
+    "host": "0.0.0.0",
+    "port": 3000,
+    "secret": "",
+    "enableHeart": false,
+    "enablePost": false,
+    "postUrls": []
+  },
+  "ws": {
+    "enable": false,
+    "host": "0.0.0.0",
+    "port": 3001
+  },
+  "reverseWs": {
+    "enable": false,
+    "urls": []
+  },
+  "debug": false,
+  "heartInterval": 30000,
+  "messagePostFormat": "array",
+  "enableLocalFile2Url": true
+}
+NAPCAT_EOF
+        chmod 644 "${napcat_cfg}"
+    fi
+
     # 部署源码
     install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/tg_bot.py" /usr/local/tg_bot/tg_bot.py
     install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/bridge_bot.py" /usr/local/tg_bot/bridge_bot.py
@@ -1107,7 +1143,8 @@ _us_print_summary() {
     log_warn "  ⊡ 将订阅 URL 分发给客户端"
     if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
         log_warn "  ⊡ 运行 /usr/local/vpn-web/venv/bin/python /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
-        log_warn "  ⊡ 部署并运行 NapCat Docker 容器作为 QQ Bot 后端（接口: ${BRIDGE_NAPCAT_API_URL:-3000}）"
+        log_warn "  ⊡ 启动 NapCat QQ 容器（已自动生成 /opt/napcat/config/onebot11.json 配置）："
+        log_warn "    sudo docker run -d --name napcat --restart=always --network host -v /opt/napcat/qq:/app/.config/QQ -v /opt/napcat/config:/app/napcat/config mlikiowa/napcat-docker:latest"
     fi
 
     log_info ""
