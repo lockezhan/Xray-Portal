@@ -93,7 +93,13 @@ Xray_portal/
 │       ├── requirements.txt          # Python 依赖包
 │       └── README.md                 # Web 控制台部署说明
 │
-├── deploy/                           # 📦 生产环境部署模板与脚本
+├── deploy/                           # 📦 一键自动化部署框架与运维脚本
+│   ├── install.sh                    # 一键自动化部署命令行入口 (<us|nl> --env <file>)
+│   ├── verify.sh                     # 部署后自动化状态自检与语法校验脚本
+│   ├── remote-deploy.sh              # 远程 SSH 自动化推送一键构建脚本
+│   ├── install-peer-key.sh           # 双机互连 SSH 公钥受限注入工具
+│   ├── lib/                          # 核心功能组件库 (common/env/ssh-keys/install-us/install-nl)
+│   ├── env/                          # 角色专属环境变量模板 (us.env.example / nl.env.example)
 │   ├── nginx/                        # Nginx 配置文件与 SSL 模板
 │   ├── systemd/                      # 机器人与 Flask 面板的 systemd 守护配置文件
 │   ├── clash-sub/                    # 订阅合成核心逻辑
@@ -110,23 +116,37 @@ Xray_portal/
 
 ---
 
-## 5. 🚀 快速开始与部署流程
+## 5. 🚀 快速开始与一键部署
 
-要在一套全新的美国 + 荷兰服务器中完整运行本系统：
+本仓库支持基于角色和环境变量隔离的自动化一键部署：
 
-1.  **克隆项目并准备本地环境**：
-    ```bash
-    git clone <YOUR_GIT_URL>
-    cd Xray_portal
-    cp .env.example .env
-    # 编辑 .env 文件填入 Token 与面板登录密码
-    ```
-2.  **详细部署步骤**：
-    *   关于系统的网络与安全边界，请阅读：[系统架构说明](docs/ARCHITECTURE.md)。
-    *   关于从零开始部署主副服务器的操作，请阅读：[部署指南](docs/DEPLOYMENT.md)。
-    *   关于日常维护（节点重装、合成、同步），请阅读：[日常运维手册](docs/OPERATIONS.md)。
-    *   关于系统文件权限与 SSH 安全控制，请阅读：[安全规范文档](docs/SECURITY.md)。
-    *   关于连接不通或 404 等错误的诊断，请阅读：[排障诊断手册](docs/TROUBLESHOOTING.md)。
+### 5.1 美国主控制服务器 (`us` 角色) 一键部署
+```bash
+git clone <YOUR_GIT_URL>
+cd Xray_portal
+cp deploy/env/us.env.example .env
+chmod 600 .env
+nano .env  # 填写美国主服务器参数及面版密码
+
+# 执行一键安装与状态验证
+sudo ./deploy/install.sh us --env .env
+./deploy/verify.sh us --env .env
+```
+
+### 5.2 荷兰副镜像服务器 (`nl` 角色) 一键部署
+```bash
+git clone <YOUR_GIT_URL>
+cd Xray_portal
+cp deploy/env/nl.env.example .env
+chmod 600 .env
+nano .env  # 仅需填写副机运行参数，严禁填入 Flask/Bot 密码
+
+# 执行一键安装与状态验证
+sudo ./deploy/install.sh nl --env .env
+./deploy/verify.sh nl --env .env
+```
+
+详细的手动步骤及多机互通 SSH 公钥配置，请参考文档：[部署指南 (DEPLOYMENT.md)](docs/DEPLOYMENT.md)。
 
 
 ---

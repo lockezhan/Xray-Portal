@@ -26,7 +26,58 @@
 
 ---
 
-## 2. 美国主服务器部署步骤
+## 2. 基于角色与环境变量的一键部署系统 (推荐)
+
+系统提供基于角色 (`us` 美国主服务器 / `nl` 荷兰副机) 和隔离环境变量 (`.env`) 的规范化一键自动化部署流程，无需手动逐条敲击多条系统命令。
+
+### 2.1 美国主服务器 (`us` 角色) 部署步骤
+1.  根据模板准备美国专属环境变量：
+    ```bash
+    cp deploy/env/us.env.example .env
+    chmod 600 .env
+    nano .env  # 填入 IP、公网域名、高强度随机 SUB_TOKEN 及 Flask 密码等
+    ```
+2.  执行一键部署与验证命令：
+    ```bash
+    # 可选预览部署命令动作
+    sudo ./deploy/install.sh us --env .env --dry-run
+
+    # 执行正式原子化部署
+    sudo ./deploy/install.sh us --env .env
+    ./deploy/verify.sh us --env .env
+    ```
+
+### 2.2 荷兰副服务器 (`nl` 角色) 部署步骤
+1.  根据模板准备荷兰精简环境变量（**切勿填入 Flask/Bot 密码或 Token**）：
+    ```bash
+    cp deploy/env/nl.env.example .env
+    chmod 600 .env
+    nano .env  # 仅填入目标 IP、域名和对应的 SUB_TOKEN
+    ```
+2.  执行一键部署与自检：
+    ```bash
+    sudo ./deploy/install.sh nl --env .env
+    ./deploy/verify.sh nl --env .env
+    ```
+
+### 2.3 双机互联 SSH 公钥注入与自动化远程推送
+*   **公钥注入**：部署完成后，通过工具注入对方机器 SSH 公钥到受限账户：
+    ```bash
+    # 在美国端运行 (注入荷兰的 subpush_key.pub 且强绑定 subpush-cmd-wrapper)
+    sudo ./deploy/install-peer-key.sh us --pubkey /path/to/subpush_key.pub
+    ```
+*   **自动化远程推送 (`remote-deploy.sh`)**：支持自本地直接自动化分发执行：
+    ```bash
+    ./deploy/remote-deploy.sh us --host ubuntu@us.example.com --env deploy/env/us.env
+    ```
+
+### 2.4 升级、回滚与维护说明
+*   **平滑升级**：更新代码仓库后，重复执行 `sudo ./deploy/install.sh <角色> --env .env` 即可基于 `safe_install` 完成原子无中断升级。
+*   **应急回滚**：如遇订阅异常，可在美国机器执行 `/usr/local/sbin/rollback-clash-subscription` 快速回退到上一个已验证发布的快照版本。
+
+---
+
+## 3. 美国主服务器手动部署参考步骤
 
 在美国端以 `root` 用户身份依次执行下述配置：
 
@@ -102,11 +153,11 @@ chmod 755 /opt/clash-sub
 
 ---
 
-## 3. 荷兰副服务器部署步骤
+## 4. 荷兰副服务器手动部署参考步骤
 
 在荷兰端以 `root` 用户身份执行配置：
 
-### 3.1 运行依赖与 Nginx 设置
+### 4.1 运行依赖与 Nginx 设置
 1.  正常通过脚本运行 Xray，生成 `/var/www/clash/clash.yaml` 节点配置。
 2.  安装 Nginx 并在防火墙放行端口：
     ```bash
@@ -119,7 +170,7 @@ chmod 755 /opt/clash-sub
     certbot --nginx -d nl-sub.example.com --non-interactive --agree-tos -m admin@nl-sub.example.com
     ```
 
-### 3.2 接收订阅镜像的 submirror 账户配置
+### 4.2 接收订阅镜像的 submirror 账户配置
 1.  创建系统受限用户 `submirror`：
     ```bash
     useradd --system --shell /bin/bash --home-dir /home/submirror --create-home submirror
@@ -133,7 +184,7 @@ chmod 755 /opt/clash-sub
     chown -R submirror:submirror /home/submirror
     ```
 
-### 3.3 本地只读发布与推送脚本
+### 4.3 本地只读发布与推送脚本
 1.  建立荷兰备用镜像物理目录并赋予 submirror 写入权限：
     ```bash
     mkdir -p /var/www/sub/您的SUB_TOKEN
@@ -146,7 +197,7 @@ chmod 755 /opt/clash-sub
 
 ---
 
-## 4. Clash Verge / FlClash 导入使用
+## 5. Clash Verge / FlClash 导入使用
 
 *   **日常更新**：直接在客户端中使用美国主站连接进行拉取：
     `https://us-sub.example.com/您的SUB_TOKEN/clash.yaml`
