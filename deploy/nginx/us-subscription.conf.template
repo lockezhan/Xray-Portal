@@ -1,0 +1,82 @@
+server {
+    server_name ${US_SUB_DOMAIN};
+    listen 80;
+    listen [::]:80;
+
+    # =========================================================================
+    # 1. 【隐藏分发】合并后的 Clash 唯一最终对外订阅 (强随机 Token 保护)
+    # =========================================================================
+    location = /${SUB_TOKEN}/clash.yaml {
+        alias /opt/clash-sub/published/clash.yaml;
+        add_header X-Robots-Tag "noindex, nofollow";
+        add_header Content-Type "text/yaml; charset=utf-8";
+        auth_basic off;
+        autoindex off;
+    }
+
+    # =========================================================================
+    # 2. 【直接拒绝】无 Token 的 /clash.yaml 路径（防止绕过与安全泄露）
+    # =========================================================================
+    location = /clash.yaml {
+        return 410;
+    }
+
+    # =========================================================================
+    # 3. 【密码保护】代理配置面板首页及所有资源
+    # =========================================================================
+    location / {
+        proxy_pass http://127.0.0.1:8080;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    # =========================================================================
+    # 4. 【其他业务】YouTube 字幕后端
+    # =========================================================================
+    location /api/ {
+        proxy_pass http://127.0.0.1:9000;
+    }
+
+    # Certbot 自动托管的 SSL 证书链
+    listen [::]:443 ssl ipv6only=on;
+    listen 443 ssl;
+    ssl_certificate /etc/letsencrypt/live/${US_SUB_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${US_SUB_DOMAIN}/privkey.pem;
+}
+
+# =========================================================================
+# 5. 【独立物理隔离】专用于 TG Bot 媒体分享的 HTTPS 独立端口服务 (不干扰 443 端口主站)
+# =========================================================================
+server {
+    listen 8083 ssl;
+    listen [::]:8083 ssl;
+    server_name ${US_SUB_DOMAIN};
+
+    ssl_certificate /etc/letsencrypt/live/${US_SUB_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${US_SUB_DOMAIN}/privkey.pem;
+
+    error_page 497 =301 https://$host:$server_port$request_uri;
+
+    location / {
+        proxy_pass http://127.0.0.1:8082;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+    }
+
+    location /protected_media/ {
+        internal;
+        alias /var/lib/tg-bridge-cache/;
+        mp4;
+        mp4_buffer_size       1m;
+        mp4_max_buffer_size   5m;
+        sendfile           on;
+        tcp_nopush         on;
+        tcp_nodelay        on;
+        keepalive_timeout  65;
+    }
+}

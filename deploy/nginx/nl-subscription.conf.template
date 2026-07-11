@@ -1,0 +1,28 @@
+server {
+    listen 80;
+    listen [::]:80;
+    server_name ${NL_SUB_DOMAIN};
+
+    # =========================================================================
+    # 荷兰只读备用订阅镜像发布站 (强随机 Token 保护)
+    # =========================================================================
+    location = /${SUB_TOKEN}/clash.yaml {
+        alias /var/www/sub/${SUB_TOKEN}/clash.yaml;
+        add_header X-Robots-Tag "noindex, nofollow";
+        add_header Content-Type "text/yaml; charset=utf-8";
+        auth_basic off;
+        autoindex off;
+    }
+
+    # =========================================================================
+    # 无 Token 路径直接返回 410 (拦截绕过)
+    # =========================================================================
+    location = /clash.yaml {
+        return 410;
+    }
+
+    # 默认拒绝其它访问
+    location / {
+        return 404;
+    }
+}
