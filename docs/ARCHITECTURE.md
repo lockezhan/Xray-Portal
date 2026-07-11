@@ -1,3 +1,10 @@
+[返回项目首页](../README.md) ·
+[系统架构](ARCHITECTURE.md) ·
+[部署指南](DEPLOYMENT.md) ·
+[日常运维](OPERATIONS.md) ·
+[安全规范](SECURITY.md) ·
+[故障排查](TROUBLESHOOTING.md)
+
 # 📐 系统架构说明书 (`docs/ARCHITECTURE.md`)
 
 本系统采用精心设计的“一主一副”多节点物理分流和高可用订阅镜像架构，旨在提供高性能、地域出口稳定、凭据强隐蔽性以及抵御局部单点故障的代理分发环境。
@@ -7,11 +14,11 @@
 ## 1. 服务器职责边界
 
 系统将业务划分为两台服务器协作：
-*   **美国主服务器 (`test.finalfinal.dpdns.org` - 核心大脑)**：
+*   **美国主服务器 (`us-sub.example.com` - 核心大脑)**：
     *   作为**默认代理出口**，承接除敏感大模型网站以外的全部日常国外流量。
     *   作为**订阅合成中心**，安全解析两端的原始 Clash 配置文件，合并节点与核心分流规则，生成最终订阅文件。
     *   作为**服务承载体**，对外托管 Flask 订阅控制台网页、消息转发和桥接 Bot。
-*   **荷兰副服务器 (`gpt.finalfinal.dpdns.org` - 镜像与专用出口)**：
+*   **荷兰副服务器 (`nl-sub.example.com` - 镜像与专用出口)**：
     *   作为**敏感代理出口**，专用于承接 OpenAI/ChatGPT, Claude, Gemini, Perplexity 等对 IP 地域和检测极其严格的敏感网站流量。
     *   作为**只读备用站**，只读保存美国推送的最终 `clash.yaml` 配置，主站断网时供用户手动切换下载。
 
@@ -61,10 +68,10 @@ OpenAI/Claude/AI Studio  ──>   【荷兰节点 (NL-SENSITIVE)】
 数据流 1：荷兰节点原始配置向美国收集
 [荷兰 /var/www/clash/clash.yaml] 
        │
-       ▼ (通过 scp -O subpush_key)
-[美国 /opt/clash-sub/incoming/clash.yaml]
+       ▼ (通过安全 stdin 管道传输 upload-nl)
+[美国 /opt/clash-sub/incoming/nl-full.yaml.ready]
        │
-       ▼ (mv 到 sources/)
+       ▼ (验证成功后 mv 提升)
 [美国 /opt/clash-sub/sources/nl-full.yaml] ──> 【Python 合成最终订阅】
 
 -------------------------------------------------------------
@@ -84,16 +91,20 @@ OpenAI/Claude/AI Studio  ──>   【荷兰节点 (NL-SENSITIVE)】
 
 ```mermaid
 graph LR
-    NL[荷兰服务器] -- "① 仅限 scp -O 上传配置 & 触发重建 (subpush_key)" --> US[美国主服务器]
+    NL[荷兰服务器] -- "① 仅限 stdin 管道安全上传 & 触发重建 (subpush_key)" --> US[美国主服务器]
     US -- "② 仅限 rsync 写入发布目录 (submirror_key)" --> NL
 ```
 
 ### 5.1 荷兰向美国上传配置 (`subpush` 账户)
 *   **私钥持有**：荷兰服务器持有 `subpush_key` 私钥。
-*   **安全限制**：美国端在 `subpush` 账户的 `authorized_keys` 中配置 `restrict` 并绑定 `subpush-cmd-wrapper` 强指令过滤器。只允许其上传 `clash.yaml` 和执行 `rebuild` 唤醒命令。
+*   **安全限制**：美国端在 `subpush` 账户的 `authorized_keys` 中配置 `restrict` 并绑定 `subpush-cmd-wrapper` 强指令过滤器。只允许其通过标准输入上传配置（`upload-nl`）和执行 `rebuild` 唤醒命令。
 
 ### 5.2 美国向荷兰同步订阅 (`submirror` 账户)
 *   **私钥持有**：美国服务器持有 `submirror_key` 私钥。
 *   **安全限制**：荷兰端在 `submirror` 账户的 `authorized_keys` 中配置 `restrict` 凭证限制，只允许 rsync 进程向指定的备用只读镜像目录写入 `clash.yaml`。
 
 该模型保证了密钥泄漏风险处于完全隔离状态。
+
+---
+
+[返回 README](../README.md)

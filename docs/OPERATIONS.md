@@ -1,3 +1,10 @@
+[返回项目首页](../README.md) ·
+[系统架构](ARCHITECTURE.md) ·
+[部署指南](DEPLOYMENT.md) ·
+[日常运维](OPERATIONS.md) ·
+[安全规范](SECURITY.md) ·
+[故障排查](TROUBLESHOOTING.md)
+
 # 🛠️ 系统日常运维与维护手册 (`docs/OPERATIONS.md`)
 
 本文用于指导系统管理员在节点变动、订阅回滚、健康状态排查等日常场景下的标准运维操作。
@@ -115,6 +122,10 @@ sudo /usr/local/sbin/push-clash-subscription-nl
     *(确保输出 `test is successful`)*。
 4.  **测试 HTTPS 订阅下载响应**（检查是否包含 header 和正确 mime）：
     ```bash
-    curl -I -sS "https://test.finalfinal.dpdns.org/您的SUB_TOKEN/clash.yaml"
+    curl -I -sS "https://us-sub.example.com/您的SUB_TOKEN/clash.yaml"
     ```
     *(确认返回 `HTTP/1.1 200 OK`，且包含 `X-Robots-Tag: noindex, nofollow` 标头)*。
+
+---
+
+[返回 README](../README.md)

@@ -1,3 +1,10 @@
+[返回项目首页](../README.md) ·
+[系统架构](ARCHITECTURE.md) ·
+[部署指南](DEPLOYMENT.md) ·
+[日常运维](OPERATIONS.md) ·
+[安全规范](SECURITY.md) ·
+[故障排查](TROUBLESHOOTING.md)
+
 # 🔍 常见故障排查与诊断手册 (`docs/TROUBLESHOOTING.md`)
 
 本文汇总了系统在运行、合并订阅、同步或客户端连接时可能遇到的故障，并提供标准排查和修复方案。
@@ -7,7 +14,7 @@
 ## 1. 客户端下载主/备订阅返回 404 Not Found
 
 ### 现象
-客户端导入或浏览器访问 `https://test.finalfinal.dpdns.org/<TOKEN>/clash.yaml` 时返回 `404 Not Found`。
+客户端导入或浏览器访问 `https://us-sub.example.com/<TOKEN>/clash.yaml` 时返回 `404 Not Found`。
 
 ### 可能原因
 1.  Nginx 配置文件中的 Token 路径与实际 `SUB_TOKEN` 不匹配。
@@ -67,7 +74,7 @@
     chown root:root /opt/clash-sub && chmod 755 /opt/clash-sub
     chown -R subpush:subpush /opt/clash-sub/.ssh && chmod 700 /opt/clash-sub/.ssh
     ```
-3.  确保荷兰推送脚本中使用 `scp -O` (传统协议) 兼容模式。
+3.  确保可以使用安全的标准输入 (stdin) 管道传输协议传输配置文件。
 
 ---
 
@@ -113,3 +120,7 @@ cat /opt/clash-sub/logs/rebuild.log
 ### 修复方式
 1.  修改 `extract_merge.py`，将基础 DNS 中的 `respect-rules` 改为 `false`（或在 `dns` 块中补全 `proxy-server-nameserver`）。
 2.  手动运行 `rebuild-clash-subscription` 测试其是否能顺利通过校验并完成原子替换。
+
+---
+
+[返回 README](../README.md)

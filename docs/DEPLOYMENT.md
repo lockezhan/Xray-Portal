@@ -1,3 +1,10 @@
+[返回项目首页](../README.md) ·
+[系统架构](ARCHITECTURE.md) ·
+[部署指南](DEPLOYMENT.md) ·
+[日常运维](OPERATIONS.md) ·
+[安全规范](SECURITY.md) ·
+[故障排查](TROUBLESHOOTING.md)
+
 # 🚀 系统部署指南 (`docs/DEPLOYMENT.md`)
 
 本文详细说明如何在两台空白的 Linux VPS 服务器上完成“一主一副”合并订阅分发系统的安装、配置及打通。
@@ -13,8 +20,8 @@
 
 ### 1.2 域名与网络
 *   **域名 DNS 解析**：
-    *   `test.finalfinal.dpdns.org` ➡️ 指向美国服务器公网 IP。
-    *   `gpt.finalfinal.dpdns.org` ➡️ 指向荷兰服务器公网 IP。
+    *   `us-sub.example.com` ➡️ 指向美国服务器公网 IP。
+    *   `nl-sub.example.com` ➡️ 指向荷兰服务器公网 IP。
 *   **防火墙端口放行**：两台服务器的 80 和 443 端口必须开放以供 Nginx 提供订阅并让 Let's Encrypt 证书验证通过。
 
 ---
@@ -109,7 +116,7 @@ chmod 755 /opt/clash-sub
     ```
 3.  申请 SSL 证书开启 HTTPS：
     ```bash
-    certbot --nginx -d gpt.finalfinal.dpdns.org --non-interactive --agree-tos -m admin@gpt.finalfinal.dpdns.org
+    certbot --nginx -d nl-sub.example.com --non-interactive --agree-tos -m admin@nl-sub.example.com
     ```
 
 ### 3.2 接收订阅镜像的 submirror 账户配置
@@ -142,7 +149,11 @@ chmod 755 /opt/clash-sub
 ## 4. Clash Verge / FlClash 导入使用
 
 *   **日常更新**：直接在客户端中使用美国主站连接进行拉取：
-    `https://test.finalfinal.dpdns.org/您的SUB_TOKEN/clash.yaml`
+    `https://us-sub.example.com/您的SUB_TOKEN/clash.yaml`
 *   **手动故障应急**：当美国发生阻断时，在客户端中新增或切换为荷兰的备用链接：
-    `https://gpt.finalfinal.dpdns.org/您的SUB_TOKEN/clash.yaml`
+    `https://nl-sub.example.com/您的SUB_TOKEN/clash.yaml`
     *(两份配置完全相同，请注意无需同时启用合并它们，否则会产生同名节点冲突)*。
+
+---
+
+[返回 README](../README.md)
