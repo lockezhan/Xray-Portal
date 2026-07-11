@@ -55,6 +55,12 @@ WEB_PORT = int(os.environ.get("BRIDGE_WEB_PORT", 8082))
 SERVER_PUBLIC_IP = os.environ.get("BRIDGE_SERVER_PUBLIC_IP")
 if not SERVER_PUBLIC_IP:
     raise ValueError("错误: BRIDGE_SERVER_PUBLIC_IP 环境变量未配置！")
+
+def format_view_url(token):
+    host = SERVER_PUBLIC_IP.strip().rstrip("/")
+    if not host.startswith("http://") and not host.startswith("https://"):
+        return f"https://{host}:8083/view?token={token}"
+    return f"{host}:8083/view?token={token}"
 # ============================================
 
 # 路径配置
@@ -513,7 +519,7 @@ async def handle_media_message(message):
         active_tasks[token].append({"path": local_file_path, "type": content_type, "name": filename})
         
         if is_first:
-            view_url = f"{SERVER_PUBLIC_IP}:8083/view?token={token}"
+            view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
                 payload = {"group_id": TARGET_QQ_GROUP, "message": f"🔑 收到加密媒体(支持多图/视频组)（3小时内复制打开）：\n{view_url}"}
                 qq_ok, qq_err = await send_to_qq(session, payload)
@@ -580,7 +586,7 @@ async def handle_text_message(message):
                 
             active_tasks[token] = files
             
-            view_url = f"{SERVER_PUBLIC_IP}:8083/view?token={token}"
+            view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
                 payload = {"group_id": TARGET_QQ_GROUP, "message": f"🔑 收到加密网页下载链接（3小时内复制打开）：\n{view_url}"}
                 qq_ok, qq_err = await send_to_qq(session, payload)
@@ -637,7 +643,7 @@ async def handle_text_message(message):
             active_tasks[token] = [{"path": local_file_path, "type": content_type, "name": filename}]
             asyncio.create_task(auto_delete_cache(token, delay=10800))
             
-            view_url = f"{SERVER_PUBLIC_IP}:8083/view?token={token}"
+            view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
                 payload = {"group_id": TARGET_QQ_GROUP, "message": f"🔑 收到加密网页下载链接（3小时内复制打开）：\n{view_url}"}
                 qq_ok, qq_err = await send_to_qq(session, payload)
