@@ -1,130 +1,221 @@
-[返回项目首页](../README.md) ·
-[系统架构](ARCHITECTURE.md) ·
-[部署指南](DEPLOYMENT.md) ·
-[日常运维](OPERATIONS.md) ·
-[安全规范](SECURITY.md) ·
-[故障排查](TROUBLESHOOTING.md)
+[返回首页](../README.md) · [部署指南](DEPLOYMENT.md) · [故障排查](TROUBLESHOOTING.md) · [手动排障](MANUAL_DEPLOYMENT.md)
 
-# 🛠️ 系统日常运维与维护手册 (`docs/OPERATIONS.md`)
-
-本文用于指导系统管理员在节点变动、订阅回滚、健康状态排查等日常场景下的标准运维操作。
+# 🛠️ 日常运维手册 (OPERATIONS.md)
 
 ---
 
-## 1. 核心服务状态查看
+## 1. 服务状态速查
 
-在美国主服务器上，以下三个服务负责整个控制面板与机器人的运行：
-*   **Clash 订阅 Flask Web 控制台**：
-    ```bash
-    systemctl status clash-subscribe
-    journalctl -u clash-subscribe -f -n 100
-    ```
-*   **QQ-TG 桥接 Bot**：
-    ```bash
-    systemctl status tg-qq-bridge
-    journalctl -u tg-qq-bridge -f -n 100
-    ```
-*   **TG 拦截转发 Bot**：
-    ```bash
-    systemctl status tgbot
-    journalctl -u tgbot -f -n 100
-    ```
+### 美国主机
 
-在荷兰副服务器上，可通过下述命令核验 Nginx 运行状况：
 ```bash
-systemctl status nginx
+# 一键状态总览
+systemctl status xray vpn-web nginx
+
+# 各服务日志（实时）
+journalctl -u xray -f -n 50
+journalctl -u vpn-web -f -n 50
 journalctl -u nginx -f -n 50
 ```
 
----
+### 荷兰副机
 
-## 2. 合并与订阅手动重建命令
-
-当修改了基础模板或希望强行重新更新两端节点并分发时，在**美国主服务器**执行：
 ```bash
-sudo /usr/local/sbin/rebuild-clash-subscription
+systemctl status xray nginx
+journalctl -u xray -f -n 50
 ```
-该命令会自动检测 `/opt/clash-sub/incoming/clash.yaml` 处的最新荷兰配置，并在合成、验证通过后自动通过 rsync 回传给荷兰。
 
 ---
 
-## 3. 手动从荷兰推送最新配置
+## 2. 一键健康验证
 
-当荷兰服务器重新部署了 Xray 产生了新的 `/var/www/clash/clash.yaml` 配置，或者希望手动测试同步链路时，在**荷兰副服务器**执行：
 ```bash
+# 美国（完整检查：服务、端口、HTTP、YAML、访问控制）
+sudo ./deploy/verify.sh us --env .env
+
+# 荷兰（含订阅同步 PENDING 状态检测）
+sudo ./deploy/verify.sh nl --env .env
+```
+
+---
+
+## 3. 订阅手动重建与推送
+
+### 重建美国订阅
+
+```bash
+# 重新生成 Clash 源文件并发布
+sudo /usr/local/sbin/rebuild-clash-subscription
+
+# 查看最新发布文件
+ls -la /opt/clash-sub/published/clash.yaml
+
+# 校验发布文件（YAML 语法 + Mihomo 内核）
+python3 -c "import yaml; yaml.safe_load(open('/opt/clash-sub/published/clash.yaml'))" && echo "YAML OK"
+mihomo -t -d /opt/clash-sub/published/
+```
+
+### 手动推送到荷兰（在荷兰机执行）
+
+```bash
+# 荷兰机：推送本地 Clash 源到美国存储
+sudo /usr/local/sbin/push-clash-subscription-nl
+
+# 验证荷兰镜像文件存在
+ls -la /var/www/sub/<SUB_TOKEN>/clash.yaml
+```
+
+---
+
+## 4. 订阅版本回滚
+
+```bash
+# 查看历史备份
+ls -lt /opt/clash-sub/backup/ | head -20
+
+# 回滚到指定版本
+sudo cp /opt/clash-sub/backup/clash.yaml.20260710-080448 \
+    /opt/clash-sub/published/clash.yaml
+
+# 回滚后重新验证
+python3 -c "import yaml; yaml.safe_load(open('/opt/clash-sub/published/clash.yaml'))"
+sudo nginx -s reload
+```
+
+---
+
+## 5. 节点重装后更新流程
+
+### 5.1 美国节点 Xray 更新
+
+```bash
+# 重新渲染 Xray 配置（保持原密钥）
+sudo bash apps/vpn_web/proxy/lib/render-xray-config.sh
+sudo systemctl restart xray
+
+# 重新生成订阅源
+sudo bash apps/vpn_web/proxy/gen_clash_config.sh
+
+# 重建发布版本
+sudo /usr/local/sbin/rebuild-clash-subscription
+
+# 验证
+sudo ./deploy/verify.sh us --env .env
+```
+
+### 5.2 荷兰节点 Xray 更新
+
+```bash
+# 荷兰机：重渲染配置，重启服务
+sudo bash apps/vpn_web/proxy/lib/render-xray-config.sh
+sudo systemctl restart xray
+
+# 更新荷兰 Clash 源
+sudo bash apps/vpn_web/proxy/gen_clash_config.sh
+
+# 推送到美国触发重建
 sudo /usr/local/sbin/push-clash-subscription-nl
 ```
-这会完成荷兰本地的格式验证 ➡️ 上传至美国 ➡️ 触发美国 `rebuild` 构建 ➡️ 美国合成并回传最终订阅至荷兰，实现全闭环更新。
 
 ---
 
-## 4. 订阅版本历史回滚操作
+## 6. 证书续期
 
-如果新合成的 Clash 订阅包含未知格式错误或节点失联，我们需要将其回滚到上一次成功的可用版本。
+Certbot 已配置自动续期（由 systemd timer 驱动），一般无需手动操作。
 
-1.  **查看当前所有历史备份版本**（在美国服务器上）：
-    ```bash
-    sudo /usr/local/sbin/rollback-clash-subscription --list
-    ```
-2.  **执行回滚**（传入目标备份文件名）：
-    ```bash
-    sudo /usr/local/sbin/rollback-clash-subscription clash.yaml.20260710-080448
-    ```
-    *构建系统会自动执行 YAML 语法验证，验证通过后原子替换美国本地发布文件，并同步回传更新荷兰镜像，确保双端同步回滚成功。*
+```bash
+# 检查续期定时任务
+systemctl status certbot.timer
+certbot certificates
 
----
+# 手动续期（测试）
+sudo certbot renew --dry-run
 
-## 5. 两端节点重装指南
-
-### 5.1 场景一：美国节点重装
-1.  在美国端以 root 身份重新运行 `./install.sh` 或更新 Xray，生成新的 `/var/www/clash/clash.yaml`。
-2.  更新后直接执行：
-    ```bash
-    sudo /usr/local/sbin/post-deploy-hook-us
-    ```
-    它会自动触发本机的 `rebuild` 构建流程，重新拉取本地新生成的美国节点与之前缓存的荷兰节点进行合成。
-
-### 5.2 场景二：荷兰节点重装
-1.  在荷兰端以 root 身份重装 Xray，生成新的 `/var/www/clash/clash.yaml`。
-2.  更新后直接执行：
-    ```bash
-    sudo /usr/local/sbin/post-deploy-hook-nl
-    ```
-    这会触发荷兰向美国上传最新配置，唤醒美国重建并拉取回传，客户端无感完成更新。
+# 强制立即续期
+sudo certbot renew --force-renewal
+sudo nginx -s reload
+```
 
 ---
 
-## 6. 日志存储路径
+## 7. 密钥轮换
 
-*   **美国主重建与合成日志**：`/opt/clash-sub/logs/rebuild.log`
-*   **美国回滚操作日志**：`/opt/clash-sub/logs/rollback.log`
-*   **荷兰主动推送日志**：`/opt/clash-sub-mirror/logs/push.log`
-*   **美国 Nginx 访问与安全审计日志**：`/var/log/nginx/access.log`
-*   **荷兰 Nginx 访问与安全审计日志**：`/var/log/nginx/access.log`
+> [!CAUTION]
+> 密钥轮换会导致所有现有客户端连接中断，必须同步更新客户端 Clash 配置。
+
+```bash
+# 1. 删除旧密钥文件（触发下次部署时重新生成）
+sudo rm /etc/xray-portal/proxy.env
+
+# 2. 重新渲染（自动生成新密钥）
+sudo bash apps/vpn_web/proxy/lib/render-xray-config.sh
+
+# 3. 重启 Xray
+sudo systemctl restart xray
+
+# 4. 重建订阅（客户端需重新下载）
+sudo bash apps/vpn_web/proxy/gen_clash_config.sh
+sudo /usr/local/sbin/rebuild-clash-subscription
+```
 
 ---
 
-## 7. 快速健康检查清单
+## 8. 更新部署系统
 
-以管理员身份进行下述只读检测，验证系统是否处于完全健康的状态：
-1.  **验证 Nginx 配置**：
-    ```bash
-    sudo nginx -t
-    ```
-2.  **校验最终订阅 YAML 格式**：
-    ```bash
-    python3 -c "import yaml; yaml.safe_load(open('/opt/clash-sub/published/clash.yaml'))" && echo "Local YAML OK"
-    ```
-3.  **使用 Mihomo 内核校验（测试配置有效性）**：
-    ```bash
-    /usr/local/bin/mihomo -t -f /opt/clash-sub/published/clash.yaml
-    ```
-    *(确保输出 `test is successful`)*。
-4.  **测试 HTTPS 订阅下载响应**（检查是否包含 header 和正确 mime）：
-    ```bash
-    curl -I -sS "https://us-sub.example.com/您的SUB_TOKEN/clash.yaml"
-    ```
-    *(确认返回 `HTTP/1.1 200 OK`，且包含 `X-Robots-Tag: noindex, nofollow` 标头)*。
+```bash
+git pull
+# 更新 Web 面板（不重装代理）
+sudo ./deploy/install.sh us --env .env --skip-proxy
+
+# 仅更新代理（不重装 Web 面板）
+sudo ./deploy/install.sh us --env .env --proxy-only
+```
+
+---
+
+## 9. 日志路径参考
+
+| 日志内容 | 路径 |
+|---------|------|
+| Web 面板访问日志 | `/var/log/vpn-web/access.log` |
+| Web 面板错误日志 | `/var/log/vpn-web/error.log` |
+| Nginx 访问日志 | `/var/log/nginx/access.log` |
+| Nginx 错误日志 | `/var/log/nginx/error.log` |
+| 重建订阅日志 | `/opt/clash-sub/logs/rebuild.log` |
+| 荷兰推送日志 | 通过 `journalctl -u push-clash-nl` 查看 |
+| 部署状态记录 | `/var/lib/xray-portal/deployment-state.json` |
+
+---
+
+## 10. 紧急恢复
+
+### Nginx 配置损坏
+
+```bash
+# 恢复到上一次已知良好配置
+sudo nginx -t 2>&1  # 查看错误
+sudo cp /etc/nginx/sites-available/xray-portal.conf.bak \
+    /etc/nginx/sites-enabled/xray-portal.conf
+sudo nginx -s reload
+```
+
+### vpn-web 服务宕机
+
+```bash
+journalctl -u vpn-web -n 100 --no-pager
+sudo systemctl restart vpn-web
+# 若重启失败，检查 Python 依赖
+sudo /usr/local/vpn-web/venv/bin/pip install -r \
+    /usr/local/vpn-web/requirements.txt
+sudo systemctl start vpn-web
+```
+
+### Xray 服务宕机
+
+```bash
+xray run -test -c /usr/local/etc/xray/config.json
+sudo systemctl restart xray
+```
 
 ---
 

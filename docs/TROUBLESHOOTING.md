@@ -1,126 +1,276 @@
-[返回项目首页](../README.md) ·
-[系统架构](ARCHITECTURE.md) ·
-[部署指南](DEPLOYMENT.md) ·
-[日常运维](OPERATIONS.md) ·
-[安全规范](SECURITY.md) ·
-[故障排查](TROUBLESHOOTING.md)
+# 故障排查手册 (TROUBLESHOOTING.md)
 
-# 🔍 常见故障排查与诊断手册 (`docs/TROUBLESHOOTING.md`)
+## 快速诊断
 
-本文汇总了系统在运行、合并订阅、同步或客户端连接时可能遇到的故障，并提供标准排查和修复方案。
-
----
-
-## 1. 客户端下载主/备订阅返回 404 Not Found
-
-### 现象
-客户端导入或浏览器访问 `https://us-sub.example.com/<TOKEN>/clash.yaml` 时返回 `404 Not Found`。
-
-### 可能原因
-1.  Nginx 配置文件中的 Token 路径与实际 `SUB_TOKEN` 不匹配。
-2.  最终订阅文件 `/opt/clash-sub/published/clash.yaml` 不存在或权限被拒绝。
-3.  Nginx 运行账户 `www-data` 对 `/opt/clash-sub/published/` 目录没有搜索 (`+x`) 和读取 (`+r`) 权限。
-
-### 检查与诊断命令
-1.  **确认美国端 Token 的真实数值**：
-    ```bash
-    grep "^SUB_TOKEN=" /opt/clash-sub/scripts/config.env
-    ```
-2.  **检查 Nginx 实际载入的配置**：
-    ```bash
-    nginx -T | grep -A 10 "clash.yaml"
-    ```
-3.  **测试 www-data 用户的读取权限**：
-    ```bash
-    sudo -u www-data head -n 5 /opt/clash-sub/published/clash.yaml
-    ```
-    *(若返回 Permission Denied，说明权限有误)*。
-
-### 修复方式
-1.  修正 Nginx 路径中的 Token。
-2.  修正群组所有权并把 `www-data` 加进 `subpush` 组：
-    ```bash
-    sudo usermod -aG subpush www-data
-    sudo systemctl restart nginx
-    ```
-
----
-
-## 2. 荷兰无法推送配置到美国
-
-### 现象
-荷兰运行 `push-clash-subscription-nl` 提示 `Permission denied (publickey)` 或 `scp: Connection closed`。
-
-### 可能原因
-1.  美国 `subpush` 用户的登录 shell 被设置为了 `/usr/sbin/nologin`（sshd 拒绝其执行 command）。
-2.  美国端 `/opt/clash-sub/` 的目录对群组开放了写权限（权限为 `770`），触发了 sshd 的 `StrictModes` 安全保护。
-3.  荷兰端使用了现代 SFTP 协议，而美国的 wrapper 脚本没有支持，直接被断开连接。
-
-### 检查与诊断命令
-1.  在美国端以 root 身份检查 `subpush` 的 shell：
-    ```bash
-    getent passwd subpush
-    ```
-2.  查看 SSHD 报错日志（在美国服务器上）：
-    ```bash
-    sudo grep "subpush" /var/log/auth.log 2>/dev/null || journalctl -u ssh -n 20
-    ```
-    *(如果看到 "bad ownership or modes for directory"，说明目录权限不合规)*。
-
-### 修复方式
-1.  将 `subpush` 用户的 shell 设为 `/bin/bash`。
-2.  严格修正美国主机的 SSH 目录所有者为 `subpush` 且主目录 `/opt/clash-sub` 为 `755`，禁止 group 写入：
-    ```bash
-    chown root:root /opt/clash-sub && chmod 755 /opt/clash-sub
-    chown -R subpush:subpush /opt/clash-sub/.ssh && chmod 700 /opt/clash-sub/.ssh
-    ```
-3.  确保可以使用安全的标准输入 (stdin) 管道传输协议传输配置文件。
-
----
-
-## 3. 美国主站无法向荷兰同步最终订阅
-
-### 现象
-重建脚本执行到最后时，提示 `submirror@NL_IP: Permission denied`。
-
-### 可能原因
-1.  美国端的 `/opt/clash-sub/scripts/submirror_key` 权限设置过于开放（如 `640`），导致 SSH 客户端出于安全直接忽略该私钥。
-2.  荷兰端的 `/home/submirror/.ssh/authorized_keys` 中没有正确写入公钥。
-
-### 检查与诊断命令
-在美国端以 root 身份查看密钥权限：
 ```bash
-ls -la /opt/clash-sub/scripts/submirror_key
+# 一键诊断（需要 .env 文件）
+sudo ./deploy/verify.sh us --env .env
+# 或
+sudo ./deploy/verify.sh nl --env .env
 ```
 
-### 修复方式
-1.  将美国端私钥文件所有者改为 `subpush`，并严格设为 `600`：
-    ```bash
-    chown subpush:subpush /opt/clash-sub/scripts/submirror_key
-    chmod 600 /opt/clash-sub/scripts/submirror_key
-    ```
-2.  检查并确保荷兰端 `/home/submirror/.ssh/authorized_keys` 含有正确的公钥。
-
 ---
 
-## 4. 订阅合并失败（Mihomo 语法校验未通过）
+## 一、install.sh 失败
 
-### 现象
-重建脚本提示 `Mihomo 配置检查失败，中止发布`，且日志包含 `if "respect-rules" is turned on, "proxy-server-nameserver" cannot be empty` 等报错。
+### 1.1 env 文件权限不是 0600
 
-### 可能原因
-合并脚本在构建 DNS 及代理配置时，加入了与本机的 Mihomo/Clash-Meta 内核不兼容的规则或未完善的 DNS 参数。
-
-### 检查与诊断命令
-查看日志：
-```bash
-cat /opt/clash-sub/logs/rebuild.log
+```
+[ERROR] .env 权限不足（当前: 644），拒绝加载。请执行: chmod 600 .env
 ```
 
-### 修复方式
-1.  修改 `extract_merge.py`，将基础 DNS 中的 `respect-rules` 改为 `false`（或在 `dns` 块中补全 `proxy-server-nameserver`）。
-2.  手动运行 `rebuild-clash-subscription` 测试其是否能顺利通过校验并完成原子替换。
+**修复：**
+```bash
+chmod 600 .env
+```
+
+### 1.2 必填变量为 replace_me
+
+```
+[ERROR] 环境变量 US_SERVER_IP 未配置（仍为 replace_me）
+```
+
+**修复：** 编辑 `.env`，填写所有 `replace_me` 字段。
+
+### 1.3 Xray SHA256 校验失败
+
+```
+[ERROR] SHA256 校验失败！下载包可能已损坏或版本/校验和不匹配。
+```
+
+**修复：**
+```bash
+# 获取正确 SHA256
+XRAY_VER=v25.6.3
+curl -sL "https://github.com/XTLS/Xray-core/releases/download/${XRAY_VER}/Xray-linux-64.zip.sha256sum"
+# 将输出的 SHA256 填入 .env 的 XRAY_SHA256_LINUX_AMD64
+```
+
+### 1.4 apt 安装失败（网络问题）
+
+```
+E: Unable to connect to deb.debian.org
+```
+
+**修复：** 配置代理后重试：
+```bash
+export http_proxy=http://127.0.0.1:7890
+export https_proxy=http://127.0.0.1:7890
+sudo ./deploy/install.sh us --env .env
+```
 
 ---
 
-[返回 README](../README.md)
+## 二、Xray 服务问题
+
+### 2.1 xray.service 启动失败
+
+```bash
+systemctl status xray
+journalctl -u xray -n 50 --no-pager
+```
+
+常见原因：
+- **端口占用**：`ss -tulpn | grep 20001` 查看是否有其他进程占用代理端口
+- **配置语法错误**：`xray run -test -c /usr/local/etc/xray/config.json`
+- **密钥格式错误**：检查 `/etc/xray-portal/proxy.env` 中的密钥是否合法
+
+**重新渲染配置：**
+```bash
+sudo bash apps/vpn_web/proxy/lib/render-xray-config.sh
+sudo systemctl restart xray
+```
+
+### 2.2 Xray 安装后证书找不到
+
+VLESS Reality 需要指定 SNI，但这不是必须有证书文件的。如果遇到此错误，检查：
+```bash
+xray run -test -c /usr/local/etc/xray/config.json 2>&1
+```
+
+---
+
+## 三、Clash 订阅问题
+
+### 3.1 订阅文件不存在
+
+```bash
+# 手动生成
+sudo bash apps/vpn_web/proxy/gen_clash_config.sh
+
+# 重建发布版本
+sudo /usr/local/sbin/rebuild-clash-subscription
+```
+
+### 3.2 Mihomo 校验失败
+
+```
+[ERROR] Mihomo -t 检查失败：配置语法不合法
+```
+
+```bash
+# 在测试目录中排查
+TMPDIR=$(mktemp -d)
+cp /opt/clash-sub/published/clash.yaml "$TMPDIR/config.yaml"
+mihomo -t -d "$TMPDIR"
+```
+
+### 3.3 YAML 语法错误
+
+```bash
+python3 -c "import yaml; yaml.safe_load(open('/opt/clash-sub/published/clash.yaml'))"
+```
+
+### 3.4 GENERAL-PROXY 类型错误
+
+```
+[FAIL] GENERAL-PROXY 代理组类型为 fallback
+```
+
+检查 `gen_clash_config.sh` 和 `rebuild-clash-subscription.sh` 的组合逻辑。
+
+---
+
+## 四、Nginx 问题
+
+### 4.1 nginx -t 失败
+
+```bash
+nginx -t 2>&1
+# 查看具体配置文件
+cat /etc/nginx/sites-enabled/
+```
+
+常见原因：
+- SSL 证书文件不存在（Certbot 未申请成功）
+- 域名不匹配
+
+### 4.2 502 Bad Gateway
+
+```bash
+# 检查后端服务状态
+systemctl status vpn-web    # Flask 面板
+curl -v http://127.0.0.1:8080/health
+
+# 如果 ENABLE_API=true 但服务未运行
+systemctl status api-service  # 修改 .env 将 ENABLE_API=false
+sudo nginx -s reload
+```
+
+### 4.3 410 Gone（订阅访问拒绝）
+
+```bash
+# Token 路径正确但返回 410
+# 检查 Nginx 的 map 规则
+grep -A5 'map.*valid_token' /etc/nginx/sites-enabled/*.conf
+```
+
+### 4.4 TLS 证书申请失败
+
+```bash
+# 手动排查 Certbot
+certbot certonly --nginx -d us.example.com --dry-run
+
+# DNS 未就绪时先跳过 TLS
+sudo ./deploy/install.sh us --env .env --no-certbot
+# DNS 就绪后再申请证书
+sudo certbot --nginx -d us.example.com
+```
+
+---
+
+## 五、Flask Web 面板问题
+
+### 5.1 vpn-web.service 启动失败
+
+```bash
+journalctl -u vpn-web -n 100 --no-pager
+```
+
+常见原因：
+- Python 依赖缺失：`/usr/local/vpn-web/venv/bin/pip install -r requirements.txt`
+- 环境文件不存在：`ls -la /etc/xray-portal/vpn-web.env`
+- 端口 8080 被占用：`ss -tulpn | grep 8080`
+
+### 5.2 面板登录失败
+
+检查 `PORTAL_PASSWORD` 是否已正确写入服务环境：
+```bash
+# 不直接打印密码，检查 hash
+sudo systemctl cat vpn-web | grep EnvironmentFile
+sudo stat /etc/xray-portal/vpn-web.env
+```
+
+---
+
+## 六、SSH 互联问题（荷兰→美国订阅推送）
+
+### 6.1 推送失败：Permission denied
+
+```bash
+# 在荷兰机检查私钥权限
+ls -la /home/subpush/.ssh/subpush_key  # 必须 0600
+
+# 测试连通性（只能 rsync，不能交互式 Shell）
+ssh -i /home/subpush/.ssh/subpush_key -o StrictHostKeyChecking=no \
+    subpush@<US_IP> "echo test"  # 应报 forced-commands-only 错误
+```
+
+### 6.2 美国端 authorized_keys 配置
+
+```bash
+# 美国机：检查 subpush 用户 authorized_keys
+sudo cat /home/subpush/.ssh/authorized_keys
+# 应以 restrict,...,command="rsync ..." 开头
+```
+
+### 6.3 手动推送
+
+```bash
+# 荷兰机
+sudo /usr/local/sbin/push-clash-subscription-nl
+
+# 等价命令（调试用）
+rsync -e "ssh -i /home/subpush/.ssh/subpush_key" \
+    /var/www/clash/clash.yaml \
+    subpush@<US_IP>:/opt/clash-sub/staging/clash.yaml
+```
+
+---
+
+## 七、UFW 防火墙问题
+
+### 7.1 SSH 被封锁
+
+> [!CAUTION]
+> 如果 UFW 已启用且 SSH 被封锁，需要通过 VNC 或控制台登录修复。
+
+```bash
+# 控制台登录后
+ufw allow 22/tcp
+ufw status numbered
+```
+
+### 7.2 代理端口未开放
+
+```bash
+ufw allow 20001/tcp
+ufw allow 20001/udp
+ufw allow 20002/tcp comment 'Xray IPv6'
+ufw status
+```
+
+---
+
+## 八、部署状态检查
+
+```bash
+# 查看部署状态记录
+cat /var/lib/xray-portal/deployment-state.json
+
+# 检查所有服务
+systemctl status xray vpn-web nginx
+
+# 查看开放端口
+ss -tulpn | grep -E ':20001|:20002|:80|:443|:8080'
+```

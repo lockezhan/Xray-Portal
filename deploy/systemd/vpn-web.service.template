@@ -1,0 +1,42 @@
+[Unit]
+Description=Xray Portal Web (Flask + Gunicorn)
+Documentation=https://github.com/your-org/Xray_portal
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vpn-web
+Group=vpn-web
+
+WorkingDirectory=/usr/local/vpn-web
+
+# 环境文件（0600 root:root，通过 EnvironmentFile 安全注入）
+EnvironmentFile=/etc/xray-portal/vpn-web.env
+
+# 使用 Gunicorn 启动（不使用 python app.py 的开发服务器）
+ExecStart=/usr/local/vpn-web/venv/bin/gunicorn \
+    --bind 127.0.0.1:8080 \
+    --workers 2 \
+    --timeout 60 \
+    --keep-alive 5 \
+    --access-logfile /var/log/vpn-web/access.log \
+    --error-logfile /var/log/vpn-web/error.log \
+    --capture-output \
+    app:app
+
+Restart=on-failure
+RestartSec=5
+
+# 安全加固
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+# 允许写入日志目录和订阅发布目录（只读文件系统例外）
+ReadWritePaths=/var/log/vpn-web /opt/clash-sub/published
+
+[Install]
+WantedBy=multi-user.target
+# 兼容旧名称
+Alias=clash-subscribe.service

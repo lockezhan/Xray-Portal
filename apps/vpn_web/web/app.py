@@ -68,6 +68,8 @@ def index():
         return render_template('index.html', logged_in=False, wallpapers=wallpapers, downloads=downloads)
 
     # 脱敏打印最终订阅链接到系统控制台
+    # SUB_TOKEN 已在启动时验证非 None（见上方 sys.exit(1) 守护）
+    assert SUB_TOKEN is not None  # 满足 Pyright 类型检查
     safe_token = SUB_TOKEN[:6] + "..." + SUB_TOKEN[-6:] if len(SUB_TOKEN) > 12 else "..."
     safe_sub_url = FINAL_SUB_URL.replace(SUB_TOKEN, safe_token)
     print(f"[INFO] 登录用户请求了面板首页，展示脱敏订阅 URL: {safe_sub_url}")
@@ -93,6 +95,19 @@ def login():
 def logout():
     session.pop('logged_in', None)
     return redirect('/')
+
+# ==========================================
+# 🏥 健康检查端点（不泄露任何秘密信息）
+# ==========================================
+@app.route('/health')
+def health():
+    """
+    健康检查端点：供 install.sh 在启用 Nginx 前验证后端存活。
+    - 不需要认证
+    - 不包含订阅 URL、Token、密码等任何配置信息
+    - 仅返回服务运行状态
+    """
+    return jsonify({"status": "ok"}), 200
 
 # ==========================================
 # 🛡️ 订阅文件安全分发路由 (公网安全加锁)
