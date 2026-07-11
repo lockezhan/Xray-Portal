@@ -377,21 +377,7 @@ _us_install_clash_builder() {
     }
 
     # 安装订阅合并脚本
-    local clash_sub_dir="${US_INSTALL_DIR:-/opt/clash-sub}"
-    safe_mkdir "${clash_sub_dir}" 0755 "root:root"
-
-    local dirs=(incoming sources template generated published backups scripts logs)
-
-    for sub in "${dirs[@]}"; do
-        if [[ "${sub}" == "published" ]]; then
-            # Nginx (www-data) 必须可读该目录以提供订阅服务，而 subpush 组必须可写
-            safe_mkdir "${clash_sub_dir}/${sub}" 0775 "root:${SUBPUSH_GROUP:-subpush}"
-        else
-            safe_mkdir "${clash_sub_dir}/${sub}" 0770 "root:${SUBPUSH_GROUP:-subpush}"
-        fi
-    done
-
-    # 创建 subpush 用户（幂等）
+    # 1. 创建 subpush 用户与组（必须先创建，目录才能设定所有权）
     if [[ "${DRY_RUN:-false}" != "true" ]]; then
         if ! id -u "${SUBPUSH_USER:-subpush}" >/dev/null 2>&1; then
             useradd --system --shell /bin/bash \
@@ -404,7 +390,19 @@ _us_install_clash_builder() {
         fi
     fi
 
-    # 安装核心脚本
+    # 2. 建立目录结构，所有权与权限模式必须与 upload_validator.py 审计规则绝对一致
+    safe_mkdir "${clash_sub_dir}" 0755 "root:root"
+    safe_mkdir "${clash_sub_dir}/incoming" 0700 "${SUBPUSH_USER:-subpush}:${SUBPUSH_GROUP:-subpush}"
+    safe_mkdir "${clash_sub_dir}/sources" 0750 "root:root"
+    safe_mkdir "${clash_sub_dir}/published" 0755 "root:root"
+
+    # 其他辅助子目录保持安全隔离的 0770
+    local other_dirs=(template generated backups scripts logs)
+    for sub in "${other_dirs[@]}"; do
+        safe_mkdir "${clash_sub_dir}/${sub}" 0770 "root:${SUBPUSH_GROUP:-subpush}"
+    done
+
+    # 3. 安装核心脚本
     safe_install "${root_dir}/deploy/clash-sub/us/extract_merge.py" \
         "${clash_sub_dir}/scripts/extract_merge.py" 0750 "root:${SUBPUSH_GROUP:-subpush}"
 
