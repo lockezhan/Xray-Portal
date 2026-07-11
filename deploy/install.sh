@@ -84,6 +84,7 @@ PROXY_ONLY="false"
 SKIP_WEB="false"
 SKIP_NGINX="false"
 NO_CERTBOT="false"
+BOTS_ONLY="false"
 DRY_RUN="${DRY_RUN:-false}"
 export DRY_RUN
 
@@ -119,6 +120,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --no-certbot)
             NO_CERTBOT="true"
+            shift
+            ;;
+        --bots-only)
+            BOTS_ONLY="true"
             shift
             ;;
         --with-proxy)
@@ -157,6 +162,11 @@ fi
 # --proxy-only 与 --skip-proxy 互斥
 if [[ "${PROXY_ONLY}" == "true" && "${SKIP_PROXY}" == "true" ]]; then
     log_error "--proxy-only 与 --skip-proxy/--control-only 不能同时使用"
+    exit 1
+fi
+
+if [[ "${BOTS_ONLY}" == "true" && "${ROLE}" != "us" ]]; then
+    log_error "--bots-only 参数仅支持 us 角色"
     exit 1
 fi
 
@@ -221,6 +231,7 @@ case "${ROLE}" in
             --skip-web "${SKIP_WEB}" \
             --skip-nginx "${SKIP_NGINX}" \
             --no-certbot "${NO_CERTBOT}" \
+            --bots-only "${BOTS_ONLY}" \
             --state-file "${_state_file}"
         ;;
     nl)

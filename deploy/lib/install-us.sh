@@ -17,6 +17,7 @@ install_us() {
     local _skip_web="false"
     local _skip_nginx="false"
     local _no_certbot="false"
+    local _bots_only="false"
     local _state_file=""
 
     while [[ $# -gt 0 ]]; do
@@ -26,6 +27,7 @@ install_us() {
             --skip-web)     _skip_web="$2";    shift 2 ;;
             --skip-nginx)   _skip_nginx="$2";  shift 2 ;;
             --no-certbot)   _no_certbot="$2";  shift 2 ;;
+            --bots-only)    _bots_only="$2";   shift 2 ;;
             --state-file)   _state_file="$2";  shift 2 ;;
             *) shift ;;
         esac
@@ -33,6 +35,32 @@ install_us() {
 
     local root_dir
     root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
+    if [[ "${_bots_only}" == "true" ]]; then
+        log_info "============================================================"
+        log_info "  仅更新/部署 Telegram & QQ 机器人 (tg_bot) 流水线启动"
+        log_info "============================================================"
+        
+        # 确保 vpn-web 虚拟环境存在，否则无法单独部署机器人
+        if [[ ! -x /usr/local/vpn-web/venv/bin/python ]]; then
+            log_error "vpn-web 虚拟环境不存在 (/usr/local/vpn-web/venv)，请先运行一次常规完整安装！"
+            exit 1
+        fi
+        
+        _us_install_tg_bot "${root_dir}" || {
+            log_error "机器人模块部署失败！"
+            exit 1
+        }
+        
+        log_success "================================================================"
+        log_success "  机器人部署/更新已全部完成"
+        if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
+            log_warn "  ⊡ 运行 /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
+            log_warn "  ⊡ 部署并运行 NapCat Docker 容器作为 QQ Bot 后端（接口: ${BRIDGE_NAPCAT_API_URL:-3000}）"
+        fi
+        log_success "================================================================"
+        return 0
+    fi
 
     log_info "============================================================"
     log_info "  美国主服务器 (US) 部署流水线启动"
@@ -105,12 +133,17 @@ install_us() {
     # 阶段 7: install_vpn_web — 部署 Flask Web 面板
     # =========================================================================
     if [[ "${_skip_web}" == "true" ]]; then
-        log_info "--- [7/13] 部署 Web 面板 [SKIPPED: --skip-web] ---"
+        log_info "--- [7/13] 部署 Web 面板与机器人 [SKIPPED: --skip-web] ---"
         _state_update "${_state_file}" "web" "skipped"
     else
         log_info "--- [7/13] 部署 Flask Web 面板 ---"
         _us_install_vpn_web "${root_dir}" || {
             log_error "[7/13] Web 面板部署失败，中止部署！"
+            exit 1
+        }
+        log_info "--- [7.5] 部署 Telegram & QQ 机器人 (tg_bot) ---"
+        _us_install_tg_bot "${root_dir}" || {
+            log_error "[7.5] 机器人模块部署失败，中止部署！"
             exit 1
         }
         _state_update "${_state_file}" "web" "active"
@@ -564,6 +597,91 @@ ENVEOF
     log_success "[7/13] Flask Web 面板部署完成"
 }
 
+_us_install_tg_bot() {
+    local root_dir="$1"
+
+    if [[ "${DRY_RUN:-false}" == "true" ]]; then
+        log_info "[DRY-RUN] 部署 tg_bot 模块 → /usr/local/tg_bot"
+        return 0
+    fi
+
+    log_info "创建 tg_bot 工作目录和缓存目录..."
+    mkdir -p /usr/local/tg_bot
+    mkdir -p /var/lib/tg-bridge-cache
+    chmod 755 /var/lib/tg-bridge-cache
+
+    # 部署源码
+    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/tg_bot.py" /usr/local/tg_bot/tg_bot.py
+    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/bridge_bot.py" /usr/local/tg_bot/bridge_bot.py
+    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/fetch_link.py" /usr/local/tg_bot/fetch_link.py
+    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/login_userbot.py" /usr/local/tg_bot/login_userbot.py
+
+    # 写入专用 .env 配置文件
+    local env_dest="/usr/local/tg_bot/.env"
+    cat > "${env_dest}" <<ENVEOF
+# 由 install.sh 自动生成
+CHANNEL_BOT_TOKEN=${CHANNEL_BOT_TOKEN:-}
+CHANNEL_ADMIN_ID=${CHANNEL_ADMIN_ID:-}
+CHANNEL_GROUP_ID=${CHANNEL_GROUP_ID:-}
+BRIDGE_BOT_TOKEN=${BRIDGE_BOT_TOKEN:-}
+BRIDGE_TARGET_QQ_GROUP=${BRIDGE_TARGET_QQ_GROUP:-}
+BRIDGE_SERVER_PUBLIC_IP=${BRIDGE_SERVER_PUBLIC_IP:-}
+BRIDGE_NAPCAT_API_URL=${BRIDGE_NAPCAT_API_URL:-http://127.0.0.1:3000/send_msg}
+TELEGRAM_USER_API_ID=${TELEGRAM_USER_API_ID:-}
+TELEGRAM_USER_API_HASH=${TELEGRAM_USER_API_HASH:-}
+ENVEOF
+    chmod 600 "${env_dest}"
+    chown root:root "${env_dest}"
+
+    # 安装依赖
+    log_info "为 tg_bot 安装 Python 依赖..."
+    if [[ -x /usr/local/vpn-web/venv/bin/pip ]]; then
+        /usr/local/vpn-web/venv/bin/pip install -q -r "${root_dir}/apps/tg_bot/requirements.txt" || {
+            log_error "tg_bot 依赖安装失败！请检查网络连接。"
+            return 1
+        }
+        log_success "tg_bot 依赖安装完成"
+    else
+        log_error "vpn-web venv 虚拟环境不存在，无法为 tg_bot 安装依赖！"
+        return 1
+    fi
+
+    # 部署 systemd 服务
+    local tgbot_svc="${root_dir}/deploy/systemd/tgbot.service"
+    local bridge_svc="${root_dir}/deploy/systemd/tg-qq-bridge.service"
+
+    if [[ -f "${tgbot_svc}" ]]; then
+        install -o root -g root -m 0644 "${tgbot_svc}" /etc/systemd/system/tgbot.service
+    else
+        log_error "tgbot.service 模板不存在！"
+        return 1
+    fi
+
+    if [[ -f "${bridge_svc}" ]]; then
+        install -o root -g root -m 0644 "${bridge_svc}" /etc/systemd/system/tg-qq-bridge.service
+    else
+        log_error "tg-qq-bridge.service 模板不存在！"
+        return 1
+    fi
+
+    systemctl daemon-reload
+
+    # 根据 ENABLE_BOTS 配置决定是否启动并使能
+    if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
+        log_info "启用并启动 tgbot 与 tg-qq-bridge 服务..."
+        systemctl enable tgbot tg-qq-bridge >/dev/null 2>&1
+        systemctl restart tgbot tg-qq-bridge || {
+            log_warn "启动 tgbot 或 tg-qq-bridge 失败（可能是因为尚未进行 Userbot 登录授权）"
+        }
+    else
+        log_info "ENABLE_BOTS 未开启或设为 false，禁用并关闭 bot 相关服务..."
+        systemctl disable tgbot tg-qq-bridge >/dev/null 2>&1
+        systemctl stop tgbot tg-qq-bridge >/dev/null 2>&1 || true
+    fi
+
+    log_success "[7.5] tg_bot 模块部署完成"
+}
+
 _us_verify_vpn_web_local() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         log_info "[DRY-RUN] curl http://127.0.0.1:8080/health"
@@ -963,6 +1081,7 @@ _us_print_summary() {
     log_success "  ✓ Clash 原始配置生成"
     log_success "  ✓ Mihomo 订阅构建器"
     [[ "${skip_web}" != "true" ]] && log_success "  ✓ Flask Web 面板（vpn-web 专用用户，gunicorn）"
+    [[ "${skip_web}" != "true" ]] && log_success "  ✓ Telegram & QQ 机器人（代码部署与服务配置）"
     [[ "${skip_nginx}" != "true" ]] && log_success "  ✓ Nginx HTTP 配置"
     [[ "${no_certbot}" != "true" && "${skip_nginx}" != "true" ]] && log_success "  ✓ TLS 证书（Let's Encrypt）"
     log_success "  ✓ 初始订阅发布"
@@ -973,6 +1092,10 @@ _us_print_summary() {
     log_warn "  ⊡ 交换荷兰副机 SSH 公钥（subpush 双机互信）"
     log_warn "  ⊡ 将 NL 节点配置首次推送到本机触发合并"
     log_warn "  ⊡ 将订阅 URL 分发给客户端"
+    if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
+        log_warn "  ⊡ 运行 /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
+        log_warn "  ⊡ 部署并运行 NapCat Docker 容器作为 QQ Bot 后端（接口: ${BRIDGE_NAPCAT_API_URL:-3000}）"
+    fi
 
     log_info ""
     log_info "【访问地址】"
