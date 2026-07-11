@@ -210,14 +210,40 @@ _us_preflight() {
         fi
     done
 
-    # 检查必需命令
+    # 检查并自动安装缺失的必需命令
     local required_cmds=(python3 openssl curl unzip git)
+    local missing_cmds=()
     for cmd in "${required_cmds[@]}"; do
         if ! command -v "${cmd}" >/dev/null 2>&1; then
-            log_error "预检失败: 缺少必需命令: ${cmd}"
-            exit 1
+            missing_cmds+=("${cmd}")
         fi
     done
+
+    if [[ ${#missing_cmds[@]} -gt 0 ]]; then
+        log_info "检测到缺少必需命令: ${missing_cmds[*]}，将自动尝试安装..."
+        if [[ "${DRY_RUN:-false}" == "true" ]]; then
+            log_info "[DRY-RUN] apt-get update && apt-get install -y ${missing_cmds[*]}"
+        else
+            export DEBIAN_FRONTEND=noninteractive
+            local pkgs=()
+            for cmd in "${missing_cmds[@]}"; do
+                case "${cmd}" in
+                    python3) pkgs+=("python3" "python3-venv" "python3-pip") ;;
+                    unzip)   pkgs+=("unzip") ;;
+                    git)     pkgs+=("git") ;;
+                    curl)    pkgs+=("curl") ;;
+                    openssl) pkgs+=("openssl") ;;
+                    *)       pkgs+=("${cmd}") ;;
+                esac
+            done
+            apt-get update -qq
+            apt-get install -y --no-install-recommends "${pkgs[@]}" || {
+                log_error "自动安装缺失命令失败，请手动运行: apt-get install -y ${pkgs[*]}"
+                exit 1
+            }
+            log_success "缺失命令安装成功。"
+        fi
+    fi
 
     # 校验必要环境变量已设置
     local required_vars=(US_SUB_DOMAIN SUB_TOKEN PORTAL_PASSWORD FLASK_SECRET_KEY)
@@ -388,7 +414,7 @@ _us_install_clash_builder() {
     local cfg_path="${clash_sub_dir}/scripts/config.env"
     if [[ "${DRY_RUN:-false}" != "true" ]]; then
         local tmp_cfg
-        tmp_cfg=$(mktemp "${clash_sub_dir}/scripts/.config.env.XXXXXX")
+        tmp_cfg=$(mktemp /tmp/config.env.XXXXXX)
         cat > "${tmp_cfg}" <<EOF
 SUB_TOKEN="${SUB_TOKEN}"
 CLASH_US_SOURCE="${CLASH_US_SOURCE:-/var/www/clash/clash.yaml}"
@@ -428,7 +454,7 @@ _us_install_vpn_web() {
     # 创建安装目录
     mkdir -p /usr/local/vpn-web
     mkdir -p /var/log/vpn-web
-    chown vpn-web:vpn-web /var/log/vpn-web
+    chown -R vpn-web:vpn-web /var/log/vpn-web
 
     # 部署源码
     install -o root -g vpn-web -m 0640 "${root_dir}/apps/vpn_web/web/app.py" /usr/local/vpn-web/app.py
@@ -440,20 +466,20 @@ _us_install_vpn_web() {
 
     # 渲染 config.py（不含凭据，凭据通过 EnvironmentFile 注入）
     local tmp_cfg
-    tmp_cfg=$(mktemp /usr/local/vpn-web/.config.py.XXXXXX)
+    tmp_cfg=$(mktemp /tmp/config.py.XXXXXX)
     cat > "${tmp_cfg}" <<PYEOF
 import os
 PORTAL_PASSWORD = os.environ.get("PORTAL_PASSWORD", "")
 SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "")
 PYEOF
-    chmod 600 "${tmp_cfg}"
-    chown root:root "${tmp_cfg}"
+    chmod 640 "${tmp_cfg}"
+    chown root:vpn-web "${tmp_cfg}"
     mv -f "${tmp_cfg}" /usr/local/vpn-web/config.py
 
     # 生成 EnvironmentFile（/etc/xray-portal/vpn-web.env，0600）
     mkdir -p /etc/xray-portal
     local tmp_env
-    tmp_env=$(mktemp /etc/xray-portal/.vpn-web.env.XXXXXX)
+    tmp_env=$(mktemp /tmp/vpn-web.env.XXXXXX)
     cat > "${tmp_env}" <<ENVEOF
 SUB_TOKEN=${SUB_TOKEN}
 SUB_PUBLIC_URL=https://${US_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml
@@ -574,7 +600,7 @@ _us_configure_nginx_http() {
 
     # 渲染 HTTP-only 配置（Phase 1，不含 SSL）
     local tmp_conf
-    tmp_conf=$(mktemp /etc/nginx/sites-available/.us-subscription.conf.XXXXXX)
+    tmp_conf=$(mktemp /tmp/us-subscription.conf.XXXXXX)
 
     # 生成 Nginx 配置（条件渲染）
     _render_us_nginx_conf_http "${skip_web}" > "${tmp_conf}"
@@ -718,7 +744,7 @@ _us_configure_tls() {
 
     # Phase 2：渲染含 SSL 的完整配置
     local tmp_conf
-    tmp_conf=$(mktemp /etc/nginx/sites-available/.us-subscription-tls.conf.XXXXXX)
+    tmp_conf=$(mktemp /tmp/us-subscription-tls.conf.XXXXXX)
     _render_us_nginx_conf_tls > "${tmp_conf}"
     chmod 644 "${tmp_conf}"
     mv -f "${tmp_conf}" /etc/nginx/sites-available/us-subscription.conf
@@ -890,7 +916,7 @@ _us_verify_subscription() {
 
     local test_dir
     test_dir=$(mktemp -d /tmp/mihomo-verify.XXXXXX)
-    trap 'rm -rf "${test_dir}"' RETURN
+    trap "rm -rf '${test_dir}'" RETURN
 
     cp "${published_file}" "${test_dir}/config.yaml"
     if ! "${mihomo_bin}" -t -d "${test_dir}" 2>&1 | grep -v "^$"; then
