@@ -97,7 +97,7 @@ install_mihomo() {
     local download_url="https://github.com/MetaCubeX/mihomo/releases/download/${MIHOMO_VERSION}/${pkg_name}"
     local tmp_dir
     tmp_dir=$(mktemp -d /tmp/mihomo-install.XXXXXX)
-    trap 'rm -rf "${tmp_dir}"' RETURN
+    trap "rm -rf '${tmp_dir}'" RETURN
 
     log_info "下载 Mihomo: ${download_url}"
     if ! curl -fsSL --retry 3 --retry-delay 5 \
