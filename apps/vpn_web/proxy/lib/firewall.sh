@@ -60,8 +60,8 @@ configure_ufw() {
         ufw allow "${port_legacy}"/udp comment 'Xray SS Legacy UDP'
     fi
 
-    # 放行 Web 服务端口（如启用）
-    if [[ "${ENABLE_WEB:-true}" == "true" ]]; then
+    # 放行 Web 服务与订阅分发端口
+    if [[ "${ENABLE_WEB:-true}" == "true" || -n "${US_SUB_DOMAIN:-}" || -n "${NL_SUB_DOMAIN:-}" ]]; then
         log_info "放行 HTTP/HTTPS 端口..."
         ufw allow 80/tcp comment 'Nginx HTTP'
         ufw allow 443/tcp comment 'Nginx HTTPS'
