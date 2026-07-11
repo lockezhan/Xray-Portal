@@ -56,14 +56,14 @@ fi
 case "${ROLE}" in
     us)
         # 写入美国服务器受限账户 subpush，强制执行 subpush-cmd-wrapper
-        local target_user="${USER_OVERRIDE:-subpush}"
-        local auth_file="/opt/clash-sub/.ssh/authorized_keys"
+        target_user="${USER_OVERRIDE:-subpush}"
+        auth_file="/opt/clash-sub/.ssh/authorized_keys"
         install_authorized_key "${PUBKEY}" "${auth_file}" "/opt/clash-sub/scripts/subpush-cmd-wrapper" "${target_user}:${target_user}"
         ;;
     nl)
         # 写入荷兰服务器受限账户 submirror
-        local target_user="${USER_OVERRIDE:-submirror}"
-        local auth_file="/home/${target_user}/.ssh/authorized_keys"
+        target_user="${USER_OVERRIDE:-submirror}"
+        auth_file="/home/${target_user}/.ssh/authorized_keys"
         install_authorized_key "${PUBKEY}" "${auth_file}" "none" "${target_user}:${target_user}"
         ;;
 esac
