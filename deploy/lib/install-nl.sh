@@ -293,34 +293,59 @@ _nl_install_mirror_service() {
 
 _nl_install_push_client() {
     local root_dir="$1"
+    local run_user="${SUBMIRROR_USER:-submirror}"
+    local run_group="${SUBMIRROR_GROUP:-submirror}"
+    local work_dir="/opt/clash-sub-mirror"
+    local config_path="${work_dir}/config.env"
 
     if [[ "${DRY_RUN:-false}" != "true" ]]; then
-        # 创建工作目录与日志目录
-        mkdir -p /opt/clash-sub-mirror/logs
-        chown -R "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}" /opt/clash-sub-mirror
+        # 顶层目录必须由 root 控制，防止运行用户替换 config.env。
+        install -d \
+            -o root \
+            -g root \
+            -m 0755 \
+            "${work_dir}"
 
-        # 自动渲染 config.env 避免用户手动运行初始化脚本
+        # 只有日志目录需要允许 submirror 写入。
+        install -d \
+            -o "${run_user}" \
+            -g "${run_group}" \
+            -m 0750 \
+            "${work_dir}/logs"
+
+        # 临时文件必须创建在目标目录中，确保 mv 是同文件系统原子替换。
         local tmp_cfg
-        tmp_cfg=$(mktemp /tmp/nl-config.env.XXXXXX)
-        cat > "${tmp_cfg}" <<EOF
-SUB_TOKEN=${SUB_TOKEN}
+        tmp_cfg="$(mktemp "${work_dir}/.config.env.XXXXXX")"
+
+        if ! cat > "${tmp_cfg}" <<EOF
 US_IP=${US_SERVER_IP}
-US_DOMAIN=${US_SUB_DOMAIN}
-NL_DOMAIN=${NL_SUB_DOMAIN}
-NL_SUB_DIR=${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}
-US_INCOMING=/opt/clash-sub/incoming
-LOG_FILE=/opt/clash-sub-mirror/logs/push.log
 EOF
-        chmod 600 "${tmp_cfg}"
-        chown "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}" "${tmp_cfg}"
-        mv -f "${tmp_cfg}" /opt/clash-sub-mirror/config.env
+        then
+            rm -f -- "${tmp_cfg}"
+            log_error "生成 NL 推送配置失败"
+            return 1
+        fi
+
+        # 配置由 root 管理，submirror 只能读取。
+        chown root:"${run_group}" "${tmp_cfg}"
+        chmod 0640 "${tmp_cfg}"
+
+        mv -f -- "${tmp_cfg}" "${config_path}"
+    else
+        log_info "[DRY-RUN] 生成 ${config_path}，所有者 root:${run_group}，权限 0640"
     fi
 
-    safe_install "${root_dir}/deploy/clash-sub/nl/push-clash-subscription-nl.sh" \
-        "/usr/local/sbin/push-clash-subscription-nl" 0755 "root:root"
+    safe_install \
+        "${root_dir}/deploy/clash-sub/nl/push-clash-subscription-nl.sh" \
+        "/usr/local/sbin/push-clash-subscription-nl" \
+        0755 \
+        "root:root"
 
-    safe_install "${root_dir}/deploy/clash-sub/nl/nl_init.sh" \
-        "/usr/local/sbin/nl_init" 0755 "root:root"
+    safe_install \
+        "${root_dir}/deploy/clash-sub/nl/nl_init.sh" \
+        "/usr/local/sbin/nl_init" \
+        0755 \
+        "root:root"
 
     log_success "[7/12] 推送客户端脚本安装完成"
 }

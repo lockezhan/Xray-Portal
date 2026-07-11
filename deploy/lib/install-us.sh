@@ -367,6 +367,9 @@ _us_generate_clash_source() {
 
 _us_install_clash_builder() {
     local root_dir="$1"
+    # clash_sub_dir：clash 订阅构建系统的安装根目录
+    # 对应 env.sh 中的 US_INSTALL_DIR，默认 /opt/clash-sub
+    local clash_sub_dir="${US_INSTALL_DIR:-/opt/clash-sub}"
 
     # 安装 Mihomo（固定版本 + SHA256 校验）
     # shellcheck disable=SC1091

@@ -12,7 +12,33 @@ if [[ ! -f "$CONFIG_ENV" ]]; then
   exit 1
 fi
 # shellcheck disable=SC1090
-source "$CONFIG_ENV"
+US_IP=""
+
+while IFS='=' read -r key value || [[ -n "${key}" ]]; do
+    value="${value%$'\r'}"
+
+    case "${key}" in
+        US_IP)
+            US_IP="${value}"
+            ;;
+        ""|\#*)
+            ;;
+        *)
+            # 忽略所有非白名单键。
+            ;;
+    esac
+done < "${CONFIG_ENV}"
+
+if [[ -z "${US_IP}" ]]; then
+    echo "[FATAL] config.env 中缺少 US_IP" >&2
+    exit 1
+fi
+
+# 只允许普通主机名、IPv4 或 IPv6 字符。
+if [[ ! "${US_IP}" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+    echo "[FATAL] US_IP 格式不合法" >&2
+    exit 1
+fi
 
 LOG_FILE="/opt/clash-sub-mirror/logs/push.log"
 mkdir -p "$(dirname "$LOG_FILE")"
@@ -65,7 +91,7 @@ except Exception as e:
 log INFO "正在通过安全标准输入协议传输配置并唤醒美国端重建..."
 if ! cat "$NL_CLASH_SOURCE" | ssh -i "$PRIVATE_KEY" \
   -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-  subpush@$US_IP upload-nl 2>&1 | tee -a "$LOG_FILE"; then
+  "subpush@${US_IP}" upload-nl 2>&1 | tee -a "$LOG_FILE"; then
   log ERROR "配置传输与重建触发失败"
   exit 3
 fi
