@@ -51,6 +51,9 @@ install_nl() {
             if [[ -d /etc/nginx/sites-enabled ]]; then
                 ln -sf /etc/nginx/sites-available/nl-subscription.conf /etc/nginx/sites-enabled/nl-subscription.conf
             fi
+            if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet nginx; then
+                systemctl reload nginx || true
+            fi
             log_success "荷兰端 Nginx 只读镜像站配置渲染部署完成。"
         fi
     fi

@@ -74,6 +74,9 @@ case "${ROLE}" in
         verify_file_exists "${US_INSTALL_DIR:-/opt/clash-sub}/scripts/subpush-cmd-wrapper"
         verify_file_exists "/usr/local/sbin/rebuild-clash-subscription"
         verify_file_exists "${US_INSTALL_DIR:-/opt/clash-sub}/scripts/config.env"
+        verify_file_exists "/usr/local/vpn-web/app.py"
+        verify_file_exists "/usr/local/vpn-web/config.py"
+        verify_file_exists "/etc/systemd/system/vpn-web.service"
         ;;
     nl)
         verify_user_exists "${SUBMIRROR_USER:-submirror}"
