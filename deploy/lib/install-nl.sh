@@ -322,7 +322,7 @@ _nl_configure_nginx_http() {
     fi
 
     local tmp_conf
-    tmp_conf=$(mktemp /etc/nginx/sites-available/.nl-subscription.conf.XXXXXX)
+    tmp_conf=$(mktemp /tmp/nl-subscription.conf.XXXXXX)
 
     cat > "${tmp_conf}" <<NGINX_EOF
 # 荷兰只读镜像站 - HTTP Phase 1（TLS 申请前）
@@ -405,9 +405,8 @@ _nl_configure_tls() {
         return 1
     }
 
-    # Phase 2: 渲染含 SSL 配置
     local tmp_conf
-    tmp_conf=$(mktemp /etc/nginx/sites-available/.nl-subscription-tls.conf.XXXXXX)
+    tmp_conf=$(mktemp /tmp/nl-subscription-tls.conf.XXXXXX)
 
     cat > "${tmp_conf}" <<NGINX_EOF
 # 荷兰只读镜像站 - HTTPS Phase 2

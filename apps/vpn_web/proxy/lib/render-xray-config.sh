@@ -77,7 +77,7 @@ _load_or_generate_proxy_keys() {
 
     # 原子写入 proxy.env（mktemp + mv，避免写断裂）
     local tmp_env
-    tmp_env=$(mktemp /etc/xray-portal/.proxy.env.XXXXXX)
+    tmp_env=$(mktemp /tmp/proxy.env.XXXXXX)
 
     cat > "${tmp_env}" <<EOF
 # =============================================================================
@@ -173,7 +173,7 @@ EOF
 
     # 原子写入 config.json
     local tmp_cfg
-    tmp_cfg=$(mktemp /usr/local/etc/xray/.config.json.XXXXXX)
+    tmp_cfg=$(mktemp /tmp/config.json.XXXXXX)
 
     cat > "${tmp_cfg}" <<JSONEOF
 {
@@ -209,7 +209,7 @@ JSONEOF
     local proxy_domain="${PROXY_DOMAIN:-$(curl -fsSL --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo 'unknown')}"
     local meta_file="/etc/xray-portal/proxy-meta.conf"
     local tmp_meta
-    tmp_meta=$(mktemp /etc/xray-portal/.proxy-meta.XXXXXX)
+    tmp_meta=$(mktemp /tmp/proxy-meta.XXXXXX)
 
     cat > "${tmp_meta}" <<METAEOF
 # 代理元数据配置（不含密钥）
