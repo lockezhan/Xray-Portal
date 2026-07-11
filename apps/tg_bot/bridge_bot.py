@@ -72,30 +72,48 @@ COVER_IMAGE_PATH = "/root/wallhaven-gw7wld_2560x1440.png"  # 伪装用的表层�
 # 💡 AsyncTeleBot 走的是 telebot.asyncio_helper 模块（而非 apihelper），
 #    其中 API_URL / download_file / get_file_url 全部硬编码了 api.telegram.org。
 #    必须对 asyncio_helper 模块进行猴子补丁才能生效。
-LOCAL_API_BASE = "http://127.0.0.1:8081"
+import socket
+
+def is_port_open(host, port, timeout=1):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+# 检查本地的 Telegram Bot API 服务器是否在 8081 端口运行
+if is_port_open("127.0.0.1", 8081):
+    LOCAL_API_BASE = "http://127.0.0.1:8081"
+    USE_LOCAL_API = True
+    print("[*] 检测到本地 Telegram Bot API 服务器已启动（8081），使用本地 API 模式。")
+else:
+    LOCAL_API_BASE = "https://api.telegram.org"
+    USE_LOCAL_API = False
+    print("[!] 未检测到本地 Telegram Bot API 服务器，已回退使用官方 API 端点。")
 
 from telebot import asyncio_helper
 
-# 1. 覆写异步模块的 API_URL，让 getFile 等所有 API 调用走本地
-asyncio_helper.API_URL = f"{LOCAL_API_BASE}/bot{{0}}/{{1}}"
+if USE_LOCAL_API:
+    # 1. 覆写异步模块的 API_URL，让 getFile 等所有 API 调用走本地
+    asyncio_helper.API_URL = f"{LOCAL_API_BASE}/bot{{0}}/{{1}}"
 
-# 2. 猴子补丁 download_file：支持 --local 模式的本地磁盘直读和本地 HTTP 下载
-_original_async_download = asyncio_helper.download_file
+    # 2. 猴子补丁 download_file：支持 --local 模式的本地磁盘直读和本地 HTTP 下载
+    _original_async_download = asyncio_helper.download_file
 
-async def _patched_async_download_file(token, file_path):
-    # --local 模式下，file_path 可能是 VPS 本地绝对路径（如 /var/lib/telegram-bot-api/...）
-    if os.path.isfile(file_path):
-        with open(file_path, 'rb') as f:
-            return f.read()
-    # 否则走本地 API HTTP 下载
-    url = f"{LOCAL_API_BASE}/file/bot{token}/{file_path}"
-    async with aiohttp.ClientSession() as session:
-        async with session.get(url) as resp:
-            if resp.status != 200:
-                raise Exception(f"本地 API 文件下载失败: HTTP {resp.status}")
-            return await resp.read()
+    async def _patched_async_download_file(token, file_path):
+        # --local 模式下，file_path 可能是 VPS 本地绝对路径（如 /var/lib/telegram-bot-api/...）
+        if os.path.isfile(file_path):
+            with open(file_path, 'rb') as f:
+                return f.read()
+        # 否则走本地 API HTTP 下载
+        url = f"{LOCAL_API_BASE}/file/bot{token}/{file_path}"
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as resp:
+                if resp.status != 200:
+                    raise Exception(f"本地 API 文件下载失败: HTTP {resp.status}")
+                return await resp.read()
 
-asyncio_helper.download_file = _patched_async_download_file
+    asyncio_helper.download_file = _patched_async_download_file
 
 # 初始化 Telebot 客户端 (使用 HTTP 协议，完美避开 MTProto 在 VPS 环境下卡死的问题)
 bot = AsyncTeleBot(BOT_TOKEN)

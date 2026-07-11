@@ -43,9 +43,24 @@ except ValueError as ve:
     print(f"错误: 环境变量类型转换失败: {ve}", file=sys.stderr)
     sys.exit(1)
 
-from telebot import apihelper
-apihelper.API_URL = "http://127.0.0.1:8081/bot{0}/{1}"
-apihelper.FILE_URL = "http://127.0.0.1:8081"
+import socket
+
+def is_port_open(host, port, timeout=1):
+    try:
+        with socket.create_connection((host, port), timeout=timeout):
+            return True
+    except OSError:
+        return False
+
+# 检查本地的 Telegram Bot API 服务器是否在 8081 端口运行
+if is_port_open("127.0.0.1", 8081):
+    from telebot import apihelper
+    apihelper.API_URL = "http://127.0.0.1:8081/bot{0}/{1}"
+    apihelper.FILE_URL = "http://127.0.0.1:8081"
+    print("检测到本地 Telegram Bot API 服务器已启动（8081），使用本地 API 模式。")
+else:
+    print("未检测到本地 Telegram Bot API 服务器，已自动回退使用 Telegram 官方 API (https://api.telegram.org)。")
+
 # 将请求超时设置拉长到 10 分钟，以防止发送几个 GB 大小的视频时 bot 抛出超时断开
 bot = telebot.TeleBot(TOKEN, threaded=True)
 media_groups = {}
