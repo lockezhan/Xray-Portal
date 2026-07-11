@@ -719,33 +719,38 @@ async def handle_sticker_message(message):
                 
         elif sticker.is_video: # .webm -> .gif
             local_converted_path = os.path.join(CACHE_DIR, f"sticker_{token}.gif")
-            # 采用高质量 gif 转换方案
-            process = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-y", "-i", local_orig_path, 
-                "-vf", "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
-                local_converted_path,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            await process.communicate()
-            if process.returncode != 0:
-                # 若 copy 失败，尝试基础重编码
+            try:
+                # 采用高质量 gif 转换方案
+                process = await asyncio.create_subprocess_exec(
+                    "ffmpeg", "-y", "-i", local_orig_path, 
+                    "-vf", "split[s0][s1];[s0]palettegen[p];[s1][p]paletteuse",
+                    local_converted_path,
+                    stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                )
+                await process.communicate()
+                if process.returncode != 0:
+                    process = await asyncio.create_subprocess_exec(
+                        "ffmpeg", "-y", "-i", local_orig_path, local_converted_path,
+                        stdout=subprocess.PIPE, stderr=subprocess.PIPE
+                    )
+                    await process.communicate()
+            except Exception as ffmpeg_err:
+                print(f"[-] ffmpeg 转换动态贴纸失败 (可能未安装 ffmpeg)，回退发送源文件: {ffmpeg_err}")
+                local_converted_path = local_orig_path
+                
+        else: # .webp -> .png (避免QQ兼容性问题)
+            local_converted_path = os.path.join(CACHE_DIR, f"sticker_{token}.png")
+            try:
                 process = await asyncio.create_subprocess_exec(
                     "ffmpeg", "-y", "-i", local_orig_path, local_converted_path,
                     stdout=subprocess.PIPE, stderr=subprocess.PIPE
                 )
                 await process.communicate()
                 if process.returncode != 0:
-                    raise Exception("WEBM转GIF失败")
-                
-        else: # .webp -> .png (避免QQ兼容性问题)
-            local_converted_path = os.path.join(CACHE_DIR, f"sticker_{token}.png")
-            process = await asyncio.create_subprocess_exec(
-                "ffmpeg", "-y", "-i", local_orig_path, local_converted_path,
-                stdout=subprocess.PIPE, stderr=subprocess.PIPE
-            )
-            await process.communicate()
-            if process.returncode != 0:
-                raise Exception("WEBP转PNG失败")
+                    local_converted_path = local_orig_path
+            except Exception as ffmpeg_err:
+                print(f"[-] ffmpeg 转换静态贴纸失败，回退发送源文件: {ffmpeg_err}")
+                local_converted_path = local_orig_path
 
         if not local_converted_path or not os.path.exists(local_converted_path):
             local_converted_path = local_orig_path # 回退到源文件

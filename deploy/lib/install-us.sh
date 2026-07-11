@@ -319,6 +319,7 @@ _us_install_packages() {
         jq \
         openssl \
         ufw \
+        ffmpeg \
         unzip \
         rsync \
         coreutils
