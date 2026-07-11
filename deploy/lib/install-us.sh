@@ -415,6 +415,15 @@ _us_install_clash_builder() {
     safe_install "${root_dir}/deploy/clash-sub/us/rebuild-clash-subscription.sh" \
         "/usr/local/sbin/rebuild-clash-subscription" 0755 "root:root"
 
+    # 配置 sudoers 规则，允许 subpush 用户免密执行 rebuild-clash-subscription
+    if [[ "${DRY_RUN:-false}" != "true" ]]; then
+        local sudoers_file="/etc/sudoers.d/90-xray-portal-subpush"
+        log_info "配置 sudoers 规则以允许 ${SUBPUSH_USER:-subpush} 免密运行 rebuild-clash-subscription..."
+        echo "${SUBPUSH_USER:-subpush} ALL=(ALL) NOPASSWD: /usr/local/sbin/rebuild-clash-subscription" > "${sudoers_file}"
+        chmod 0440 "${sudoers_file}"
+        chown root:root "${sudoers_file}"
+    fi
+
     # 生成运行时配置
     local cfg_path="${clash_sub_dir}/scripts/config.env"
     if [[ "${DRY_RUN:-false}" != "true" ]]; then
