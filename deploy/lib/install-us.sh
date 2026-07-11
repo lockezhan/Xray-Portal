@@ -56,9 +56,8 @@ install_us() {
         log_success "  机器人部署/更新步骤已执行完毕！"
         log_info ""
         log_warn "  👉 【注意：请务必按照提示进行以下手动操作以完成最终部署】 👈"
-        log_warn "  1. 授权登录 Telegram 账号（如果是初次部署，必须在终端手动运行一次）："
-        log_warn "     source /home/elite/.venv/bin/activate"
-        log_warn "     python3 /usr/local/tg_bot/login_userbot.py"
+        log_warn "  1. 授权登录 Telegram 账号（如果是初次部署，请运行以下命令进行登录）："
+        log_warn "     /usr/local/vpn-web/venv/bin/python /usr/local/tg_bot/login_userbot.py"
         log_warn ""
         log_warn "  2. 启用并立即启动系统服务（如果您还未启用它们）："
         log_warn "     sudo systemctl daemon-reload"
@@ -1107,7 +1106,7 @@ _us_print_summary() {
     log_warn "  ⊡ 将 NL 节点配置首次推送到本机触发合并"
     log_warn "  ⊡ 将订阅 URL 分发给客户端"
     if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
-        log_warn "  ⊡ 运行 /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
+        log_warn "  ⊡ 运行 /usr/local/vpn-web/venv/bin/python /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
         log_warn "  ⊡ 部署并运行 NapCat Docker 容器作为 QQ Bot 后端（接口: ${BRIDGE_NAPCAT_API_URL:-3000}）"
     fi
 

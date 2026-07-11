@@ -1,3 +1,5 @@
+#!/usr/local/vpn-web/venv/bin/python
+# -*- coding: utf-8 -*-
 import os
 import sys
 from telethon import TelegramClient
