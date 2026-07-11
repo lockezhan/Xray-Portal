@@ -326,11 +326,10 @@ async def handle_stream(request):
     if not os.path.exists(item["path"]):
         return web.HTTPNotFound()
         
-    filename = os.path.basename(item["path"])
-    return web.Response(headers={
-        "Content-Type": item["type"],
-        "X-Accel-Redirect": f"/protected_media/{filename}"
-    })
+    return web.FileResponse(
+        item["path"],
+        headers={"Content-Type": item["type"]}
+    )
 
 async def handle_download(request):
     token = request.query.get("token")
