@@ -238,6 +238,12 @@ def build_base_config() -> dict:
             # redir-host 允许使用传统 UDP DNS，国内直接 30ms 内返回，
             # 境外通过 fallback 走代理解析，整体延迟降低约 30-50%。
             'enhanced-mode': 'redir-host',
+            # 当 respect-rules 为 True 时，必须指定 proxy-server-nameserver，
+            # 否则 Mihomo 内核启动校验会报错 "if 'respect-rules' is turned on, 'proxy-server-nameserver' cannot be empty"
+            'proxy-server-nameserver': [
+                '223.5.5.5',
+                '119.29.29.29',
+            ],
             # 国内 nameserver：纯 UDP 明文 DNS，延迟极低（约 20-50ms）
             'nameserver': [
                 '223.5.5.5',    # 阿里 DNS
