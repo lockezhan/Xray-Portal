@@ -1006,6 +1006,9 @@ server {
     ssl_certificate /etc/letsencrypt/live/${US_SUB_DOMAIN}/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/${US_SUB_DOMAIN}/privkey.pem;
 
+    # 自动处理误用 http:// 打开 HTTPS 端口的情况 (Nginx 497 状态码自动重定向为 https://)
+    error_page 497 https://$host:8083$request_uri;
+
     location / {
         proxy_pass http://127.0.0.1:8082;
         proxy_set_header Host \$host;
