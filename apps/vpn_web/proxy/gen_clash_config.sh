@@ -129,9 +129,10 @@ fi
 mkdir -p "${SUBSCRIBE_DIR}"
 
 # 构建代理节点列表（条件包含 IPv6/Legacy）
+# 注意：IPv4 节点强制使用裸 IPv4 地址（非域名），避免客户端 DNS 解析时 IPv6 优先导致双栈冲突
 PROXIES_YAML="  - name: \"US-IPv4\"
     type: ss
-    server: ${DOMAIN}
+    server: ${IPV4}
     port: ${PORT_V4}
     cipher: ${METHOD_V4}
     password: \"${PASS_V4}\"
@@ -150,11 +151,12 @@ if [[ "${PROXY_ENABLE_IPV6:-true}" == "true" && -n "${PASS_V6}" && -n "${IPV6}" 
 fi
 
 if [[ "${PROXY_ENABLE_LEGACY:-false}" == "true" && -n "${PASS_LEGACY}" ]]; then
+    # Legacy 节点同样使用裸 IPv4，避免双栈冲突
     PROXIES_YAML+="
 
   - name: \"US-Legacy\"
     type: ss
-    server: ${DOMAIN}
+    server: ${IPV4}
     port: ${PORT_LEGACY}
     cipher: aes-256-gcm
     password: \"${PASS_LEGACY}\"
