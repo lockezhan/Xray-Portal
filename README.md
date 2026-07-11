@@ -116,37 +116,55 @@ Xray_portal/
 
 ---
 
-## 5. 🚀 快速开始与一键部署
+## 5. 🚀 完整系统部署顺序与一键指南
 
-本仓库支持基于角色和环境变量隔离的自动化一键部署：
+在全新的 VPS 上搭建完整的可用节点，遵循如下执行时序（也可使用 `--with-proxy` 一次完成全套安装）：
 
-### 5.1 美国主控制服务器 (`us` 角色) 一键部署
+```mermaid
+graph LR
+    Step1["步骤1: 代理底层服务<br/>apps/vpn_web/proxy/install.sh"] --> Step2["步骤2: 生成节点配置<br/>apps/vpn_web/proxy/gen_clash_config.sh"]
+    Step2 --> Step3["步骤3: 控制面与管理面板<br/>deploy/install.sh us|nl"]
+    Step3 --> Step4["步骤4: 部署自检<br/>deploy/verify.sh"]
+```
+
+### 5.1 美国主控制服务器 (`us` 角色) 完整安装
+你可以通过 `--with-proxy` 参数一站式完成 **翻墙代理引擎 + 订阅分发中心 + Web 管理面板** 的全链条安装：
+
 ```bash
 git clone <YOUR_GIT_URL>
 cd Xray_portal
 cp deploy/env/us.env.example .env
 chmod 600 .env
-nano .env  # 填写美国主服务器参数及面版密码
+nano .env  # 填写您的主服务器公网域名、IP 及控制台密码等
 
-# 执行一键安装与状态验证
-sudo ./deploy/install.sh us --env .env
+# 方案 A (推荐)：一站式组合安装（自动先装 Xray 翻墙代理，再装面板与控制面）
+sudo ./deploy/install.sh us --env .env --with-proxy
+
+# 方案 B：按次序分阶段执行
+#   1) sudo ./apps/vpn_web/proxy/install.sh
+#   2) sudo ./apps/vpn_web/proxy/gen_clash_config.sh
+#   3) sudo ./deploy/install.sh us --env .env
+
+# 执行部署自检与验证
 ./deploy/verify.sh us --env .env
 ```
 
-### 5.2 荷兰副镜像服务器 (`nl` 角色) 一键部署
+### 5.2 荷兰备用与 AI 分流节点 (`nl` 角色) 完整安装
+荷兰端同样支持 `--with-proxy` 一站式装配节点与只读订阅镜像站：
+
 ```bash
 git clone <YOUR_GIT_URL>
 cd Xray_portal
 cp deploy/env/nl.env.example .env
 chmod 600 .env
-nano .env  # 仅需填写副机运行参数，严禁填入 Flask/Bot 密码
+nano .env  # 仅需填写荷兰公网域名/IP 与订阅 TOKEN
 
-# 执行一键安装与状态验证
-sudo ./deploy/install.sh nl --env .env
+# 一次性安装荷兰代理节点服务 + 备用只读订阅分发系统
+sudo ./deploy/install.sh nl --env .env --with-proxy
 ./deploy/verify.sh nl --env .env
 ```
 
-详细的手动步骤及多机互通 SSH 公钥配置，请参考文档：[部署指南 (DEPLOYMENT.md)](docs/DEPLOYMENT.md)。
+> **提示**：多机打通 SSH 双向推送互连的密钥配置及机器人扩展服务部署步骤，详见 [系统部署指南 (DEPLOYMENT.md)](docs/DEPLOYMENT.md)。
 
 
 ---

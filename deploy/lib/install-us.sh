@@ -186,5 +186,21 @@ EOF
         fi
     fi
 
+    # 8. 自动触发首次订阅合成生成发布快照（防止首次拉取订阅报 404 Not Found）
+    log_info "正在尝试合成初始订阅快照至 /opt/clash-sub/published/clash.yaml ..."
+    if [[ "${DRY_RUN}" == "true" ]]; then
+        log_info "[DRY-RUN] 执行 /usr/local/sbin/rebuild-clash-subscription"
+    else
+        if [[ -f "${CLASH_US_SOURCE:-/var/www/clash/clash.yaml}" ]]; then
+            if /usr/local/sbin/rebuild-clash-subscription; then
+                log_success "初始订阅快照发布完成！地址 URL 可直接拉取访问。"
+            else
+                log_warn "订阅合成过程提示异常，请运行 /usr/local/sbin/rebuild-clash-subscription 查看构建日志。"
+            fi
+        else
+            log_warn "暂未在 ${CLASH_US_SOURCE:-/var/www/clash/clash.yaml} 找到美国节点源文件。若之后运行了 gen_clash_config.sh，请手动执行一条命令合成快照：sudo /usr/local/sbin/rebuild-clash-subscription"
+        fi
+    fi
+
     log_success "美国主服务器 (US Role) 一键部署处理完成。"
 }
