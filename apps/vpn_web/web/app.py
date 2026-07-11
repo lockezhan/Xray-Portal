@@ -57,7 +57,7 @@ app.secret_key = config.SECRET_KEY
 app.jinja_env.filters['url_quote'] = url_quote
 
 # 只允许代理下载的仓库列表
-_ALLOWED_REPO_LABELS = frozenset({'ClashVergeRev', 'FlClash'})
+_ALLOWED_REPO_LABELS = frozenset({'ClashVergeRev', 'ClashMetaForAndroid'})
 
 @app.route('/', methods=['GET'])
 def index():
@@ -166,7 +166,7 @@ def proxy_download():
 
     # 仅放行特定仓库
     if not download_url.startswith('https://github.com/clash-verge-rev/') and \
-       not download_url.startswith('https://github.com/chen08209/'):
+       not download_url.startswith('https://github.com/MetaCubeX/'):
         abort(403)
 
     try:

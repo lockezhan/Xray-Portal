@@ -232,7 +232,7 @@
             const copyText = typeof text === 'object' ? JSON.stringify(text, null, 2) : text;
             if (navigator.clipboard && window.isSecureContext) {
                 navigator.clipboard.writeText(copyText)
-                    .then(() => showToast('已成功复制订阅链接！请前往 Clash / FlClash 导入。'))
+                    .then(() => showToast('已成功复制订阅链接！请前往 Clash / ClashMetaForAndroid 导入。'))
                     .catch(() => showToast('复制失败，请手动复制。', 'error'));
             } else {
                 const textArea = document.createElement('textarea');
@@ -242,7 +242,7 @@
                 textArea.select();
                 try {
                     document.execCommand('copy');
-                    showToast('已成功复制订阅链接！请前往 Clash / FlClash 导入。');
+                    showToast('已成功复制订阅链接！请前往 Clash / ClashMetaForAndroid 导入。');
                 } catch (err) {
                     showToast('复制失败，请手动复制。', 'error');
                 }
