@@ -12,7 +12,7 @@
 set -euo pipefail
 
 # 默认版本（可被环境变量覆盖）
-XRAY_VERSION="${XRAY_VERSION:-v25.6.3}"
+XRAY_VERSION="${XRAY_VERSION:-v26.6.27}"
 
 # SHA256 校验和（必须非空，否则拒绝安装）
 # 用户必须在 env 文件中提供，或使用此处内置的已知安全值
@@ -95,7 +95,7 @@ install_xray() {
     tmp_dir=$(mktemp -d /tmp/xray-install.XXXXXX)
 
     # 注册清理 trap
-    trap 'rm -rf "${tmp_dir}"' RETURN
+    trap "rm -rf '${tmp_dir}'" RETURN
 
     log_info "下载 Xray-core: ${download_url}"
     if ! curl -fsSL --retry 3 --retry-delay 5 \
@@ -127,10 +127,11 @@ install_xray() {
     install -o root -g root -m 0755 "${tmp_dir}/xray-dist/geoip.dat" "/usr/local/share/xray/geoip.dat" 2>/dev/null || true
     install -o root -g root -m 0755 "${tmp_dir}/xray-dist/geosite.dat" "/usr/local/share/xray/geosite.dat" 2>/dev/null || true
 
-    # 创建必需目录
+    # 创建必需目录并配置合适权限（由于 Xray 运行在 nobody 用户下，日志目录必须由 nobody 所有）
     mkdir -p "${XRAY_CONFIG_DIR}" "${XRAY_LOG_DIR}"
     chmod 755 "${XRAY_CONFIG_DIR}"
-    chown root:root "${XRAY_LOG_DIR}"
+    chmod 700 "${XRAY_LOG_DIR}"
+    chown -R nobody:nogroup "${XRAY_LOG_DIR}"
 
     log_success "Xray-core ${XRAY_VERSION} 安装完成: ${XRAY_BIN}"
 }
