@@ -378,10 +378,17 @@ _us_install_clash_builder() {
 
     # 安装订阅合并脚本
     local clash_sub_dir="${US_INSTALL_DIR:-/opt/clash-sub}"
+    safe_mkdir "${clash_sub_dir}" 0755 "root:root"
+
     local dirs=(incoming sources template generated published backups scripts logs)
 
     for sub in "${dirs[@]}"; do
-        safe_mkdir "${clash_sub_dir}/${sub}" 0770 "root:${SUBPUSH_GROUP:-subpush}"
+        if [[ "${sub}" == "published" ]]; then
+            # Nginx (www-data) 必须可读该目录以提供订阅服务，而 subpush 组必须可写
+            safe_mkdir "${clash_sub_dir}/${sub}" 0775 "root:${SUBPUSH_GROUP:-subpush}"
+        else
+            safe_mkdir "${clash_sub_dir}/${sub}" 0770 "root:${SUBPUSH_GROUP:-subpush}"
+        fi
     done
 
     # 创建 subpush 用户（幂等）
