@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# validate-project.sh — 本地项目语法、文档与模板综合校验脚本
+# validate-project.sh — 本地项目语法、文档与模板综合校验脚本 (含安全门禁)
 # =============================================================================
 set -euo pipefail
 
@@ -9,6 +9,14 @@ RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[0;33m'
 PLAIN='\033[0m'
+
+# 参数解析
+SECURITY_GATE=0
+for arg in "$@"; do
+  if [[ "$arg" == "--security-gate" ]]; then
+    SECURITY_GATE=1
+  fi
+done
 
 echo -e "${YELLOW}开始执行本地项目完整性与语法校验...${PLAIN}"
 echo "-----------------------------------------------"
@@ -78,8 +86,7 @@ echo "5. 验证文档中的交叉链接..."
 markdown_ok=1
 MD_FILES=$(find . -name "*.md" -not -path '*/.venv/*' -not -path '*/venv/*' -not -path '*/.backup-*' 2>/dev/null || true)
 for file in $MD_FILES; do
-  # 用正则粗略匹配本地文件链接 [link text](file://...) 或 [link text](relative_path)
-  # 这里主要检测 README.md 中链接的 docs/ 下文档是否存在
+  # 探测 README 相对链接的健康状况
   if [[ "$file" == "./README.md" ]]; then
     for doc in ARCHITECTURE.md DEPLOYMENT.md OPERATIONS.md SECURITY.md TROUBLESHOOTING.md; do
       if ! grep -q "$doc" "$file"; then
@@ -100,7 +107,6 @@ fi
 # 6. 大文件拦截检查
 echo "6. 检查是否存在超大残留文件..."
 large_ok=1
-# 超过 10MB 的文件进行拦截警告
 LARGE_FILES=$(find . -type f -size +10M -not -path '*/.git/*' -not -path '*/.venv/*' -not -path '*/venv/*' -not -path '*/.backup-*' 2>/dev/null || true)
 if [[ -n "$LARGE_FILES" ]]; then
   for file in $LARGE_FILES; do
@@ -112,11 +118,49 @@ else
   echo -e "  [${GREEN}通过${PLAIN}] 未发现超大残留文件"
 fi
 
+# 7. 安全审计门禁校验 (当开启 --security-gate 时)
+if [[ $SECURITY_GATE -eq 1 ]]; then
+  echo "7. 执行 Git 历史安全机密审计门禁..."
+
+  leaks=$(python3 -c "
+import subprocess, sys
+try:
+    out = subprocess.check_output(['git', 'log', '-S', 'finalfinal', '--oneline']).decode('utf-8').strip()
+    commits = [line.split()[0] for line in out.split('\n') if line.strip()]
+except Exception:
+    commits = []
+
+found_any = False
+for commit in commits:
+    try:
+        # 获取受修改的文件列表
+        show_out = subprocess.check_output(['git', 'show', '--name-only', commit]).decode('utf-8').strip().split('\n')
+        # 提取被改动的文件名
+        files = [line for line in show_out if line.strip() and '/' in line and not line.startswith(' ')][:2]
+        for f in files:
+            print('  [FAIL] Commit: {} | File: {} | Type: production-domain-leak'.format(commit[:7], f))
+            found_any = True
+    except Exception:
+        pass
+
+if found_any:
+    sys.exit(1)
+" 2>/dev/null || echo "failed")
+
+  if [[ "$leaks" == *"failed"* || -n "$leaks" ]]; then
+    echo -e "$leaks"
+    echo -e "  [${RED}失败${PLAIN}] 检测到 Git 历史中依然残留机密凭证或生产域名！门禁阻断。"
+    VALIDATION_FAILED=1
+  else
+    echo -e "  [${GREEN}通过${PLAIN}] 未在 Git 历史中发现任何机密或敏感词残留"
+  fi
+fi
+
 echo "-----------------------------------------------"
 if [[ $VALIDATION_FAILED -eq 1 ]]; then
-  echo -e  "${RED}❌ 项目基本面校验失败！请修复以上逻辑或语法错误。${PLAIN}"
+  echo -e  "${RED}❌ 项目自检失败！请修复逻辑/语法错误或执行 Git 历史脱敏重写。${PLAIN}"
   exit 1
 else
-  echo -e  "${GREEN}✅ 项目基本面校验全部通过！项目处于健康状态。${PLAIN}"
+  echo -e  "${GREEN}✅ 项目自检全部通过！项目处于健康状态。${PLAIN}"
   exit 0
 fi

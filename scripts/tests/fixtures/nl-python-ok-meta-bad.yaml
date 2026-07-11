@@ -1,0 +1,7 @@
+proxies:
+  - name: NL-METADATA-BAD
+    type: ss
+    server: nl-node.example.com
+    port: 20001
+    cipher: non-existent-cipher-12345
+    password: pwd

@@ -1,0 +1,13 @@
+proxies:
+  - name: "US-RAW-1"
+    type: ss
+    server: us-node.example.com
+    port: 20001
+    cipher: aes-128-gcm
+    password: testpassword123
+  - name: "US-RAW-2"
+    type: ss
+    server: 192.0.2.1
+    port: 20002
+    cipher: aes-128-gcm
+    password: testpassword456
