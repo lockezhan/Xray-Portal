@@ -294,6 +294,28 @@ _nl_install_mirror_service() {
 _nl_install_push_client() {
     local root_dir="$1"
 
+    if [[ "${DRY_RUN:-false}" != "true" ]]; then
+        # 创建工作目录与日志目录
+        mkdir -p /opt/clash-sub-mirror/logs
+        chown -R "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}" /opt/clash-sub-mirror
+
+        # 自动渲染 config.env 避免用户手动运行初始化脚本
+        local tmp_cfg
+        tmp_cfg=$(mktemp /tmp/nl-config.env.XXXXXX)
+        cat > "${tmp_cfg}" <<EOF
+SUB_TOKEN=${SUB_TOKEN}
+US_IP=${US_SERVER_IP}
+US_DOMAIN=${US_SUB_DOMAIN}
+NL_DOMAIN=${NL_SUB_DOMAIN}
+NL_SUB_DIR=${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}
+US_INCOMING=/opt/clash-sub/incoming
+LOG_FILE=/opt/clash-sub-mirror/logs/push.log
+EOF
+        chmod 600 "${tmp_cfg}"
+        chown "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}" "${tmp_cfg}"
+        mv -f "${tmp_cfg}" /opt/clash-sub-mirror/config.env
+    fi
+
     safe_install "${root_dir}/deploy/clash-sub/nl/push-clash-subscription-nl.sh" \
         "/usr/local/sbin/push-clash-subscription-nl" 0755 "root:root"
 
@@ -462,17 +484,23 @@ _nl_generate_subpush_key() {
     local key_path="/home/${SUBMIRROR_USER:-submirror}/.ssh/subpush_key"
 
     # 幂等：密钥已存在则复用
-    if [[ -f "${key_path}" ]]; then
+    if [[ ! -f "${key_path}" ]]; then
+        # shellcheck disable=SC1091
+        generate_ssh_keypair "${key_path}" \
+            "nl-subpush@$(hostname)" \
+            "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}"
+        log_success "[10/12] subpush SSH 密钥生成完成: ${key_path}"
+    else
         log_info "SSH 推送密钥已存在，复用: ${key_path}"
-        return 0
     fi
 
-    # shellcheck disable=SC1091
-    generate_ssh_keypair "${key_path}" \
-        "nl-subpush@$(hostname)" \
-        "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}"
+    # 确保同时存在于 /opt/clash-sub-mirror/ 供客户端使用
+    if [[ "${DRY_RUN:-false}" != "true" ]]; then
+        cp -f "${key_path}" "/opt/clash-sub-mirror/subpush_key"
+        chmod 600 "/opt/clash-sub-mirror/subpush_key"
+        chown "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}" "/opt/clash-sub-mirror/subpush_key"
+    fi
 
-    log_success "[10/12] subpush SSH 密钥生成完成: ${key_path}"
     log_info "公钥内容（需手动复制到美国服务器）:"
     log_info "---"
     cat "${key_path}.pub" 2>/dev/null || log_warn "公钥文件未生成"
