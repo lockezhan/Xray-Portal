@@ -21,14 +21,14 @@ case "$ORIG_CMD" in
     # 执行安全校验
     if python3 "$VALIDATOR_PATH" "$READY_FILE"; then
       # 链式触发重建流程
-      exec /usr/local/sbin/rebuild-clash-subscription
+      exec sudo -n /usr/local/sbin/rebuild-clash-subscription
     else
       exit 1
     fi
     ;;
     
   rebuild)
-    exec /usr/local/sbin/rebuild-clash-subscription
+    exec sudo -n /usr/local/sbin/rebuild-clash-subscription
     ;;
     
   *)
