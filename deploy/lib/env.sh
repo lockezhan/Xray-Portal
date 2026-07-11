@@ -179,7 +179,7 @@ _validate_us_env() {
 # 荷兰角色环境变量校验与默认值填充
 # =============================================================================
 _validate_nl_env() {
-    local required_nl=(NL_SERVER_IP NL_SUB_DOMAIN SUB_TOKEN)
+    local required_nl=(NL_SERVER_IP NL_SUB_DOMAIN SUB_TOKEN US_SERVER_IP)
     for var in "${required_nl[@]}"; do
         if [[ -z "${!var:-}" || "${!var}" == "replace_me" ]]; then
             log_error "荷兰节点必需的环境变量未填或仍为占位符: ${var}"
