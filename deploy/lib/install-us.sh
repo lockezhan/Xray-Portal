@@ -53,10 +53,20 @@ install_us() {
         }
         
         log_success "================================================================"
-        log_success "  机器人部署/更新已全部完成"
-        if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
-            log_warn "  ⊡ 运行 /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
-            log_warn "  ⊡ 部署并运行 NapCat Docker 容器作为 QQ Bot 后端（接口: ${BRIDGE_NAPCAT_API_URL:-3000}）"
+        log_success "  机器人部署/更新步骤已执行完毕！"
+        log_info ""
+        log_warn "  👉 【注意：请务必按照提示进行以下手动操作以完成最终部署】 👈"
+        log_warn "  1. 授权登录 Telegram 账号（如果是初次部署，必须在终端手动运行一次）："
+        log_warn "     source /home/elite/.venv/bin/activate"
+        log_warn "     python3 /usr/local/tg_bot/login_userbot.py"
+        log_warn ""
+        log_warn "  2. 启用并立即启动系统服务（如果您还未启用它们）："
+        log_warn "     sudo systemctl daemon-reload"
+        log_warn "     sudo systemctl enable --now tgbot tg-qq-bridge"
+        log_warn ""
+        if [[ "${ENABLE_BOTS:-false}" != "true" ]]; then
+            log_info "  * 当前主配置文件中 ENABLE_BOTS 为 false（未开启状态）。"
+            log_info "    如果您稍后修改为 true 并重跑脚本，它们会自动启动；或者您可以随时手动执行上述 enable 命令启动。"
         fi
         log_success "================================================================"
         return 0
@@ -618,6 +628,10 @@ _us_install_tg_bot() {
 
     # 写入专用 .env 配置文件
     local env_dest="/usr/local/tg_bot/.env"
+    
+    # 智能回退：若未配置 BRIDGE_SERVER_PUBLIC_IP，回退使用美国主机的 US_SUB_DOMAIN 或 US_SERVER_IP
+    local public_ip="${BRIDGE_SERVER_PUBLIC_IP:-${US_SUB_DOMAIN:-${US_SERVER_IP}}}"
+    
     cat > "${env_dest}" <<ENVEOF
 # 由 install.sh 自动生成
 CHANNEL_BOT_TOKEN=${CHANNEL_BOT_TOKEN:-}
@@ -625,7 +639,7 @@ CHANNEL_ADMIN_ID=${CHANNEL_ADMIN_ID:-}
 CHANNEL_GROUP_ID=${CHANNEL_GROUP_ID:-}
 BRIDGE_BOT_TOKEN=${BRIDGE_BOT_TOKEN:-}
 BRIDGE_TARGET_QQ_GROUP=${BRIDGE_TARGET_QQ_GROUP:-}
-BRIDGE_SERVER_PUBLIC_IP=${BRIDGE_SERVER_PUBLIC_IP:-}
+BRIDGE_SERVER_PUBLIC_IP=${public_ip}
 BRIDGE_NAPCAT_API_URL=${BRIDGE_NAPCAT_API_URL:-http://127.0.0.1:3000/send_msg}
 TELEGRAM_USER_API_ID=${TELEGRAM_USER_API_ID:-}
 TELEGRAM_USER_API_HASH=${TELEGRAM_USER_API_HASH:-}
