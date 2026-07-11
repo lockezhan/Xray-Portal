@@ -61,22 +61,13 @@ except Exception as e:
   exit 2
 }
 
-# 2. 上传到美国服务器 incoming 目录
-log INFO "正在上传原始配置到美国服务器..."
-# 注意美国的 wrapper 限制了路径，需确保传输的命令能被匹配
-if ! scp -i "$PRIVATE_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-  "$NL_CLASH_SOURCE" "subpush@$US_IP:/opt/clash-sub/incoming/nl-full.yaml" 2>&1 | tee -a "$LOG_FILE"; then
-  log ERROR "上传到美国服务器失败"
+# 2. 通过标准输入传输配置并触发美国端重新构建
+log INFO "正在通过安全标准输入协议传输配置并唤醒美国端重建..."
+if ! cat "$NL_CLASH_SOURCE" | ssh -i "$PRIVATE_KEY" \
+  -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+  subpush@$US_IP upload-nl 2>&1 | tee -a "$LOG_FILE"; then
+  log ERROR "配置传输与重建触发失败"
   exit 3
-fi
-log INFO "原始配置上传成功"
-
-# 3. 触发美国服务器重新构建
-log INFO "触发美国服务器重新构建最终配置..."
-if ! ssh -i "$PRIVATE_KEY" -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-  subpush@$US_IP rebuild 2>&1 | tee -a "$LOG_FILE"; then
-  log ERROR "触发美国构建失败，但节点配置已经成功上传"
-  exit 4
 fi
 
 log INFO "=========================================="

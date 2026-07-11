@@ -1,0 +1,38 @@
+#!/usr/bin/env bash
+# =============================================================================
+# subpush-cmd-wrapper — SSH 强制命令过滤器 (极致防爆精炼版)
+# =============================================================================
+set -euo pipefail
+umask 077
+
+ORIG_CMD="${SSH_ORIGINAL_COMMAND:-}"
+
+if [[ -z "$ORIG_CMD" ]]; then
+  echo "Reject: Interactive shell access is disabled." >&2
+  exit 1
+fi
+
+case "$ORIG_CMD" in
+  upload-nl)
+    BASE_DIR="${CLASH_SUB_TEST_BASE:-/opt/clash-sub}"
+    READY_FILE="$BASE_DIR/incoming/nl-full.yaml.ready"
+    VALIDATOR_PATH="$BASE_DIR/scripts/upload_validator.py"
+    
+    # 执行安全校验
+    if python3 "$VALIDATOR_PATH" "$READY_FILE"; then
+      # 链式触发重建流程
+      exec /usr/local/sbin/rebuild-clash-subscription
+    else
+      exit 1
+    fi
+    ;;
+    
+  rebuild)
+    exec /usr/local/sbin/rebuild-clash-subscription
+    ;;
+    
+  *)
+    echo "Reject: Command not allowed by wrapper." >&2
+    exit 126
+    ;;
+esac
