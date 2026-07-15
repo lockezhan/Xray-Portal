@@ -74,13 +74,41 @@ async def main():
     session_file = f"{SESSION_PATH}.session"
     temp_session_file = f"{temp_session}.session"
     if os.path.exists(session_file):
-        try:
-            shutil.copy2(session_file, temp_session_file)
-        except Exception:
-            pass
+        for ext in ["", "-journal", "-wal", "-shm"]:
+            if os.path.exists(session_file + ext):
+                try:
+                    shutil.copy2(session_file + ext, temp_session_file + ext)
+                except Exception:
+                    pass
 
-    client = TelegramClient(temp_session, API_ID, API_HASH)
+    client = TelegramClient(SESSION_PATH if is_upload_mode else temp_session, API_ID, API_HASH)
     
+    async def get_entity_safe(client_obj, peer_id):
+        try:
+            res_entity = await client_obj.get_entity(peer_id)
+        except ValueError:
+            target_str = str(peer_id).lstrip('-')
+            target_channel_id = int(target_str[3:]) if (target_str.startswith('100') and len(target_str) > 10) else (int(target_str) if target_str.isdigit() else None)
+            found_entity = None
+            try:
+                async for d in client_obj.iter_dialogs():
+                    d_ent_id = getattr(d.entity, 'id', 0)
+                    if target_channel_id and (abs(d.id) == abs(int(peer_id)) or d_ent_id == target_channel_id):
+                        found_entity = d.entity
+                        break
+                    elif not target_channel_id and (getattr(d.entity, 'username', '') == peer_id or d.name == peer_id):
+                        found_entity = d.entity
+                        break
+            except Exception:
+                pass
+            if found_entity:
+                res_entity = found_entity
+            else:
+                res_entity = await client_obj.get_entity(peer_id)
+        if isinstance(res_entity, list):
+            res_entity = res_entity[0]
+        return res_entity
+
     try:
         await client.connect()
         if not await client.is_user_authorized():
@@ -104,16 +132,37 @@ async def main():
                 print(json.dumps({"error": "Missing upload file or target ID or file does not exist"}))
                 return
                 
-            entity = await client.get_entity(target_id)
-            if isinstance(entity, list):
-                entity = entity[0]
-            await client.send_file(entity, file=file_to_upload, caption=caption_text)
-            print(json.dumps({"success": True}))
-            return
+            from telethon.tl.types import InputPeerChannel, InputPeerChat, InputPeerUser
+            entity = None
+            try:
+                entity = await get_entity_safe(client, target_id)
+            except Exception:
+                target_abs = abs(int(target_id)) if str(target_id).lstrip('-').isdigit() else 0
+                if target_abs in [2361732692, 1002361732692]:
+                    entity = InputPeerChannel(2361732692, 3778564259885060450)
+                else:
+                    raise
+            bot_token = os.getenv("CHANNEL_BOT_TOKEN") or os.getenv("BOT_TOKEN")
+            if bot_token:
+                bot_session_path = f"{SESSION_PATH}_bot_upload_{unique_id}"
+                bot_client = TelegramClient(bot_session_path, API_ID, API_HASH)
+                await bot_client.start(bot_token=bot_token)
+                try:
+                    await bot_client.send_file(entity, file=file_to_upload, caption=caption_text)
+                    print(json.dumps({"success": True}))
+                finally:
+                    await bot_client.disconnect()
+                    for ext in ["", "-journal", "-wal", "-shm"]:
+                        if os.path.exists(f"{bot_session_path}.session" + ext):
+                            try: os.remove(f"{bot_session_path}.session" + ext)
+                            except Exception: pass
+                return
+            else:
+                await client.send_file(entity, file=file_to_upload, caption=caption_text)
+                print(json.dumps({"success": True}))
+                return
 
-        entity = await client.get_entity(channel_id)
-        if isinstance(entity, list):
-            entity = entity[0]
+        entity = await get_entity_safe(client, channel_id)
         
         # 处理附带评论链接的情况 (?comment=xxxx)
         comment_match = re.search(r'[?&]comment=(\d+)', url)
@@ -121,7 +170,7 @@ async def main():
             from telethon.tl.functions.channels import GetFullChannelRequest
             full_channel = await client(GetFullChannelRequest(channel=entity))
             if full_channel.full_chat.linked_chat_id:
-                entity = await client.get_entity(full_channel.full_chat.linked_chat_id)
+                entity = await get_entity_safe(client, full_channel.full_chat.linked_chat_id)
                 msg_id = int(comment_match.group(1))
 
         message = await client.get_messages(entity, ids=msg_id)
@@ -281,10 +330,9 @@ async def main():
             pass
             
         try:
-            if os.path.exists(temp_session_file):
-                os.remove(temp_session_file)
-            if os.path.exists(f"{temp_session_file}-journal"):
-                os.remove(f"{temp_session_file}-journal")
+            for ext in ["", "-journal", "-wal", "-shm"]:
+                if os.path.exists(temp_session_file + ext):
+                    os.remove(temp_session_file + ext)
         except Exception:
             pass
 
