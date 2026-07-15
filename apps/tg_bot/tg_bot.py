@@ -123,29 +123,38 @@ def handle_private_message(message):
                 # 转发到目标频道
                 if len(files) == 1:
                     f = files[0]
-                    file_uri = f"file://{f['path']}"
-                    if f["type"].startswith("video/"):
-                        bot.send_video(GROUP_ID, file_uri, caption=message.text, timeout=600)
-                    elif f["type"].startswith("image/"):
-                        bot.send_photo(GROUP_ID, file_uri, caption=message.text, timeout=600)
-                    else:
-                        bot.send_document(GROUP_ID, file_uri, caption=message.text, timeout=600)
-                else:
-                    media_list = []
-                    for i, f in enumerate(files):
-                        file_uri = f"file://{f['path']}"
-                        
-                        # 把用户发来的包含 link 的文本，作为第一张图/视频的描述（标签）
-                        cap = message.text if i == 0 else None
-                        
+                    with open(f['path'], 'rb') as file_obj:
                         if f["type"].startswith("video/"):
-                            media_list.append(InputMediaVideo(file_uri, caption=cap))
+                            bot.send_video(GROUP_ID, file_obj, caption=message.text, timeout=600)
                         elif f["type"].startswith("image/"):
-                            media_list.append(InputMediaPhoto(file_uri, caption=cap))
+                            bot.send_photo(GROUP_ID, file_obj, caption=message.text, timeout=600)
                         else:
-                            media_list.append(InputMediaDocument(file_uri, caption=cap))
-                    
-                    bot.send_media_group(GROUP_ID, media_list, timeout=600)
+                            bot.send_document(GROUP_ID, file_obj, caption=message.text, timeout=600)
+                else:
+                    opened_files = []
+                    try:
+                        media_list = []
+                        for i, f in enumerate(files):
+                            file_obj = open(f['path'], 'rb')
+                            opened_files.append(file_obj)
+                            
+                            # 把用户发来的包含 link 的文本，作为第一张图/视频的描述（标签）
+                            cap = message.text if i == 0 else None
+                            
+                            if f["type"].startswith("video/"):
+                                media_list.append(InputMediaVideo(file_obj, caption=cap))
+                            elif f["type"].startswith("image/"):
+                                media_list.append(InputMediaPhoto(file_obj, caption=cap))
+                            else:
+                                media_list.append(InputMediaDocument(file_obj, caption=cap))
+                        
+                        bot.send_media_group(GROUP_ID, media_list, timeout=600)
+                    finally:
+                        for fo in opened_files:
+                            try:
+                                fo.close()
+                            except Exception:
+                                pass
                 
                 bot.edit_message_text("✅ Userbot 下载并转发频道成功，已保留原文本作为描述。", chat_id=message.chat.id, message_id=status_msg.message_id)
                 return
