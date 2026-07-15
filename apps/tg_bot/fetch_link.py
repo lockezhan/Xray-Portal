@@ -48,20 +48,24 @@ async def main():
     if len(sys.argv) < 2:
         print(json.dumps({"error": "No URL provided"}))
         return
-    url = sys.argv[1]
-    
-    match = re.search(r't\.me/(?:c/)?([^/]+)/(\d+)', url)
-    if not match:
-        print(json.dumps({"error": "Invalid URL format"}))
-        return
+    is_upload_mode = (sys.argv[1] == "--upload")
+    url = ""
+    channel_id: int | str = 0
+    msg_id = 0
+    if not is_upload_mode:
+        url = sys.argv[1]
+        match = re.search(r't\.me/(?:c/)?([^/]+)/(\d+)', url)
+        if not match:
+            print(json.dumps({"error": "Invalid URL format"}))
+            return
 
-    channel_identifier = match.group(1)
-    msg_id = int(match.group(2))
-    
-    if channel_identifier.isdigit():
-        channel_id = int(f"-100{channel_identifier}")
-    else:
-        channel_id = channel_identifier if channel_identifier.startswith('@') else f"@{channel_identifier}"
+        channel_identifier = match.group(1)
+        msg_id = int(match.group(2))
+        
+        if channel_identifier.isdigit():
+            channel_id = int(f"-100{channel_identifier}")
+        else:
+            channel_id = channel_identifier if channel_identifier.startswith('@') else f"@{channel_identifier}"
 
     import uuid
     import shutil
@@ -83,7 +87,33 @@ async def main():
             print(json.dumps({"error": "Userbot not authorized. Run login_userbot.py first."}))
             return
             
+        if is_upload_mode:
+            file_to_upload = sys.argv[2] if len(sys.argv) > 2 else ""
+            target_id = None
+            if "--to" in sys.argv:
+                to_idx = sys.argv.index("--to")
+                if to_idx + 1 < len(sys.argv):
+                    target_id = int(sys.argv[to_idx + 1])
+            caption_text = ""
+            if "--caption" in sys.argv:
+                cap_idx = sys.argv.index("--caption")
+                if cap_idx + 1 < len(sys.argv):
+                    caption_text = sys.argv[cap_idx + 1]
+            
+            if not target_id or not file_to_upload or not os.path.exists(file_to_upload):
+                print(json.dumps({"error": "Missing upload file or target ID or file does not exist"}))
+                return
+                
+            entity = await client.get_entity(target_id)
+            if isinstance(entity, list):
+                entity = entity[0]
+            await client.send_file(entity, file=file_to_upload, caption=caption_text)
+            print(json.dumps({"success": True}))
+            return
+
         entity = await client.get_entity(channel_id)
+        if isinstance(entity, list):
+            entity = entity[0]
         
         # 处理附带评论链接的情况 (?comment=xxxx)
         comment_match = re.search(r'[?&]comment=(\d+)', url)
