@@ -539,8 +539,10 @@ async def send_file_to_qq(session, token, idx, source_path, content_type, filena
     action = "upload_private_file" if TARGET_QQ_TYPE == "user" else "upload_group_file"
     payload = {
         **qq_target_payload(),
-        "file": f"file://{staged_container_path}",
+        # 传容器内绝对路径；NapCat 会识别本地文件并转换为 file://。
+        "file": staged_container_path,
         "name": os.path.basename(filename) or f"file_{idx}",
+        "upload_file": True,
     }
     try:
         return await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
