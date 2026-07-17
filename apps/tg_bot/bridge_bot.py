@@ -394,7 +394,8 @@ async def _prepare_web_stream(item):
         return
 
     output_path = f"{source_path}.web.mp4"
-    temp_path = f"{output_path}.{uuid.uuid4().hex}.tmp"
+    # 临时文件仍需保留 .mp4 后缀，否则 FFmpeg 无法自动选择 MP4 muxer。
+    temp_path = f"{output_path}.{uuid.uuid4().hex}.tmp.mp4"
     try:
         stream = await _probe_video(source_path)
         codec = (stream.get("codec_name") or "").lower()
