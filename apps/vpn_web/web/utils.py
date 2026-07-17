@@ -56,7 +56,7 @@ CLASH_RELEASE_CACHE = {
 }
 
 def get_clash_releases():
-    """从 GitHub API 获取 ClashVergeRev (Windows) 和 ClashMetaForAndroid (Android) 的最新 Release，带缓存。"""
+    """从 GitHub API 获取 ClashVergeRev (Windows) 和 FlClash (Android) 的最新 Release，带缓存。"""
     global CLASH_RELEASE_CACHE
     current_time = time.time()
     cache_ttl = 3600
@@ -66,7 +66,7 @@ def get_clash_releases():
 
     repos = [
         {"repo": "clash-verge-rev/clash-verge-rev",  "label": "ClashVergeRev",  "platform": "Windows"},
-        {"repo": "MetaCubeX/ClashMetaForAndroid", "label": "ClashMetaForAndroid", "platform": "Android"},
+        {"repo": "chen08209/FlClash", "label": "FlClash", "platform": "Android"},
     ]
 
     headers = {
@@ -102,8 +102,8 @@ def get_clash_releases():
                         continue
                     if 'arm64' in name_lower or 'aarch64' in name_lower:
                         continue
-                elif repo_info["label"] == "ClashMetaForAndroid":
-                    # ClashMetaForAndroid：只保留 Android 版 apk，且只筛选 ARM 架构安装包
+                elif repo_info["label"] == "FlClash":
+                    # FlClash：只保留 Android 版 apk，且只筛选 ARM 架构安装包
                     if not name_lower.endswith('.apk'):
                         continue
                     if 'arm' not in name_lower and 'aarch64' not in name_lower:

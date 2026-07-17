@@ -214,8 +214,10 @@ async def main():
                 ), largest.size if hasattr(largest, 'size') else 0
             return None, 0
 
-        async def fast_download_file(client, location, file_size, out_file, workers=4):
-            chunk_size = 1024 * 1024
+        async def fast_download_file(client, location, file_size, out_file, workers=None):
+            if workers is None:
+                workers = int(os.environ.get("TG_DOWNLOAD_WORKERS", 16))
+            chunk_size = 512 * 1024
             chunks = math.ceil(file_size / chunk_size)
             queue = asyncio.Queue()
             sender = client._sender
@@ -252,7 +254,7 @@ async def main():
                             break
                         except Exception as e:
                             if attempt == 2: raise e
-                            await asyncio.sleep(1)
+                            await asyncio.sleep(0.5)
                     queue.task_done()
 
             worker_tasks = [asyncio.create_task(worker()) for _ in range(workers)]
@@ -284,22 +286,29 @@ async def main():
                 tmp_file = f"{file_path}.{uuid.uuid4().hex}.downloading"
                 location, size = get_input_file_location(m)
                 if location and size > 0:
-                    await fast_download_file(client, location, size, tmp_file, workers=16)
+                    await fast_download_file(client, location, size, tmp_file, workers=int(os.environ.get("TG_DOWNLOAD_WORKERS", 16)))
                 else:
                     await client.download_media(m, file=tmp_file)
                 
                 # 2. 核心修复：解决在线播放卡顿/需要缓冲完整视频的问题
                 # 如果是视频，使用 ffmpeg 将 moov atom 移动到文件头部，实现边下边播 (秒开)
                 if ext == ".mp4":
-                    import subprocess
                     faststart_path = tmp_file + ".faststart.mp4"
                     try:
-                        # 使用 -c copy 和 -movflags faststart，纯拷贝无重新编码，速度极快
-                        subprocess.run(["ffmpeg", "-y", "-i", tmp_file, "-c", "copy", "-map", "0", "-movflags", "+faststart", faststart_path], 
-                                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-                        os.replace(faststart_path, file_path)
-                        if os.path.exists(tmp_file):
-                            os.remove(tmp_file)
+                        # 使用异步非阻塞子进程执行 ffmpeg -movflags +faststart，防止阻塞事件循环
+                        proc = await asyncio.create_subprocess_exec(
+                            "ffmpeg", "-y", "-i", tmp_file, "-c", "copy", "-map", "0", "-movflags", "+faststart", faststart_path,
+                            stdout=asyncio.subprocess.DEVNULL, stderr=asyncio.subprocess.DEVNULL
+                        )
+                        await proc.communicate()
+                        if proc.returncode == 0 and os.path.exists(faststart_path):
+                            os.replace(faststart_path, file_path)
+                            if os.path.exists(tmp_file):
+                                os.remove(tmp_file)
+                        else:
+                            if os.path.exists(faststart_path):
+                                os.remove(faststart_path)
+                            os.replace(tmp_file, file_path)
                     except Exception:
                         if os.path.exists(faststart_path):
                             os.remove(faststart_path)

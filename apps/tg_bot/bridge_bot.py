@@ -185,7 +185,7 @@ HTML_TEMPLATE = """
             --glass-bg: rgba(255, 255, 255, 0.03);
             --glass-border: rgba(255, 255, 255, 0.08);
         }
-        
+
         * { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
@@ -601,7 +601,7 @@ async def delayed_remove(path, delay=3600):
 
 
 async def send_file_to_qq(session, token, idx, source_path, content_type, filename):
-    """通过 NapCat 文件 API 发送原文件；大文件先走 Stream API 分块上传。"""
+    """通过 NapCat 文件 API 或 CQ 码发送原文件及音视频图像；大文件先走 Stream API 分块上传。"""
     if FORWARD_MODE not in {"file", "both"}:
         return True, None
     try:
@@ -612,37 +612,98 @@ async def send_file_to_qq(session, token, idx, source_path, content_type, filena
         return False, str(e)
 
     action = "upload_private_file" if TARGET_QQ_TYPE == "user" else "upload_group_file"
+    msg_action = "send_private_msg" if TARGET_QQ_TYPE == "user" else "send_group_msg"
     safe_filename = os.path.basename(filename) or f"file_{idx}"
     file_size = os.path.getsize(staged_host_path)
 
+    is_video = safe_filename.lower().endswith(('.mp4', '.mov', '.avi', '.mkv', '.webm')) or (content_type and content_type.startswith('video/'))
+    is_image = safe_filename.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp')) or (content_type and content_type.startswith('image/'))
+    is_audio = safe_filename.lower().endswith(('.mp3', '.ogg', '.wav', '.flac', '.m4a', '.aac')) or (content_type and content_type.startswith('audio/'))
+
     async def send_path(file_path):
+        file_url = file_path if file_path.startswith("file://") else f"file://{file_path}"
+
+        # 1. 视频优先使用 [CQ:video] 直接发送
+        # NTQQ 在 Linux Docker 下调用 upload_group_file 上传视频(.mp4)会稳定触发 rich media transfer failed，
+        # 因此对视频资源优先由 CQ 码视频通道直发。
+        if is_video:
+            msg_payload = {
+                **qq_target_payload(),
+                "message": f"[CQ:video,file={file_url}]"
+            }
+            res = await send_to_qq(session, msg_payload, f"{NAPCAT_API_BASE}/{msg_action}")
+            if res[0]:
+                return res
+            # 若 CQ:video 异常，极速回退到普通 CQ:file 与 upload_group_file
+            msg_payload["message"] = f"[CQ:file,file={file_url}]"
+            res = await send_to_qq(session, msg_payload, f"{NAPCAT_API_BASE}/{msg_action}")
+            if res[0]:
+                return res
+            payload = {
+                **qq_target_payload(),
+                "file": file_path,
+                "name": safe_filename,
+                "upload_file": True,
+            }
+            return await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
+
+        # 2. 图片优先使用 [CQ:image] 发送
+        if is_image:
+            msg_payload = {
+                **qq_target_payload(),
+                "message": f"[CQ:image,file={file_url}]"
+            }
+            res = await send_to_qq(session, msg_payload, f"{NAPCAT_API_BASE}/{msg_action}")
+            if res[0]:
+                return res
+
+        # 3. 语音优先使用 [CQ:record] 发送
+        if is_audio:
+            msg_payload = {
+                **qq_target_payload(),
+                "message": f"[CQ:record,file={file_url}]"
+            }
+            res = await send_to_qq(session, msg_payload, f"{NAPCAT_API_BASE}/{msg_action}")
+            if res[0]:
+                return res
+
+        # 4. 普通文件或图音回退：使用 upload_group_file / upload_private_file
         payload = {
             **qq_target_payload(),
             "file": file_path,
             "name": safe_filename,
             "upload_file": True,
         }
-        return await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
+        res = await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
+        if not res[0] and "rich media transfer failed" in (res[1] or "").lower():
+            print(f"[!] /upload_group_file 返回 rich media transfer failed，改用 CQ 码 ({msg_action}) 极速回退发送: {safe_filename}")
+            msg_payload = {
+                **qq_target_payload(),
+                "message": f"[CQ:file,file={file_url}]"
+            }
+            res = await send_to_qq(session, msg_payload, f"{NAPCAT_API_BASE}/{msg_action}")
+        return res
 
     try:
-        if NAPCAT_STREAM_THRESHOLD and file_size >= NAPCAT_STREAM_THRESHOLD:
-            print(f"[*] 文件 {safe_filename} 为 {file_size / 1024 / 1024:.1f} MB，使用 NapCat Stream API 分块上传。")
+        # 由于宿主机 /opt/napcat/qq 已挂载为容器内 /app/.config/QQ 目录，staged_container_path 在容器中原生可用且带完整扩展名。
+        # 优先对 staged_container_path 进行直接发送，实现零拷贝并保留准确扩展名。
+        result = await send_path(staged_container_path)
+        if result[0]:
+            return result
+
+        # 只有直发失败且满足分块阈值或报 rich media transfer failed 时，才改用 Stream API 重试
+        if (NAPCAT_STREAM_THRESHOLD and file_size >= NAPCAT_STREAM_THRESHOLD) or ("rich media transfer failed" in (result[1] or "").lower()):
+            print(f"[*] 准备使用 NapCat Stream API 分块后重试: {safe_filename}")
             streamed_path = await upload_file_stream_to_napcat(staged_host_path, safe_filename)
             return await send_path(streamed_path)
 
-        result = await send_path(staged_container_path)
-        # 小文件也可能因 NTQQ 本地文件解析失败；仅在明确的富媒体传输失败时流式重试。
-        if not result[0] and "rich media transfer failed" in (result[1] or "").lower():
-            print(f"[!] 普通文件上传失败，改用 NapCat Stream API 重试: {safe_filename}")
-            streamed_path = await upload_file_stream_to_napcat(staged_host_path, safe_filename)
-            return await send_path(streamed_path)
         return result
     except Exception as e:
-        err = f"NapCat 流式上传失败: {type(e).__name__}: {e}"
+        err = f"NapCat 发送或流式处理失败: {type(e).__name__}: {e}"
         print(f"[-] {err}")
         return False, err
     finally:
-        # NapCat/NTQQ 某些版本返回后仍会异步读取，保留一小时避免资源消失。
+        # NapCat/NTQQ 某些版本返回后仍异步读取，保留一小时避免文件被清理导致读取失败。
         asyncio.create_task(delayed_remove(staged_host_path, delay=3600))
 
 
