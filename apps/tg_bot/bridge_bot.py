@@ -4,16 +4,21 @@ import zipfile
 import asyncio
 import aiohttp
 import mimetypes
+import re
+import time
 from aiohttp import web
 import telebot
 from telebot.async_telebot import AsyncTeleBot
 
 def load_env():
     # 自动向上查找并加载根目录的 .env 文件
+    global ENV_FILE_PATH
+    ENV_FILE_PATH = None
     cur_dir = os.path.dirname(os.path.abspath(__file__))
     for _ in range(3):
         env_path = os.path.join(cur_dir, ".env")
         if os.path.exists(env_path):
+            ENV_FILE_PATH = env_path
             with open(env_path, "r", encoding="utf-8") as f:
                 for line in f:
                     line = line.strip()
@@ -42,10 +47,29 @@ if not BOT_TOKEN or BOT_TOKEN == "replace_me" or not TARGET_QQ_GROUP_STR or TARG
 
 # NapCatQQ (OneBot v11) 配置
 NAPCAT_API_URL = os.environ.get("BRIDGE_NAPCAT_API_URL", "http://127.0.0.1:3000/send_msg")
+NAPCAT_API_BASE = NAPCAT_API_URL.rsplit("/", 1)[0]
+NAPCAT_TIMEOUT = float(os.environ.get("BRIDGE_NAPCAT_TIMEOUT", 300))
+NAPCAT_MAX_CONCURRENCY = max(1, int(os.environ.get("BRIDGE_NAPCAT_MAX_CONCURRENCY", 1)))
+TARGET_QQ_TYPE = os.environ.get("BRIDGE_TARGET_QQ_TYPE", "group").lower()
+if TARGET_QQ_TYPE not in {"group", "user"}:
+    print(f"警告: BRIDGE_TARGET_QQ_TYPE={TARGET_QQ_TYPE!r} 无效，已回退为 group")
+    TARGET_QQ_TYPE = "group"
 try:
     TARGET_QQ_GROUP = int(TARGET_QQ_GROUP_STR)
 except ValueError:
     raise ValueError("错误: BRIDGE_TARGET_QQ_GROUP 必须为有效的 QQ 群数字！")
+
+# 可选：允许管理员在私聊中运行 /setgroup <群号>，无需重启服务
+BRIDGE_ADMIN_USER_ID = os.environ.get("BRIDGE_ADMIN_USER_ID") or os.environ.get("CHANNEL_ADMIN_ID")
+try:
+    BRIDGE_ADMIN_USER_ID = int(BRIDGE_ADMIN_USER_ID) if BRIDGE_ADMIN_USER_ID else None
+except ValueError:
+    BRIDGE_ADMIN_USER_ID = None
+_legacy_forward_files = os.environ.get("BRIDGE_FORWARD_FILES", "1").lower() not in {"0", "false", "no", "off"}
+FORWARD_MODE = os.environ.get("BRIDGE_FORWARD_MODE", "both" if _legacy_forward_files else "link").lower()
+if FORWARD_MODE not in {"link", "file", "both"}:
+    print(f"警告: BRIDGE_FORWARD_MODE={FORWARD_MODE!r} 无效，已回退为 both")
+    FORWARD_MODE = "both"
 
 # 网页服务配置
 WEB_HOST = os.environ.get("BRIDGE_WEB_HOST", "127.0.0.1")  # 限制为本地监听，通过 Nginx 8083 端口 HTTPS 代理访问
@@ -65,12 +89,17 @@ def format_view_url(token):
 
 # 路径配置
 CACHE_DIR = "/var/lib/tg-bridge-cache"  # 磁盘缓存目录（/dev/shm 仅 984MB，大文件会撑爆）
+NAPCAT_STAGE_DIR = "/opt/napcat/qq/bridge-cache"
+NAPCAT_CONTAINER_STAGE_DIR = "/app/.config/QQ/bridge-cache"
 try:
     os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(NAPCAT_STAGE_DIR, exist_ok=True)
 except PermissionError:
     # 回退到本地开发/测试环境的临时目录，防范非 root 下运行报错
     CACHE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".cache")
+    NAPCAT_STAGE_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".napcat-stage")
     os.makedirs(CACHE_DIR, exist_ok=True)
+    os.makedirs(NAPCAT_STAGE_DIR, exist_ok=True)
 COVER_IMAGE_PATH = "/root/wallhaven-gw7wld_2560x1440.png"  # 伪装用的表层图片
 # ============================================
 
@@ -124,6 +153,7 @@ if USE_LOCAL_API:
 # 初始化 Telebot 客户端 (使用 HTTP 协议，完美避开 MTProto 在 VPS 环境下卡死的问题)
 bot = AsyncTeleBot(BOT_TOKEN)
 active_tasks = {}
+napcat_send_semaphore = asyncio.Semaphore(NAPCAT_MAX_CONCURRENCY)
 
 
 
@@ -412,24 +442,161 @@ async def auto_delete_cache(token, delay=10800):
             try: os.remove(zip_path)
             except: pass
 
-async def send_to_qq(session, payload):
+async def send_to_qq(session, payload, api_url=None):
     try:
-        async with session.post(NAPCAT_API_URL, json=payload, timeout=10) as res:
-            if res.status != 200:
-                return False, f"HTTP {res.status}"
-            try:
-                resp_json = await res.json()
-                status = resp_json.get("status")
-                if status == "ok":
-                    return True, None
-                else:
+        timeout = aiohttp.ClientTimeout(
+            total=NAPCAT_TIMEOUT,
+            connect=10,
+            sock_connect=10,
+            sock_read=NAPCAT_TIMEOUT,
+        )
+        # NapCat/QQ 上传媒体时会一直占用请求；限制并发避免相册把上传队列压满。
+        async with napcat_send_semaphore:
+            async with session.post(api_url or NAPCAT_API_URL, json=payload, timeout=timeout) as res:
+                if res.status != 200:
+                    err = f"NapCat HTTP {res.status}"
+                    print(f"[-] QQ 转发失败: {err}")
+                    return False, err
+                try:
+                    resp_json = await res.json()
+                    status = resp_json.get("status")
+                    if status == "ok":
+                        return True, None
                     msg = resp_json.get("wording") or resp_json.get("msg") or "未知错误"
+                    # NapCat 偶尔在 QQ 已返回成功(result=0)时等不到监听器事件而包装成 Timeout。
+                    # 这类响应不能重试，否则会在 QQ 产生重复消息。
+                    if ("Timeout:" in msg
+                            and re.search(r'"result"\s*:\s*0', msg)
+                            and re.search(r'"errMsg"\s*:\s*""', msg)):
+                        print("[!] NapCat 返回事件监听假超时，但 QQ result=0，按成功处理。")
+                        return True, None
+                    print(f"[-] QQ 转发失败: {msg}")
                     return False, f"{msg}"
-            except Exception:
-                text = await res.text()
-                return False, f"无法解析响应: {text[:50]}"
+                except Exception:
+                    text = await res.text()
+                    err = f"无法解析 NapCat 响应: {text[:100]}"
+                    print(f"[-] QQ 转发失败: {err}")
+                    return False, err
+    except asyncio.TimeoutError:
+        err = f"NapCat 处理超过 {NAPCAT_TIMEOUT:g} 秒，消息可能仍在发送，请勿立即重试"
+        print(f"[-] QQ 转发超时: {err}")
+        return False, err
+    except aiohttp.ClientError as e:
+        err = f"NapCat 本地接口异常: {type(e).__name__}: {e}"
+        print(f"[-] QQ 转发失败: {err}")
+        return False, err
     except Exception as e:
-        return False, f"网络请求异常: {str(e)}"
+        err = f"NapCat 调用异常: {type(e).__name__}: {e}"
+        print(f"[-] QQ 转发失败: {err}")
+        return False, err
+
+
+def qq_target_payload():
+    """返回与当前目标类型对应的 OneBot 目标字段。"""
+    key = "user_id" if TARGET_QQ_TYPE == "user" else "group_id"
+    return {key: str(TARGET_QQ_GROUP)}
+
+
+def stage_file_for_napcat(source_path, token, idx, filename):
+    """将文件硬链接/复制到 NapCat 容器可见目录，避免 HTTP 临时资源失效。"""
+    import shutil
+    safe_name = os.path.basename(filename) or f"file_{idx}"
+    staged_name = f"{token}_{idx}_{safe_name}"
+    host_path = os.path.join(NAPCAT_STAGE_DIR, staged_name)
+    container_path = os.path.join(NAPCAT_CONTAINER_STAGE_DIR, staged_name)
+    if not os.path.isfile(source_path) or os.path.getsize(source_path) <= 0:
+        raise FileNotFoundError(f"待转发源文件不存在或为空: {source_path}")
+    try:
+        if os.path.exists(host_path):
+            os.remove(host_path)
+        os.link(source_path, host_path)
+    except OSError:
+        shutil.copyfile(source_path, host_path)
+    os.chmod(host_path, 0o644)
+    return host_path, container_path
+
+
+async def delayed_remove(path, delay=3600):
+    await asyncio.sleep(delay)
+    try:
+        if os.path.exists(path):
+            os.remove(path)
+    except Exception as e:
+        print(f"[-] 清理 NapCat 暂存文件失败 {path}: {e}")
+
+
+async def send_file_to_qq(session, token, idx, source_path, content_type, filename):
+    """通过 NapCat 文件上传 API 发送原始文件，绕过易损坏的富媒体链路。"""
+    if FORWARD_MODE not in {"file", "both"}:
+        return True, None
+    try:
+        staged_host_path, staged_container_path = stage_file_for_napcat(
+            source_path, token, idx, filename
+        )
+    except Exception as e:
+        return False, str(e)
+
+    action = "upload_private_file" if TARGET_QQ_TYPE == "user" else "upload_group_file"
+    payload = {
+        **qq_target_payload(),
+        "file": f"file://{staged_container_path}",
+        "name": os.path.basename(filename) or f"file_{idx}",
+    }
+    try:
+        return await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
+    finally:
+        # NapCat/NTQQ 某些版本返回后仍会异步读取，保留一小时避免资源消失。
+        asyncio.create_task(delayed_remove(staged_host_path, delay=3600))
+
+
+async def send_link_to_qq(session, text):
+    """按当前模式发送网页链接。"""
+    if FORWARD_MODE not in {"link", "both"}:
+        return True, None
+    return await send_to_qq(session, {**qq_target_payload(), "message": text})
+
+
+def persist_env_value(key, value):
+    """更新当前 .env 中的一个配置项。"""
+    env_path = ENV_FILE_PATH or os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+    lines = []
+    if os.path.exists(env_path):
+        with open(env_path, "r", encoding="utf-8") as f:
+            lines = f.readlines()
+    prefix = f"{key}="
+    for i, line in enumerate(lines):
+        if line.lstrip().startswith(prefix):
+            lines[i] = f"{key}={value}\n"
+            break
+    else:
+        lines.append(f"{key}={value}\n")
+    with open(env_path, "w", encoding="utf-8") as f:
+        f.writelines(lines)
+
+
+def persist_qq_target(target_type, target_id):
+    """切换 QQ 群/私聊目标并写回 .env。BRIDGE_TARGET_QQ_GROUP 保留作兼容 ID。"""
+    global TARGET_QQ_GROUP, TARGET_QQ_GROUP_STR, TARGET_QQ_TYPE
+    TARGET_QQ_GROUP = int(target_id)
+    TARGET_QQ_GROUP_STR = str(target_id)
+    TARGET_QQ_TYPE = target_type
+    persist_env_value("BRIDGE_TARGET_QQ_GROUP", target_id)
+    persist_env_value("BRIDGE_TARGET_QQ_TYPE", target_type)
+
+
+def persist_forward_mode(mode):
+    """立即切换转发模式并持久化。"""
+    global FORWARD_MODE
+    FORWARD_MODE = mode
+    persist_env_value("BRIDGE_FORWARD_MODE", mode)
+
+
+def forward_success_text():
+    return {
+        "link": "✅ 网页链接已转发至 QQ。",
+        "file": "✅ 源文件已转发至 QQ。",
+        "both": "✅ 源文件和网页链接已转发至 QQ。",
+    }[FORWARD_MODE]
 
 
 # --- 4. TG 消息回调函数 ---
@@ -515,19 +682,29 @@ async def handle_media_message(message):
         except Exception as chmod_err:
             print(f"[-] 修改文件权限失败: {chmod_err}")
 
+        # 记录当前文件自己的固定索引；媒体组处理并发时不能事后取列表末尾。
+        item_idx = len(active_tasks[token])
         active_tasks[token].append({"path": local_file_path, "type": content_type, "name": filename})
         
         if is_first:
             view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
-                payload = {"group_id": TARGET_QQ_GROUP, "message": f"🔑 收到加密媒体(支持多图/视频组)（3小时内复制打开）：\n{view_url}"}
-                qq_ok, qq_err = await send_to_qq(session, payload)
+                file_ok, file_err = await send_file_to_qq(
+                    session, token, item_idx, local_file_path, content_type, filename
+                )
+                qq_ok, qq_err = await send_link_to_qq(session, f"🔑 收到加密媒体(支持多图/视频组)（3小时内复制打开）：\n{view_url}")
                 
             await asyncio.sleep(2.5)
-            if qq_ok:
-                await bot.edit_message_text("✅ 网页加密流生成成功，已转发至 QQ。", chat_id=message.chat.id, message_id=status_msg.message_id)
+            if qq_ok and file_ok:
+                await bot.edit_message_text(forward_success_text(), chat_id=message.chat.id, message_id=status_msg.message_id)
             else:
-                await bot.edit_message_text(f"⚠️ 网页已生成，但转发 QQ 失败: {qq_err}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                errors = "; ".join(x for x in (qq_err, file_err) if x)
+                await bot.edit_message_text(f"⚠️ 转发 QQ 失败: {errors}", chat_id=message.chat.id, message_id=status_msg.message_id)
+        else:
+            async with aiohttp.ClientSession() as session:
+                await send_file_to_qq(
+                    session, token, item_idx, local_file_path, content_type, filename
+                )
         
         try: await bot.delete_message(message.chat.id, message.message_id)
         except: pass
@@ -541,6 +718,53 @@ async def handle_media_message(message):
 @bot.message_handler(func=lambda message: message.chat.type == 'private', content_types=['text'])
 async def handle_text_message(message):
     text = message.text or ""
+    command = text.strip().split()
+    if command and command[0].lower() in {"/setgroup", "/set_group"}:
+        if BRIDGE_ADMIN_USER_ID is None or message.from_user.id != BRIDGE_ADMIN_USER_ID:
+            await bot.reply_to(message, "❌ 未授权。请配置 BRIDGE_ADMIN_USER_ID 后使用此命令。")
+            return
+        if len(command) != 2 or not command[1].isdigit():
+            await bot.reply_to(message, "用法：/setgroup 群号")
+            return
+        try:
+            persist_qq_target("group", int(command[1]))
+            await bot.reply_to(message, f"✅ 转发目标群已切换为 {TARGET_QQ_GROUP}（已写入 .env，无需重启）。")
+        except Exception as e:
+            await bot.reply_to(message, f"❌ 保存目标群失败: {e}")
+        return
+    if command and command[0].lower() in {"/setuser", "/set_user"}:
+        if BRIDGE_ADMIN_USER_ID is None or message.from_user.id != BRIDGE_ADMIN_USER_ID:
+            await bot.reply_to(message, "❌ 未授权。请配置 BRIDGE_ADMIN_USER_ID 后使用此命令。")
+            return
+        if len(command) != 2 or not command[1].isdigit():
+            await bot.reply_to(message, "用法：/setuser 对方QQ号")
+            return
+        try:
+            persist_qq_target("user", int(command[1]))
+            await bot.reply_to(message, f"✅ 转发目标已切换为 QQ 私聊 {TARGET_QQ_GROUP}（已写入 .env，无需重启）。")
+        except Exception as e:
+            await bot.reply_to(message, f"❌ 保存私聊目标失败: {e}")
+        return
+    if command and command[0].lower() in {"/setmode", "/set_mode"}:
+        if BRIDGE_ADMIN_USER_ID is None or message.from_user.id != BRIDGE_ADMIN_USER_ID:
+            await bot.reply_to(message, "❌ 未授权。请配置 BRIDGE_ADMIN_USER_ID 后使用此命令。")
+            return
+        aliases = {
+            "link": "link", "链接": "link",
+            "file": "file", "source": "file", "源文件": "file", "文件": "file",
+            "both": "both", "all": "both", "全部": "both", "两者": "both",
+        }
+        mode = aliases.get(command[1].lower()) if len(command) == 2 else None
+        if not mode:
+            await bot.reply_to(message, "用法：/setmode link|file|both（链接 / 源文件 / 两者）")
+            return
+        try:
+            persist_forward_mode(mode)
+            labels = {"link": "仅链接", "file": "仅源文件", "both": "链接 + 源文件"}
+            await bot.reply_to(message, f"✅ 转发模式已切换为：{labels[mode]}（已写入 .env，无需重启）。")
+        except Exception as e:
+            await bot.reply_to(message, f"❌ 保存转发模式失败: {e}")
+        return
     import re
     import json
     urls = re.findall(r'(https?://\S+)', text)
@@ -584,17 +808,25 @@ async def handle_text_message(message):
                 return
                 
             active_tasks[token] = files
-            
+
             view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
-                payload = {"group_id": TARGET_QQ_GROUP, "message": f"🔑 收到加密网页下载链接（3小时内复制打开）：\n{view_url}"}
-                qq_ok, qq_err = await send_to_qq(session, payload)
+                file_results = [
+                    await send_file_to_qq(
+                        session, token, idx, item["path"],
+                        item.get("type", "application/octet-stream"), item.get("name", "file")
+                    )
+                    for idx, item in enumerate(files)
+                ]
+                qq_ok, qq_err = await send_link_to_qq(session, f"🔑 收到加密网页下载链接（3小时内复制打开）：\n{view_url}")
                 
             await asyncio.sleep(2.5)
-            if qq_ok:
-                await bot.edit_message_text("✅ Userbot 下载成功，加密链接已下发至 QQ。", chat_id=message.chat.id, message_id=status_msg.message_id)
+            file_errors = [err for ok, err in file_results if not ok and err]
+            if qq_ok and not file_errors:
+                await bot.edit_message_text(forward_success_text(), chat_id=message.chat.id, message_id=status_msg.message_id)
             else:
-                await bot.edit_message_text(f"⚠️ 网页已生成，但下发 QQ 失败: {qq_err}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                errors = "; ".join(([qq_err] if qq_err else []) + file_errors)
+                await bot.edit_message_text(f"⚠️ 转发 QQ 失败: {errors}", chat_id=message.chat.id, message_id=status_msg.message_id)
                 
             asyncio.create_task(auto_delete_cache(token, delay=10800))
             
@@ -644,14 +876,17 @@ async def handle_text_message(message):
             
             view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
-                payload = {"group_id": TARGET_QQ_GROUP, "message": f"🔑 收到加密网页下载链接（3小时内复制打开）：\n{view_url}"}
-                qq_ok, qq_err = await send_to_qq(session, payload)
+                file_ok, file_err = await send_file_to_qq(
+                    session, token, 0, local_file_path, content_type, filename
+                )
+                qq_ok, qq_err = await send_link_to_qq(session, f"🔑 收到加密网页下载链接（3小时内复制打开）：\n{view_url}")
             
             await asyncio.sleep(2.5)
-            if qq_ok:
-                await bot.edit_message_text("✅ 链接文件下载并生成网页流成功，已转发至 QQ。", chat_id=message.chat.id, message_id=status_msg.message_id)
+            if qq_ok and file_ok:
+                await bot.edit_message_text(forward_success_text(), chat_id=message.chat.id, message_id=status_msg.message_id)
             else:
-                await bot.edit_message_text(f"⚠️ 链接文件已下载，但转发 QQ 失败: {qq_err}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                errors = "; ".join(x for x in (qq_err, file_err) if x)
+                await bot.edit_message_text(f"⚠️ 转发 QQ 失败: {errors}", chat_id=message.chat.id, message_id=status_msg.message_id)
                 
         except Exception as e:
             await bot.edit_message_text(f"❌ 下载失败，发生异常: {e}", chat_id=message.chat.id, message_id=status_msg.message_id)
@@ -781,7 +1016,7 @@ async def handle_sticker_message(message):
             msg_type = "video"
             
         payload = {
-            "group_id": TARGET_QQ_GROUP,
+            **qq_target_payload(),
             "message": [
                 {
                     "type": msg_type,
@@ -831,6 +1066,17 @@ async def main():
             orphan_count += 1
     if orphan_count:
         print(f"[*] 启动清理：已删除 {orphan_count} 个上次残留的孤儿缓存文件")
+
+    # delayed_remove 任务会随进程重启消失，仅清理一小时前的 NapCat 暂存文件。
+    staged_orphan_count = 0
+    cutoff = time.time() - 3600
+    for f in os.listdir(NAPCAT_STAGE_DIR):
+        fpath = os.path.join(NAPCAT_STAGE_DIR, f)
+        if os.path.isfile(fpath) and os.path.getmtime(fpath) < cutoff:
+            os.remove(fpath)
+            staged_orphan_count += 1
+    if staged_orphan_count:
+        print(f"[*] 启动清理：已删除 {staged_orphan_count} 个过期 NapCat 暂存文件")
 
     # 初始化 Web 服务
     server = web.Application()
