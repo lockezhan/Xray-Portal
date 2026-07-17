@@ -6,6 +6,8 @@ import aiohttp
 import mimetypes
 import re
 import time
+import json
+import shutil
 from aiohttp import web
 import telebot
 from telebot.async_telebot import AsyncTeleBot
@@ -60,6 +62,9 @@ NAPCAT_STREAM_CHUNK_SIZE = max(64 * 1024, int(os.environ.get("BRIDGE_NAPCAT_STRE
 NAPCAT_STAGE_CLEANUP_INTERVAL = max(60, int(os.environ.get("BRIDGE_NAPCAT_STAGE_CLEANUP_INTERVAL", "600")))
 NAPCAT_STAGE_MAX_AGE = max(300, int(os.environ.get("BRIDGE_NAPCAT_STAGE_MAX_AGE", "3600")))
 MEDIA_GROUP_SETTLE_DELAY = float(os.environ.get("BRIDGE_MEDIA_GROUP_SETTLE_DELAY", 8))
+WEB_TRANSCODE_MAX_CONCURRENCY = max(1, int(os.environ.get("BRIDGE_WEB_TRANSCODE_MAX_CONCURRENCY", "1")))
+WEB_TRANSCODE_PRESET = os.environ.get("BRIDGE_WEB_TRANSCODE_PRESET", "veryfast")
+WEB_TRANSCODE_CRF = os.environ.get("BRIDGE_WEB_TRANSCODE_CRF", "23")
 TARGET_QQ_TYPE = os.environ.get("BRIDGE_TARGET_QQ_TYPE", "group").lower()
 if TARGET_QQ_TYPE not in {"group", "user"}:
     print(f"警告: BRIDGE_TARGET_QQ_TYPE={TARGET_QQ_TYPE!r} 无效，已回退为 group")
@@ -164,6 +169,7 @@ if USE_LOCAL_API:
 bot = AsyncTeleBot(BOT_TOKEN)
 active_tasks = {}
 napcat_send_semaphore = asyncio.Semaphore(NAPCAT_MAX_CONCURRENCY)
+web_transcode_semaphore = asyncio.Semaphore(WEB_TRANSCODE_MAX_CONCURRENCY)
 media_group_states = {}
 
 
@@ -283,7 +289,13 @@ HTML_TEMPLATE = """
                         data.items.forEach((item, idx) => {
                             html += '<div class="media-item">';
                             if (item.type.startsWith('video/')) {
-                                html += `<video id="media-${idx}" src="/stream?token=${token}&idx=${idx}" controls preload="metadata" playsinline></video>`;
+                                if (item.stream_ready) {
+                                    html += `<video id="media-${idx}" src="/stream?token=${token}&idx=${idx}" controls preload="metadata" playsinline></video>`;
+                                } else if (item.stream_error) {
+                                    html += `<div id="media-${idx}" class="file-icon-wrapper"><span class="file-icon">⬇️</span><p class="file-name">在线播放版本生成失败，请使用下载按钮</p></div>`;
+                                } else {
+                                    html += `<div id="media-${idx}" class="file-icon-wrapper"><span class="file-icon">⏳</span><p class="file-name">正在生成在线播放版本，请稍候...</p></div>`;
+                                }
                             } else if (item.type.startsWith('image/')) {
                                 html += `<img id="media-${idx}" src="/stream?token=${token}&idx=${idx}" alt="Shared Image">`;
                             } else {
@@ -300,6 +312,9 @@ HTML_TEMPLATE = """
                         });
                         mediaBox.innerHTML = html;
                         actionBox.style.display = 'block';
+                        if (data.items.some(item => item.type.startsWith('video/') && !item.stream_ready && !item.stream_error)) {
+                            setTimeout(() => window.location.reload(), 2000);
+                        }
 
                         // 倒计时
                         const firstItem = data.items[0];
@@ -338,6 +353,112 @@ HTML_TEMPLATE = """
 async def handle_view_page(request):
     return web.Response(text=HTML_TEMPLATE, content_type='text/html')
 
+
+def _is_video_item(item):
+    path = item.get("path", "")
+    content_type = item.get("type", "") or ""
+    return content_type.startswith("video/") or os.path.splitext(path)[1].lower() in {".mp4", ".mov", ".m4v", ".webm", ".mkv", ".avi"}
+
+
+async def _probe_video(path):
+    """读取视频编码信息；失败时由调用方回退到原文件下载。"""
+    proc = await asyncio.create_subprocess_exec(
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries", "stream=codec_name,pix_fmt",
+        "-of", "json", path,
+        stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    if proc.returncode != 0:
+        raise RuntimeError("ffprobe 无法识别视频格式")
+    streams = json.loads(stdout.decode("utf-8", "replace")).get("streams", [])
+    if not streams:
+        raise RuntimeError("视频没有可用的视频流")
+    return streams[0]
+
+
+async def _prepare_web_stream(item):
+    """为网页生成兼容视频，同时保留 item['path'] 作为原始下载/QQ 文件。"""
+    source_path = item["path"]
+    item["stream_ready"] = False
+    if not _is_video_item(item):
+        item["stream_path"] = source_path
+        item["stream_ready"] = True
+        return
+
+    ext = os.path.splitext(source_path)[1].lower()
+    # WebM 等格式不做有损转换；MP4/MOV 才需要处理 HEVC/10-bit 和 moov 顺序。
+    if ext not in {".mp4", ".mov", ".m4v"}:
+        item["stream_path"] = source_path
+        item["stream_ready"] = True
+        return
+
+    output_path = f"{source_path}.web.mp4"
+    temp_path = f"{output_path}.{uuid.uuid4().hex}.tmp"
+    try:
+        stream = await _probe_video(source_path)
+        codec = (stream.get("codec_name") or "").lower()
+        pix_fmt = (stream.get("pix_fmt") or "").lower()
+        browser_compatible = codec == "h264" and pix_fmt in {"yuv420p", "yuvj420p"}
+
+        if os.path.exists(output_path) and os.path.getsize(output_path) > 0:
+            os.remove(temp_path) if os.path.exists(temp_path) else None
+        else:
+            free_bytes = shutil.disk_usage(os.path.dirname(source_path)).free
+            source_size = os.path.getsize(source_path)
+            if free_bytes < source_size * 1.2:
+                raise RuntimeError("磁盘空间不足，无法生成网页播放版本")
+
+            if browser_compatible:
+                # 不重新编码，仅把 moov atom 移到文件头，保留原画质。
+                ffmpeg_args = [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source_path,
+                    "-map", "0:v:0", "-map", "0:a:0?", "-c", "copy",
+                    "-movflags", "+faststart", temp_path,
+                ]
+            else:
+                # HEVC/Main10 等浏览器不稳定格式转为 H.264 8-bit + AAC。
+                ffmpeg_args = [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-i", source_path,
+                    "-map", "0:v:0", "-map", "0:a:0?", "-c:v", "libx264",
+                    "-preset", WEB_TRANSCODE_PRESET, "-crf", WEB_TRANSCODE_CRF,
+                    "-pix_fmt", "yuv420p", "-c:a", "aac", "-b:a", "160k",
+                    "-movflags", "+faststart", temp_path,
+                ]
+
+            async with web_transcode_semaphore:
+                proc = await asyncio.create_subprocess_exec(
+                    *ffmpeg_args, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                _, stderr = await proc.communicate()
+            if proc.returncode != 0 or not os.path.exists(temp_path):
+                detail = stderr.decode("utf-8", "replace")[-500:]
+                raise RuntimeError(f"ffmpeg 网页转码失败: {detail}")
+            os.replace(temp_path, output_path)
+            os.chmod(output_path, 0o644)
+
+        item["stream_path"] = output_path
+        item["stream_type"] = "video/mp4"
+        item["stream_ready"] = True
+        print(f"[*] 网页播放版本已就绪: {source_path} -> {output_path}")
+    except Exception as exc:
+        if os.path.exists(temp_path):
+            try:
+                os.remove(temp_path)
+            except OSError:
+                pass
+        item["stream_error"] = str(exc)
+        print(f"[-] 网页播放版本生成失败（原文件仍可下载）: {source_path}: {exc}")
+
+
+def register_media_item(token, item):
+    """登记原始文件并异步准备网页播放版本。"""
+    item.setdefault("stream_ready", False)
+    active_tasks[token].append(item)
+    item["stream_task"] = asyncio.create_task(_prepare_web_stream(item))
+    return len(active_tasks[token]) - 1
+
+
 async def handle_stream(request):
     token = request.query.get("token")
     if not token or token not in active_tasks:
@@ -353,8 +474,10 @@ async def handle_stream(request):
             except Exception:
                 expires_at = 0
             res_items.append({
-                "type": item["type"],
+                "type": item.get("stream_type", item["type"]),
                 "filename": item["name"],
+                "stream_ready": item.get("stream_ready", True),
+                "stream_error": item.get("stream_error", ""),
                 "expires_at": expires_at
             })
         return web.json_response({"items": res_items})
@@ -364,12 +487,15 @@ async def handle_stream(request):
         return web.HTTPNotFound()
         
     item = items[idx]
-    if not os.path.exists(item["path"]):
+    stream_path = item.get("stream_path")
+    if not stream_path or not item.get("stream_ready", True):
+        return web.Response(status=425, text="网页播放版本仍在生成，请稍候")
+    if not os.path.exists(stream_path):
         return web.HTTPNotFound()
-        
+
     return web.FileResponse(
-        item["path"],
-        headers={"Content-Type": item["type"]}
+        stream_path,
+        headers={"Content-Type": item.get("stream_type", item["type"])}
     )
 
 async def handle_download(request):
@@ -445,9 +571,10 @@ async def auto_delete_cache(token, delay=10800):
     if token in active_tasks:
         items = active_tasks.pop(token)
         for item in items:
-            if os.path.exists(item["path"]):
-                try: os.remove(item["path"]); print(f"[x] 已自动清理: {item['path']}")
-                except: pass
+            for cleanup_path in {item.get("path"), item.get("stream_path")}:
+                if cleanup_path and os.path.exists(cleanup_path):
+                    try: os.remove(cleanup_path); print(f"[x] 已自动清理: {cleanup_path}")
+                    except: pass
         zip_path = os.path.join(CACHE_DIR, f"{token}.zip")
         if os.path.exists(zip_path):
             try: os.remove(zip_path)
@@ -948,8 +1075,9 @@ async def handle_media_message(message):
             print(f"[-] 修改文件权限失败: {chmod_err}")
 
         # 记录当前文件自己的固定索引；媒体组处理并发时不能事后取列表末尾。
-        item_idx = len(active_tasks[token])
-        active_tasks[token].append({"path": local_file_path, "type": content_type, "name": filename})
+        item_idx = register_media_item(token, {
+            "path": local_file_path, "type": content_type, "name": filename
+        })
         
         if is_media_group:
             async with aiohttp.ClientSession() as session:
@@ -1085,7 +1213,9 @@ async def handle_text_message(message):
                 await bot.edit_message_text(f"❌ 未找到可下载的文件", chat_id=message.chat.id, message_id=status_msg.message_id)
                 return
                 
-            active_tasks[token] = files
+            active_tasks[token] = []
+            for file_item in files:
+                register_media_item(token, file_item)
 
             view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
@@ -1149,7 +1279,10 @@ async def handle_text_message(message):
             except Exception as chmod_err:
                 print(f"[-] 修改普通 HTTP 下载文件权限失败: {chmod_err}")
 
-            active_tasks[token] = [{"path": local_file_path, "type": content_type, "name": filename}]
+            active_tasks[token] = []
+            register_media_item(token, {
+                "path": local_file_path, "type": content_type, "name": filename
+            })
             asyncio.create_task(auto_delete_cache(token, delay=10800))
             
             view_url = format_view_url(token)
