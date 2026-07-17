@@ -50,6 +50,12 @@ NAPCAT_API_URL = os.environ.get("BRIDGE_NAPCAT_API_URL", "http://127.0.0.1:3000/
 NAPCAT_API_BASE = NAPCAT_API_URL.rsplit("/", 1)[0]
 NAPCAT_TIMEOUT = float(os.environ.get("BRIDGE_NAPCAT_TIMEOUT", 300))
 NAPCAT_MAX_CONCURRENCY = max(1, int(os.environ.get("BRIDGE_NAPCAT_MAX_CONCURRENCY", 1)))
+# NTQQ 的普通富媒体上传在大文件/私聊场景下容易返回 rich media transfer failed。
+# NapCat v4.8.115+ 提供 WebSocket Stream API；超过阈值的文件先分块上传，再交给 QQ 发送。
+NAPCAT_WS_URL = os.environ.get("BRIDGE_NAPCAT_WS_URL", "ws://127.0.0.1:3001")
+NAPCAT_WS_TOKEN = os.environ.get("BRIDGE_NAPCAT_WS_TOKEN", "")
+NAPCAT_STREAM_THRESHOLD = max(0, int(os.environ.get("BRIDGE_NAPCAT_STREAM_THRESHOLD", str(50 * 1024 * 1024))))
+NAPCAT_STREAM_CHUNK_SIZE = max(64 * 1024, int(os.environ.get("BRIDGE_NAPCAT_STREAM_CHUNK_SIZE", str(1024 * 1024))))
 MEDIA_GROUP_SETTLE_DELAY = float(os.environ.get("BRIDGE_MEDIA_GROUP_SETTLE_DELAY", 8))
 TARGET_QQ_TYPE = os.environ.get("BRIDGE_TARGET_QQ_TYPE", "group").lower()
 if TARGET_QQ_TYPE not in {"group", "user"}:
@@ -493,6 +499,73 @@ async def send_to_qq(session, payload, api_url=None):
         return False, err
 
 
+async def upload_file_stream_to_napcat(host_path, filename):
+    """通过 NapCat Stream API 分块上传文件，返回 NapCat 可见的文件路径。"""
+    try:
+        import websockets
+    except ImportError as e:
+        raise RuntimeError("缺少 websockets 依赖，无法启用 NapCat 大文件流式上传") from e
+
+    file_size = os.path.getsize(host_path)
+    if file_size <= 0:
+        raise ValueError("待上传文件为空")
+    chunk_size = NAPCAT_STREAM_CHUNK_SIZE
+    total_chunks = (file_size + chunk_size - 1) // chunk_size
+    sha256 = __import__("hashlib").sha256()
+    with open(host_path, "rb") as source:
+        while True:
+            chunk = source.read(chunk_size)
+            if not chunk:
+                break
+            sha256.update(chunk)
+    expected_sha256 = sha256.hexdigest()
+    stream_id = uuid.uuid4().hex
+
+    connect_kwargs = {}
+    if NAPCAT_WS_TOKEN:
+        connect_kwargs["additional_headers"] = {"Authorization": f"Bearer {NAPCAT_WS_TOKEN}"}
+    try:
+        websocket = await websockets.connect(NAPCAT_WS_URL, **connect_kwargs)
+    except TypeError:
+        # websockets 10/11 使用 extra_headers，兼容旧版运行环境。
+        if NAPCAT_WS_TOKEN:
+            connect_kwargs = {"extra_headers": {"Authorization": f"Bearer {NAPCAT_WS_TOKEN}"}}
+        websocket = await websockets.connect(NAPCAT_WS_URL, **connect_kwargs)
+
+    async with websocket:
+        async def action(params):
+            echo = uuid.uuid4().hex
+            await websocket.send(__import__("json").dumps({
+                "action": "upload_file_stream", "params": params, "echo": echo
+            }))
+            while True:
+                response = __import__("json").loads(await websocket.recv())
+                if response.get("echo") == echo:
+                    if response.get("status") != "ok":
+                        raise RuntimeError(response.get("wording") or response.get("message") or str(response))
+                    return response
+
+        with open(host_path, "rb") as source:
+            for chunk_index in range(total_chunks):
+                chunk = source.read(chunk_size)
+                params = {
+                    "stream_id": stream_id,
+                    "chunk_data": __import__("base64").b64encode(chunk).decode("ascii"),
+                    "chunk_index": chunk_index,
+                    "total_chunks": total_chunks,
+                    "file_size": file_size,
+                    "expected_sha256": expected_sha256,
+                    "filename": os.path.basename(filename) or "file",
+                    "file_retention": 60 * 60 * 1000,
+                }
+                await action(params)
+        response = await action({"stream_id": stream_id, "is_complete": True})
+        data = response.get("data") or {}
+        if data.get("status") != "file_complete" or not data.get("file_path"):
+            raise RuntimeError(f"NapCat 流式上传完成响应异常: {response}")
+        return data["file_path"]
+
+
 def qq_target_payload():
     """返回与当前目标类型对应的 OneBot 目标字段。"""
     key = "user_id" if TARGET_QQ_TYPE == "user" else "group_id"
@@ -528,7 +601,7 @@ async def delayed_remove(path, delay=3600):
 
 
 async def send_file_to_qq(session, token, idx, source_path, content_type, filename):
-    """通过 NapCat 文件上传 API 发送原始文件，绕过易损坏的富媒体链路。"""
+    """通过 NapCat 文件 API 发送原文件；大文件先走 Stream API 分块上传。"""
     if FORWARD_MODE not in {"file", "both"}:
         return True, None
     try:
@@ -539,15 +612,35 @@ async def send_file_to_qq(session, token, idx, source_path, content_type, filena
         return False, str(e)
 
     action = "upload_private_file" if TARGET_QQ_TYPE == "user" else "upload_group_file"
-    payload = {
-        **qq_target_payload(),
-        # 传容器内绝对路径；NapCat 会识别本地文件并转换为 file://。
-        "file": staged_container_path,
-        "name": os.path.basename(filename) or f"file_{idx}",
-        "upload_file": True,
-    }
-    try:
+    safe_filename = os.path.basename(filename) or f"file_{idx}"
+    file_size = os.path.getsize(staged_host_path)
+
+    async def send_path(file_path):
+        payload = {
+            **qq_target_payload(),
+            "file": file_path,
+            "name": safe_filename,
+            "upload_file": True,
+        }
         return await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
+
+    try:
+        if NAPCAT_STREAM_THRESHOLD and file_size >= NAPCAT_STREAM_THRESHOLD:
+            print(f"[*] 文件 {safe_filename} 为 {file_size / 1024 / 1024:.1f} MB，使用 NapCat Stream API 分块上传。")
+            streamed_path = await upload_file_stream_to_napcat(staged_host_path, safe_filename)
+            return await send_path(streamed_path)
+
+        result = await send_path(staged_container_path)
+        # 小文件也可能因 NTQQ 本地文件解析失败；仅在明确的富媒体传输失败时流式重试。
+        if not result[0] and "rich media transfer failed" in (result[1] or "").lower():
+            print(f"[!] 普通文件上传失败，改用 NapCat Stream API 重试: {safe_filename}")
+            streamed_path = await upload_file_stream_to_napcat(staged_host_path, safe_filename)
+            return await send_path(streamed_path)
+        return result
+    except Exception as e:
+        err = f"NapCat 流式上传失败: {type(e).__name__}: {e}"
+        print(f"[-] {err}")
+        return False, err
     finally:
         # NapCat/NTQQ 某些版本返回后仍会异步读取，保留一小时避免资源消失。
         asyncio.create_task(delayed_remove(staged_host_path, delay=3600))

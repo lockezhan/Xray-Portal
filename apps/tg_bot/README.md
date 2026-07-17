@@ -37,6 +37,9 @@ pip install -r requirements.txt
 *   `BRIDGE_NAPCAT_API_URL`：本地 NapCat (OneBot) 接口地址。
 *   `BRIDGE_NAPCAT_TIMEOUT`：等待 NapCat 完成媒体上传的秒数，默认 `300`。
 *   `BRIDGE_NAPCAT_MAX_CONCURRENCY`：同时提交给 NapCat 的媒体数，默认 `1`，避免相册并发挤满上传队列。
+*   `BRIDGE_NAPCAT_WS_URL`：NapCat 正向 WebSocket 地址，默认 `ws://127.0.0.1:3001`，用于大文件 Stream API。
+*   `BRIDGE_NAPCAT_STREAM_THRESHOLD`：启用分块上传的文件大小阈值（字节），默认 `52428800`（50 MiB）。普通上传出现 `rich media transfer failed` 时，小文件也会自动改走 Stream API 重试。
+*   `BRIDGE_NAPCAT_STREAM_CHUNK_SIZE`：Stream API 分块大小（字节），默认 `1048576`（1 MiB）。
 *   `BRIDGE_MEDIA_GROUP_SETTLE_DELAY`：媒体组最后一个文件完成后，等待多少秒再发送链接和完成提示，默认 `8`。
 *   `BRIDGE_FORWARD_MODE`：转发模式，支持 `link`（仅链接）、`file`（仅源文件）、`both`（两者，默认）。旧的 `BRIDGE_FORWARD_FILES=0` 仍兼容为仅链接模式。
 *   `BRIDGE_ADMIN_USER_ID`：允许执行运行时切群命令的 Telegram 数字用户 ID；未设置时复用 `CHANNEL_ADMIN_ID`。
@@ -106,7 +109,7 @@ journalctl -u tg-qq-bridge -f
 *   **无法将消息发给 QQ 群**：
     *   *现象*：Telegram 收到链接，但 QQ 群没有响应。
     *   *排查方式*：检查 `napcat` Docker 容器是否正常登录，并检查 `BRIDGE_NAPCAT_API_URL` 接口是否畅通（可通过 `curl` 测试 `3000` 端口）。
-    *   *大媒体/相册*：默认最多等待 NapCat 300 秒并串行提交，避免 10 秒误超时以及并发上传拥堵；可通过 `BRIDGE_NAPCAT_TIMEOUT` 和 `BRIDGE_NAPCAT_MAX_CONCURRENCY` 调整。
+    *   *大媒体/相册*：50 MiB 以上文件会先经 NapCat WebSocket Stream API 分块上传；更小文件若返回 `rich media transfer failed` 也会自动流式重试。默认最多等待 NapCat 300 秒并串行提交，可通过 `BRIDGE_NAPCAT_*` 参数调整。
 
 ---
 

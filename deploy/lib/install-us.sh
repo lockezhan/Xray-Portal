@@ -644,7 +644,20 @@ _us_install_tg_bot() {
     ],
     "httpSseServers": [],
     "httpClients": [],
-    "websocketServers": [],
+    "websocketServers": [
+      {
+        "name": "BridgeStreamServer",
+        "enable": true,
+        "host": "127.0.0.1",
+        "port": 3001,
+        "messagePostFormat": "array",
+        "reportSelfMessage": false,
+        "token": "",
+        "enableForcePushEvent": false,
+        "debug": false,
+        "heartInterval": 30000
+      }
+    ],
     "websocketClients": [],
     "plugins": []
   },
@@ -687,6 +700,9 @@ BRIDGE_SERVER_PUBLIC_IP=${public_ip}
 BRIDGE_NAPCAT_API_URL=${BRIDGE_NAPCAT_API_URL:-http://127.0.0.1:3000/send_msg}
 BRIDGE_NAPCAT_TIMEOUT=${BRIDGE_NAPCAT_TIMEOUT:-300}
 BRIDGE_NAPCAT_MAX_CONCURRENCY=${BRIDGE_NAPCAT_MAX_CONCURRENCY:-1}
+BRIDGE_NAPCAT_WS_URL=${BRIDGE_NAPCAT_WS_URL:-ws://127.0.0.1:3001}
+BRIDGE_NAPCAT_STREAM_THRESHOLD=${BRIDGE_NAPCAT_STREAM_THRESHOLD:-52428800}
+BRIDGE_NAPCAT_STREAM_CHUNK_SIZE=${BRIDGE_NAPCAT_STREAM_CHUNK_SIZE:-1048576}
 BRIDGE_MEDIA_GROUP_SETTLE_DELAY=${BRIDGE_MEDIA_GROUP_SETTLE_DELAY:-8}
 BRIDGE_FORWARD_MODE=${BRIDGE_FORWARD_MODE:-both}
 TELEGRAM_USER_API_ID=${TELEGRAM_USER_API_ID:-}
