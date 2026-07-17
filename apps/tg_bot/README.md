@@ -37,6 +37,7 @@ pip install -r requirements.txt
 *   `BRIDGE_NAPCAT_API_URL`：本地 NapCat (OneBot) 接口地址。
 *   `BRIDGE_NAPCAT_TIMEOUT`：等待 NapCat 完成媒体上传的秒数，默认 `300`。
 *   `BRIDGE_NAPCAT_MAX_CONCURRENCY`：同时提交给 NapCat 的媒体数，默认 `1`，避免相册并发挤满上传队列。
+*   `BRIDGE_MEDIA_GROUP_SETTLE_DELAY`：媒体组最后一个文件完成后，等待多少秒再发送链接和完成提示，默认 `8`。
 *   `BRIDGE_FORWARD_MODE`：转发模式，支持 `link`（仅链接）、`file`（仅源文件）、`both`（两者，默认）。旧的 `BRIDGE_FORWARD_FILES=0` 仍兼容为仅链接模式。
 *   `BRIDGE_ADMIN_USER_ID`：允许执行运行时切群命令的 Telegram 数字用户 ID；未设置时复用 `CHANNEL_ADMIN_ID`。
 *   `CHANNEL_BOT_TOKEN`：转发 Bot 的 Telegram API 凭证。
@@ -111,3 +112,4 @@ journalctl -u tg-qq-bridge -f
 
 ## 8. 与其他模块的关系
 *   **Nginx 服务**：桥接 Bot 将媒体资源下载并缓存到 `/var/lib/tg-bridge-cache/` 中。用户点击分享链接时，Nginx 通过 `X-Accel-Redirect` (内部重定向) 直接以零拷贝高速下发这些流媒体文件，不占用 Bot 进程的 CPU/I/O。
+*   **缓存路径**：Bridge 源文件缓存为 `/var/lib/tg-bridge-cache/`；NapCat 容器可见的上传暂存为 `/opt/napcat/qq/bridge-cache/`（容器内对应 `/app/.config/QQ/bridge-cache/`）；本地 Telegram Bot API 数据为 `/var/lib/telegram-bot-api/`。

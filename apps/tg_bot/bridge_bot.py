@@ -50,6 +50,7 @@ NAPCAT_API_URL = os.environ.get("BRIDGE_NAPCAT_API_URL", "http://127.0.0.1:3000/
 NAPCAT_API_BASE = NAPCAT_API_URL.rsplit("/", 1)[0]
 NAPCAT_TIMEOUT = float(os.environ.get("BRIDGE_NAPCAT_TIMEOUT", 300))
 NAPCAT_MAX_CONCURRENCY = max(1, int(os.environ.get("BRIDGE_NAPCAT_MAX_CONCURRENCY", 1)))
+MEDIA_GROUP_SETTLE_DELAY = float(os.environ.get("BRIDGE_MEDIA_GROUP_SETTLE_DELAY", 8))
 TARGET_QQ_TYPE = os.environ.get("BRIDGE_TARGET_QQ_TYPE", "group").lower()
 if TARGET_QQ_TYPE not in {"group", "user"}:
     print(f"警告: BRIDGE_TARGET_QQ_TYPE={TARGET_QQ_TYPE!r} 无效，已回退为 group")
@@ -154,6 +155,7 @@ if USE_LOCAL_API:
 bot = AsyncTeleBot(BOT_TOKEN)
 active_tasks = {}
 napcat_send_semaphore = asyncio.Semaphore(NAPCAT_MAX_CONCURRENCY)
+media_group_states = {}
 
 
 
@@ -601,6 +603,50 @@ def forward_success_text():
     }[FORWARD_MODE]
 
 
+async def finalize_media_group(token, state):
+    """媒体组最后一个成员完成后，再统一发送链接和最终状态。"""
+    await asyncio.sleep(MEDIA_GROUP_SETTLE_DELAY)
+    if state["pending"] > 0:
+        # 仍有成员在下载/上传，等它们在 finally 中重新安排收尾。
+        return
+    items = active_tasks.get(token, [])
+    if not items:
+        if state.get("status_msg"):
+            try:
+                await bot.edit_message_text("❌ 媒体组没有成功下载任何文件。", chat_id=state["chat_id"], message_id=state["status_msg"].message_id)
+            except Exception:
+                pass
+        return
+
+    qq_ok, qq_err = True, None
+    if FORWARD_MODE in {"link", "both"}:
+        async with aiohttp.ClientSession() as session:
+            qq_ok, qq_err = await send_link_to_qq(
+                session,
+                f"🔑 收到加密媒体组（共 {len(items)} 个文件，3小时内复制打开）：\n{format_view_url(token)}",
+            )
+    errors = [*state.get("errors", [])]
+    if qq_err:
+        errors.append(qq_err)
+    if state.get("status_msg"):
+        try:
+            if errors or not qq_ok:
+                text = f"⚠️ 媒体组转发完成但有失败项: {'; '.join(errors)}"
+            else:
+                text = forward_success_text()
+                text = f"{text}（共 {len(items)} 个文件）"
+            await bot.edit_message_text(text, chat_id=state["chat_id"], message_id=state["status_msg"].message_id)
+        except Exception:
+            pass
+
+
+def schedule_media_group_finalize(token, state):
+    previous = state.get("finalize_task")
+    if previous and not previous.done():
+        previous.cancel()
+    state["finalize_task"] = asyncio.create_task(finalize_media_group(token, state))
+
+
 # --- 4. TG 消息回调函数 ---
 
 @bot.message_handler(func=lambda message: message.chat.type == 'private', 
@@ -631,17 +677,38 @@ async def handle_media_message(message):
         
     local_file_path = os.path.join(CACHE_DIR, f"{token}_{message.message_id}{ext}")
     
+    is_media_group = bool(group_id)
+    group_state = None
     is_first = False
-    if token not in active_tasks:
-        active_tasks[token] = []
-        is_first = True
-        asyncio.create_task(auto_delete_cache(token, delay=10800))
-        
     status_msg = None
-    if is_first:
-        status_msg = await bot.reply_to(message, "⏳ 正在提取多媒体流，请稍候...")
-        # 提取前先检查缓存目录大小限制
-        enforce_cache_size_limit()
+    if is_media_group:
+        if token not in active_tasks:
+            active_tasks[token] = []
+            asyncio.create_task(auto_delete_cache(token, delay=10800))
+            media_group_states[token] = {
+                "pending": 0,
+                "errors": [],
+                "status_msg": None,
+                "status_requested": False,
+                "chat_id": message.chat.id,
+                "finalize_task": None,
+            }
+        group_state = media_group_states[token]
+        group_state["pending"] += 1
+        is_first = not group_state["status_requested"]
+        if is_first:
+            group_state["status_requested"] = True
+            status_msg = await bot.reply_to(message, "⏳ 正在提取媒体组，请稍候...")
+            group_state["status_msg"] = status_msg
+            enforce_cache_size_limit()
+    else:
+        if token not in active_tasks:
+            active_tasks[token] = []
+            is_first = True
+            asyncio.create_task(auto_delete_cache(token, delay=10800))
+        if is_first:
+            status_msg = await bot.reply_to(message, "⏳ 正在提取多媒体流，请稍候...")
+            enforce_cache_size_limit()
     
     try:
         file_info = await bot.get_file(file_id)
@@ -688,7 +755,14 @@ async def handle_media_message(message):
         item_idx = len(active_tasks[token])
         active_tasks[token].append({"path": local_file_path, "type": content_type, "name": filename})
         
-        if is_first:
+        if is_media_group:
+            async with aiohttp.ClientSession() as session:
+                file_ok, file_err = await send_file_to_qq(
+                    session, token, item_idx, local_file_path, content_type, filename
+                )
+            if not file_ok and file_err:
+                group_state["errors"].append(f"{filename}: {file_err}")
+        elif is_first:
             view_url = format_view_url(token)
             async with aiohttp.ClientSession() as session:
                 file_ok, file_err = await send_file_to_qq(
@@ -714,8 +788,14 @@ async def handle_media_message(message):
     except Exception as e:
         print(f"[-] 提取媒体失败: {e}")
         if os.path.exists(local_file_path): os.remove(local_file_path)
-        if is_first and status_msg:
+        if group_state is not None:
+            group_state["errors"].append(f"{filename}: {e}")
+        if not is_media_group and is_first and status_msg:
             await bot.edit_message_text(f"❌ 提取失败: {e}", chat_id=message.chat.id, message_id=status_msg.message_id)
+    finally:
+        if group_state is not None:
+            group_state["pending"] = max(0, group_state["pending"] - 1)
+            schedule_media_group_finalize(token, group_state)
 
 @bot.message_handler(func=lambda message: message.chat.type == 'private', content_types=['text'])
 async def handle_text_message(message):
