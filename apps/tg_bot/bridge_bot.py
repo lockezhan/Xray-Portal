@@ -56,6 +56,9 @@ NAPCAT_WS_URL = os.environ.get("BRIDGE_NAPCAT_WS_URL", "ws://127.0.0.1:3001")
 NAPCAT_WS_TOKEN = os.environ.get("BRIDGE_NAPCAT_WS_TOKEN", "")
 NAPCAT_STREAM_THRESHOLD = max(0, int(os.environ.get("BRIDGE_NAPCAT_STREAM_THRESHOLD", str(50 * 1024 * 1024))))
 NAPCAT_STREAM_CHUNK_SIZE = max(64 * 1024, int(os.environ.get("BRIDGE_NAPCAT_STREAM_CHUNK_SIZE", str(1024 * 1024))))
+# 延迟清理任务在服务重启时会丢失，因此由独立后台任务周期性清理 NapCat 暂存目录。
+NAPCAT_STAGE_CLEANUP_INTERVAL = max(60, int(os.environ.get("BRIDGE_NAPCAT_STAGE_CLEANUP_INTERVAL", "600")))
+NAPCAT_STAGE_MAX_AGE = max(300, int(os.environ.get("BRIDGE_NAPCAT_STAGE_MAX_AGE", "3600")))
 MEDIA_GROUP_SETTLE_DELAY = float(os.environ.get("BRIDGE_MEDIA_GROUP_SETTLE_DELAY", 8))
 TARGET_QQ_TYPE = os.environ.get("BRIDGE_TARGET_QQ_TYPE", "group").lower()
 if TARGET_QQ_TYPE not in {"group", "user"}:
@@ -600,6 +603,31 @@ async def delayed_remove(path, delay=3600):
         print(f"[-] 清理 NapCat 暂存文件失败 {path}: {e}")
 
 
+async def periodic_stage_cleanup():
+    """定期清理 NapCat 暂存孤儿文件，避免重启导致 delayed_remove 任务丢失。"""
+    while True:
+        now = time.time()
+        removed = 0
+        try:
+            for entry in os.scandir(NAPCAT_STAGE_DIR):
+                try:
+                    if not entry.is_file(follow_symlinks=False):
+                        continue
+                    if now - entry.stat(follow_symlinks=False).st_mtime < NAPCAT_STAGE_MAX_AGE:
+                        continue
+                    os.remove(entry.path)
+                    removed += 1
+                except FileNotFoundError:
+                    continue
+                except Exception as e:
+                    print(f"[-] 周期清理 NapCat 暂存文件失败 {entry.path}: {e}")
+            if removed:
+                print(f"[x] 周期清理：已删除 {removed} 个超过 {NAPCAT_STAGE_MAX_AGE} 秒的 NapCat 暂存文件")
+        except Exception as e:
+            print(f"[-] 扫描 NapCat 暂存目录失败: {e}")
+        await asyncio.sleep(NAPCAT_STAGE_CLEANUP_INTERVAL)
+
+
 async def send_file_to_qq(session, token, idx, source_path, content_type, filename):
     """通过 NapCat 文件 API 或 CQ 码发送原文件及音视频图像；大文件先走 Stream API 分块上传。"""
     if FORWARD_MODE not in {"file", "both"}:
@@ -623,6 +651,19 @@ async def send_file_to_qq(session, token, idx, source_path, content_type, filena
     async def send_path(file_path):
         file_url = file_path if file_path.startswith("file://") else f"file://{file_path}"
 
+        # NapCat 文档明确建议超过 100 MiB 的视频走群文件；走 CQ:video 会触发
+        # NTQQ 的富媒体传输，而且失败后会额外等待约 180 秒。对大群文件只尝试
+        # upload_group_file 一次，避免视频/文件/Stream 三条相同链路重复超时。
+        if TARGET_QQ_TYPE == "group" and file_size >= NAPCAT_STREAM_THRESHOLD:
+            payload = {
+                **qq_target_payload(),
+                "file": file_path,
+                "name": safe_filename,
+                # false 表示使用现有本地文件路径，不再复制到 NTQQ 富媒体缓存。
+                "upload_file": False,
+            }
+            return await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
+
         # 1. 视频优先使用 [CQ:video] 直接发送
         # NTQQ 在 Linux Docker 下调用 upload_group_file 上传视频(.mp4)会稳定触发 rich media transfer failed，
         # 因此对视频资源优先由 CQ 码视频通道直发。
@@ -643,7 +684,7 @@ async def send_file_to_qq(session, token, idx, source_path, content_type, filena
                 **qq_target_payload(),
                 "file": file_path,
                 "name": safe_filename,
-                "upload_file": True,
+                "upload_file": False,
             }
             return await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
 
@@ -672,7 +713,7 @@ async def send_file_to_qq(session, token, idx, source_path, content_type, filena
             **qq_target_payload(),
             "file": file_path,
             "name": safe_filename,
-            "upload_file": True,
+            "upload_file": False,
         }
         res = await send_to_qq(session, payload, f"{NAPCAT_API_BASE}/{action}")
         if not res[0] and "rich media transfer failed" in (res[1] or "").lower():
@@ -691,8 +732,9 @@ async def send_file_to_qq(session, token, idx, source_path, content_type, filena
         if result[0]:
             return result
 
-        # 只有直发失败且满足分块阈值或报 rich media transfer failed 时，才改用 Stream API 重试
-        if (NAPCAT_STREAM_THRESHOLD and file_size >= NAPCAT_STREAM_THRESHOLD) or ("rich media transfer failed" in (result[1] or "").lower()):
+        # 对大文件，Stream API 只改变 NapCat 本地暂存方式，不会改变 QQ 上行链路；
+        # 仅对小文件的本地资源解析失败保留一次 Stream 回退，避免大文件重复等待。
+        if file_size < NAPCAT_STREAM_THRESHOLD and "rich media transfer failed" in (result[1] or "").lower():
             print(f"[*] 准备使用 NapCat Stream API 分块后重试: {safe_filename}")
             streamed_path = await upload_file_stream_to_napcat(staged_host_path, safe_filename)
             return await send_path(streamed_path)
@@ -1313,6 +1355,9 @@ async def main():
             staged_orphan_count += 1
     if staged_orphan_count:
         print(f"[*] 启动清理：已删除 {staged_orphan_count} 个过期 NapCat 暂存文件")
+
+    # delayed_remove 只覆盖正常完成的单次任务；该后台任务覆盖服务重启/崩溃场景。
+    asyncio.create_task(periodic_stage_cleanup())
 
     # 初始化 Web 服务
     server = web.Application()
