@@ -610,6 +610,18 @@ ENVEOF
 _us_install_tg_bot() {
     local root_dir="$1"
 
+    # Bot 是可选组件。必须在创建目录、写入配置和安装依赖之前判断，
+    # 否则 ENABLE_BOTS=false 仍会执行完整 Bot 安装流程，导致 US-only
+    # 部署被无关的 NapCat/Telegram 依赖拖垮。
+    if [[ "${ENABLE_BOTS:-false}" != "true" ]]; then
+        log_info "ENABLE_BOTS 未开启，跳过 tg_bot 部署"
+        if [[ "${DRY_RUN:-false}" != "true" ]]; then
+            systemctl disable tgbot tg-qq-bridge >/dev/null 2>&1 || true
+            systemctl stop tgbot tg-qq-bridge >/dev/null 2>&1 || true
+        fi
+        return 0
+    fi
+
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         log_info "[DRY-RUN] 部署 tg_bot 模块 → /usr/local/tg_bot"
         return 0
