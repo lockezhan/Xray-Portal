@@ -7,7 +7,7 @@
 ### 准备工作
 
 ```bash
-git clone <repo-url>
+git clone https://github.com/lockezhan/Xray-Portal.git
 cd Xray_portal
 ```
 
