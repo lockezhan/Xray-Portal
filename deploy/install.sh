@@ -3,7 +3,7 @@
 # Xray_portal 一键自动化部署主入口 (deploy/install.sh)
 #
 # 用法:
-#   sudo ./deploy/install.sh <us|nl> --env <配置文件> [选项...]
+#   sudo ./deploy/install.sh <primary|secondary> --env <配置文件> [选项...]
 #
 # 选项:
 #   --env <file>      必需，指定 0600 权限的环境变量配置文件
@@ -38,8 +38,8 @@ usage() {
 用法: sudo ./deploy/install.sh <角色> --env <配置文件> [选项]
 
 角色:
-  us              部署美国主控制服务器（代理 + 订阅合并 + Web 面板 + Nginx）
-  nl              部署荷兰备用镜像服务器（代理 + 镜像站 + Nginx）
+  primary         部署主控制服务器（代理 + 订阅合并 + Web 面板 + Nginx）
+  secondary       部署备用镜像服务器（代理 + 镜像站 + Nginx）
 
 必需参数:
   --env <file>    环境变量配置文件路径（权限必须为 0600）
@@ -56,20 +56,20 @@ usage() {
   -h, --help      显示此帮助并退出
 
 示例:
-  # 美国主服务器完整部署（默认包含代理安装）
-  sudo ./deploy/install.sh us --env .env
+  # Primary 主控制服务器完整部署（默认包含代理安装）
+  sudo ./deploy/install.sh primary --env .env
 
-  # 荷兰副服务器完整部署
-  sudo ./deploy/install.sh nl --env .env
+  # Secondary 备用镜像服务器完整部署
+  sudo ./deploy/install.sh secondary --env .env
 
   # 仅安装代理（已有控制面板时）
-  sudo ./deploy/install.sh us --env .env --proxy-only
+  sudo ./deploy/install.sh primary --env .env --proxy-only
 
   # 跳过代理（代理已提前单独安装）
-  sudo ./deploy/install.sh us --env .env --skip-proxy
+  sudo ./deploy/install.sh primary --env .env --skip-proxy
 
   # 干跑验证配置（不修改系统）
-  sudo ./deploy/install.sh us --env .env --dry-run
+  sudo ./deploy/install.sh primary --env .env --dry-run
 EOF
     exit 1
 }
@@ -90,8 +90,16 @@ export DRY_RUN
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        us|nl)
-            ROLE="$1"
+        primary|secondary|us|nl)
+            if [[ "$1" == "us" ]]; then
+                log_warn "[DEPRECATED] 角色 'us' 已弃用，自动映射为 'primary'"
+                ROLE="primary"
+            elif [[ "$1" == "nl" ]]; then
+                log_warn "[DEPRECATED] 角色 'nl' 已弃用，自动映射为 'secondary'"
+                ROLE="secondary"
+            else
+                ROLE="$1"
+            fi
             shift
             ;;
         --env)
@@ -150,7 +158,7 @@ done
 # 参数完整性校验
 # =============================================================================
 if [[ -z "${ROLE}" ]]; then
-    log_error "缺少必需参数: 角色 (us|nl)"
+    log_error "缺少必需参数: 角色 (primary|secondary)"
     usage
 fi
 
@@ -165,10 +173,6 @@ if [[ "${PROXY_ONLY}" == "true" && "${SKIP_PROXY}" == "true" ]]; then
     exit 1
 fi
 
-if [[ "${BOTS_ONLY}" == "true" && "${ROLE}" != "us" ]]; then
-    log_error "--bots-only 参数仅支持 us 角色"
-    exit 1
-fi
 
 # =============================================================================
 # 启动部署
@@ -216,16 +220,16 @@ fi
 # 加载角色安装模块（在参数解析和环境加载完成后 source）
 # shellcheck disable=SC1091
 # =============================================================================
-source "${SCRIPT_DIR}/lib/install-us.sh"
+source "${SCRIPT_DIR}/lib/install-primary.sh"
 # shellcheck disable=SC1091
-source "${SCRIPT_DIR}/lib/install-nl.sh"
+source "${SCRIPT_DIR}/lib/install-secondary.sh"
 
 # =============================================================================
 # 执行角色流水线
 # =============================================================================
 case "${ROLE}" in
-    us)
-        install_us \
+    primary)
+        install_primary \
             --skip-proxy "${SKIP_PROXY}" \
             --proxy-only "${PROXY_ONLY}" \
             --skip-web "${SKIP_WEB}" \
@@ -234,12 +238,13 @@ case "${ROLE}" in
             --bots-only "${BOTS_ONLY}" \
             --state-file "${_state_file}"
         ;;
-    nl)
-        install_nl \
+    secondary)
+        install_secondary \
             --skip-proxy "${SKIP_PROXY}" \
             --proxy-only "${PROXY_ONLY}" \
             --skip-nginx "${SKIP_NGINX}" \
             --no-certbot "${NO_CERTBOT}" \
+            --bots-only "${BOTS_ONLY}" \
             --state-file "${_state_file}"
         ;;
 esac

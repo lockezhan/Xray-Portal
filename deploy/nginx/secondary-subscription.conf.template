@@ -4,7 +4,7 @@ server {
     server_name ${NL_SUB_DOMAIN};
 
     # =========================================================================
-    # 荷兰只读备用订阅镜像发布站 (强随机 Token 保护)
+    # Secondary只读备用订阅镜像发布站 (强随机 Token 保护)
     # =========================================================================
     location = /${SUB_TOKEN}/clash.yaml {
         alias /var/www/sub/${SUB_TOKEN}/clash.yaml;

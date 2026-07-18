@@ -4,7 +4,7 @@
 
 ## 前置条件
 
-| 条件 | 美国主机 | 荷兰副机 |
+| 条件 | Primary主机 | Secondary副机 |
 |------|---------|---------|
 | 系统 | Ubuntu 24.04 | Ubuntu 24.04 |
 | 最低内存 | 1GB | 512MB |
@@ -13,11 +13,11 @@
 | Root 访问 | ✓ | ✓ |
 
 > [!IMPORTANT]
-> 域名的 DNS 必须在部署前已经生效（`dig +short us.example.com` 应返回正确 IP），否则 Certbot TLS 申请会失败。若未配置 DNS，请使用 `--no-certbot` 先完成 HTTP 部署。
+> 域名的 DNS 必须在部署前已经生效（`dig +short primary.example.com` 应返回正确 IP），否则 Certbot TLS 申请会失败。若未配置 DNS，请使用 `--no-certbot` 先完成 HTTP 部署。
 
 ## 一、准备 .env 文件
 
-### 美国主机
+### Primary主机
 
 ```bash
 # 下载仓库
@@ -25,7 +25,7 @@ git clone <repo-url>
 cd Xray_portal
 
 # 从模板复制
-cp deploy/env/us.env.example .env
+cp deploy/env/primary.env.example .env
 chmod 600 .env
 
 # 编辑配置（必须填写所有 replace_me 字段）
@@ -36,10 +36,10 @@ nano .env
 
 | 变量 | 说明 |
 |------|------|
-| `US_SERVER_IP` | 本机公网 IPv4 |
-| `NL_SERVER_IP` | 荷兰副机公网 IPv4 |
-| `US_SUB_DOMAIN` | 订阅服务域名（已 DNS 到此机）|
-| `NL_SUB_DOMAIN` | 荷兰订阅域名 |
+| `PRIMARY_SERVER_IP` | 本机公网 IPv4 |
+| `SECONDARY_SERVER_IP` | Secondary副机公网 IPv4 |
+| `PRIMARY_SUB_DOMAIN` | 订阅服务域名（已 DNS 到此机）|
+| `SECONDARY_SUB_DOMAIN` | Secondary订阅域名 |
 | `SUB_TOKEN` | 32 字节十六进制随机 Token |
 | `PORTAL_PASSWORD` | 面板登录密码 |
 | `FLASK_SECRET_KEY` | 64 字节十六进制 Flask Secret |
@@ -63,66 +63,69 @@ MIHOMO_VER=v1.18.10
 # 查看 https://github.com/MetaCubeX/mihomo/releases/tag/${MIHOMO_VER}
 ```
 
-### 荷兰副机
+### Secondary副机
 
 ```bash
-cp deploy/env/nl.env.example .env
+cp deploy/env/secondary.env.example .env
 chmod 600 .env
 nano .env
 ```
 
 > [!WARNING]
-> 荷兰 `.env` 中 **绝对不要** 填入 `PORTAL_PASSWORD`、`FLASK_SECRET_KEY`、Bot Token 等美国端凭据。这些字段在荷兰角色中会被 env.sh 主动 unset。
+> Secondary `.env` 中 **绝对不要** 填入 `PORTAL_PASSWORD`、`FLASK_SECRET_KEY`、Bot Token 等Primary端凭据。这些字段在Secondary角色中会被 env.sh 主动 unset。
 
 ## 二、执行部署
 
-### 美国主机（完整安装）
+### Primary主机（完整安装）
 
 ```bash
 # 完整安装（包含 Xray 代理 + Web 面板 + Nginx + TLS）
-sudo ./deploy/install.sh us --env .env
+sudo ./deploy/install.sh primary --env .env
 
 # 安装完成后验证
-sudo ./deploy/verify.sh us --env .env
+sudo ./deploy/verify.sh primary --env .env
 ```
 
-### 荷兰副机（完整安装）
+### Secondary副机（完整安装）
 
 ```bash
-sudo ./deploy/install.sh nl --env .env
-sudo ./deploy/verify.sh nl --env .env
+sudo ./deploy/install.sh secondary --env .env
+sudo ./deploy/verify.sh secondary --env .env
 ```
 
 ## 三、部署完成后的手动操作
 
-### 3.1 互换 SSH 公钥（用于荷兰→美国订阅推送）
+### 3.1 互换 SSH 公钥（用于Secondary→Primary订阅推送）
 
-部署摘要会显示荷兰机生成的 `subpush_key.pub` 内容，或者手动查看：
+部署摘要会显示Secondary机生成的 `subpush_key.pub` 内容，或者手动查看：
 
 ```bash
-# 在荷兰机执行
-cat /home/subpush/.ssh/subpush_key.pub
+# 在Secondary机执行
+cat /opt/clash-sub-mirror/subpush_key.pub
 ```
 
-将公钥内容添加到**美国机**的 subpush 用户 `authorized_keys`：
+将公钥内容添加到**Primary机**的 subpush 用户 `authorized_keys`：
 
 ```bash
-# 在美国机执行
-sudo -u subpush bash -c 'mkdir -p ~/.ssh && chmod 700 ~/.ssh'
-# 粘贴荷兰机的公钥
-echo "restrict,...,command=\"rsync ...\" ssh-ed25519 AAAA... subpush@nl" \
-    | sudo tee -a /home/subpush/.ssh/authorized_keys
-sudo chmod 600 /home/subpush/.ssh/authorized_keys
+# 在Primary机执行；将下面公钥字符串替换为Secondary生成的完整公钥
+sudo ./deploy/install-peer-key.sh primary \
+    --pubkey 'ssh-ed25519 AAAA... secondary-subpush@secondary'
+
+# 核对实际授权文件和权限
+sudo stat -c '%n %a %U:%G' /opt/clash-sub/.ssh/authorized_keys
 ```
 
 > [!IMPORTANT]
-> `authorized_keys` 中必须使用 `command=` 强制命令限制 rsync 路径，部署脚本已在荷兰端的 submirror 用户中自动设置，美国端需手动核验。
+> Primary 的 `subpush` home 是 `/opt/clash-sub`，因此授权文件是
+> `/opt/clash-sub/.ssh/authorized_keys`。安装工具会绑定
+> `command="/opt/clash-sub/scripts/subpush-cmd-wrapper"`；Secondary→Primary 使用的是
+> 受限标准输入上传协议 `upload-secondary`，不是 rsync。Primary→Secondary 的反向镜像同步才使用 rsync/submirror 密钥。
 
 ### 3.2 首次订阅推送
 
 ```bash
-# 在荷兰机执行
-sudo /usr/local/sbin/push-clash-subscription-nl
+# 在Secondary机执行
+sudo /usr/local/sbin/push-clash-subscription-secondary
 
 # 验证镜像文件是否到位
 ls -la /var/www/sub/<SUB_TOKEN>/clash.yaml
@@ -131,8 +134,8 @@ ls -la /var/www/sub/<SUB_TOKEN>/clash.yaml
 ### 3.3 分发订阅 URL
 
 两台服务器分别提供：
-- `https://us.example.com/<SUB_TOKEN>/clash.yaml`（主线路）
-- `https://nl.example.com/<SUB_TOKEN>/clash.yaml`（备线路）
+- `https://primary.example.com/<SUB_TOKEN>/clash.yaml`（主线路）
+- `https://secondary.example.com/<SUB_TOKEN>/clash.yaml`（备线路）
 
 ## 四、常用部署变体
 
@@ -140,23 +143,23 @@ ls -la /var/www/sub/<SUB_TOKEN>/clash.yaml
 
 ```bash
 # 第一步：仅安装代理
-sudo ./deploy/install.sh us --env .env --proxy-only
+sudo ./deploy/install.sh primary --env .env --proxy-only
 
 # 第二步：仅安装控制面板
-sudo ./deploy/install.sh us --env .env --skip-proxy
+sudo ./deploy/install.sh primary --env .env --skip-proxy
 ```
 
 ### 跳过 TLS（内网测试或 DNS 未就绪）
 
 ```bash
-sudo ./deploy/install.sh us --env .env --no-certbot
-# HTTP 访问: http://us.example.com/<TOKEN>/clash.yaml
+sudo ./deploy/install.sh primary --env .env --no-certbot
+# HTTP 访问: http://primary.example.com/<TOKEN>/clash.yaml
 ```
 
 ### 干跑（验证配置不修改系统）
 
 ```bash
-sudo ./deploy/install.sh us --env .env --dry-run
+sudo ./deploy/install.sh primary --env .env --dry-run
 ```
 
 ## 五、Nginx 条件服务开关
@@ -176,7 +179,7 @@ sudo ./deploy/install.sh us --env .env --dry-run
 
 ```bash
 git pull
-sudo ./deploy/install.sh us --env .env --skip-proxy   # 仅更新 Web 面板
+sudo ./deploy/install.sh primary --env .env --skip-proxy   # 仅更新 Web 面板
 ```
 
 重新部署是幂等的：代理密钥已存在于 `/etc/xray-portal/proxy.env` 时不会重新生成。

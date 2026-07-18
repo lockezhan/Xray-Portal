@@ -26,34 +26,35 @@
 
 为了避免任何一台服务器失陷导致跨站越权，我们对 SSH 互信关系做出了物理级单向隔离设计：
 
-### 2.1 荷兰向美国上传节点 (subpush)
-*   **私钥存放**：私钥仅存放在荷兰服务器的 `/opt/clash-sub-mirror/subpush_key`。
-*   **公钥限制**：美国端在 `/opt/clash-sub/.ssh/authorized_keys` 中对该公钥绑定了如下安全限制：
+### 2.1 Secondary向Primary上传节点 (subpush)
+*   **私钥存放**：私钥仅存放在Secondary服务器的 `/opt/clash-sub-mirror/subpush_key`。
+*   **公钥限制**：Primary端在 `/opt/clash-sub/.ssh/authorized_keys` 中对该公钥绑定了如下安全限制：
     *   `restrict`：完全禁用 TTY 分配、禁止任何端口转发 and Agent 转发。
-    *   `command="/opt/clash-sub/scripts/subpush-cmd-wrapper"`：强制接管所有操作。该 wrapper 脚本仅允许通过标准输入安全接收来自荷兰的配置上传（`upload-nl`），或者执行无参数 `rebuild` 重新构建订阅，拒绝任何 Shell 操作。
+    *   `command="/opt/clash-sub/scripts/subpush-cmd-wrapper"`：强制接管所有操作。该 wrapper 脚本仅允许通过标准输入安全接收来自Secondary的配置上传（`upload-secondary`），或者执行无参数 `rebuild` 重新构建订阅，拒绝任何 Shell 操作。`upload-secondary` 仅保留为 deprecated/legacy 兼容入口。
 
-### 2.2 美国向荷兰同步订阅 (submirror)
-*   **私钥存放**：私钥仅存放在美国服务器的 `/opt/clash-sub/scripts/submirror_key`。
-*   **公钥限制**：荷兰端在 `/home/submirror/.ssh/authorized_keys` 中对其添加 `restrict` 前缀限制，使其仅能被用于向荷兰只读备用目录传输 `clash.yaml`。
+### 2.2 Primary向Secondary同步订阅 (submirror)
+*   **私钥存放**：私钥仅存放在Primary服务器的 `/opt/clash-sub/scripts/submirror_key`。
+*   **公钥限制**：Secondary端在 `/home/submirror/.ssh/authorized_keys` 中对其添加 `restrict` 前缀限制，使其仅能被用于向Secondary只读备用目录传输 `clash.yaml`。
 
 ---
 
 ## 3. 标准物理文件与目录权限表
 
-为保证美国 `subpush` 和荷兰 `submirror` 系统账户在后台正常读写文件，同时防止其他普通用户或恶意进程越权访问，生产环境上的目录和文件必须严格遵循以下权限模型。**严禁直接使用 `chmod -R 777` 这样具有极大安全隐患的命令。**
+为保证Primary `subpush` 和Secondary `submirror` 系统账户在后台正常读写文件，同时防止其他普通用户或恶意进程越权访问，生产环境上的目录和文件必须严格遵循以下权限模型。**严禁直接使用 `chmod -R 777` 这样具有极大安全隐患的命令。**
 
 | 目录/文件路径 | 推荐所有者 (Owner) | 推荐群组 (Group) | 推荐权限 (Permissions) | 职能与安全目的说明 |
 | :--- | :--- | :--- | :--- | :--- |
 | `/opt/clash-sub` | `root` | `root` | `0755` | 订阅系统主目录，禁止其他用户写入 |
-| `/opt/clash-sub/incoming` | `subpush` | `subpush` | `0700` | 荷兰节点上传目录，仅限 subpush 读写 |
+| `/opt/clash-sub/incoming` | `subpush` | `subpush` | `0700` | Secondary节点上传目录，仅限 subpush 读写 |
 | `/opt/clash-sub/sources` | `root` | `root` | `0750` | 快照存储目录，禁止 subpush 写入且防窃听 |
 | `/opt/clash-sub/published` | `root` | `root` | `0755` | 订阅发布目录，允许 Nginx 读取 |
 | `/opt/clash-sub/.ssh` | `subpush` | `subpush` | `0700` | SSHD 强制要求，防范密钥窃取 |
 | `/opt/clash-sub/.ssh/authorized_keys` | `subpush` | `subpush` | `0600` | SSHD 强制要求，防止恶意篡改公钥 |
 | `/opt/clash-sub/published/clash.yaml`| `subpush` | `subpush` | `0644` | 最终订阅物理文件，Nginx 可直接读取 |
 | `/opt/clash-sub/scripts/config.env` | `root` | `subpush` | `0640` | 环境密码配置文件，防非系统账户窃听 |
-| `/opt/clash-sub/scripts/submirror_key` | `subpush` | `subpush` | `0600` | SSHD 强制要求，美国推送私钥 |
-| `/opt/clash-sub/scripts/subpush_key` | `subpush` | `subpush` | `0600` | SSHD 强制要求，美国上传备份私钥 |
+| `/opt/clash-sub/scripts/submirror_key` | `subpush` | `subpush` | `0600` | SSHD 强制要求，Primary推送私钥 |
+| `/opt/clash-sub-mirror/subpush_key` | `submirror` | `submirror` | `0600` | Secondary→Primary 受限上传私钥，仅存在于 Secondary |
+| `/opt/clash-sub-mirror/subpush_key.pub` | `submirror` | `submirror` | `0644` | 安装到 Primary `authorized_keys` 的公钥备份 |
 
 ---
 

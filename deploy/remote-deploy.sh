@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Xray_portal 远程一键自动化部署工具 (deploy/remote-deploy.sh)
-# 用法: ./deploy/remote-deploy.sh <us|nl> --host <user@remote_ip> --env <path_to_env>
+# 用法: ./deploy/remote-deploy.sh <primary|secondary> --host <user@remote_ip> --env <path_to_env>
 # =============================================================================
 
 set -euo pipefail
@@ -20,8 +20,16 @@ ENV_FILE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        us|nl)
-            ROLE="$1"
+        primary|secondary|us|nl)
+            if [[ "$1" == "us" ]]; then
+                log_warn "[DEPRECATED] 角色 'us' 已弃用，自动映射为 'primary'"
+                ROLE="primary"
+            elif [[ "$1" == "nl" ]]; then
+                log_warn "[DEPRECATED] 角色 'nl' 已弃用，自动映射为 'secondary'"
+                ROLE="secondary"
+            else
+                ROLE="$1"
+            fi
             shift
             ;;
         --host)
@@ -40,7 +48,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${ROLE}" || -z "${REMOTE_HOST}" || -z "${ENV_FILE}" ]]; then
-    log_error "用法: $0 <us|nl> --host <user@remote_ip> --env <本地配置文件路径>"
+    log_error "用法: $0 <primary|secondary> --host <user@remote_ip> --env <本地配置文件路径>"
     exit 1
 fi
 

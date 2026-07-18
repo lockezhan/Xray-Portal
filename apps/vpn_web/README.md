@@ -43,8 +43,8 @@
 
 ## 6. 常见故障与排查
 *   **面板点击“复制 Clash 订阅”没有拿到最新节点**：
-    *   *原因*：美国或荷兰端近期进行了节点更新，但未触发重新构建；或者后台 Python 提取脚本报错。
-    *   *排查方式*：检查美国的构建日志 `/opt/clash-sub/logs/rebuild.log` 寻找提取或校验错误。或者手动以 root 执行 `/usr/local/sbin/rebuild-clash-subscription` 强制重新合成。
+    *   *原因*：Primary或Secondary端近期进行了节点更新，但未触发重新构建；或者后台 Python 提取脚本报错。
+    *   *排查方式*：检查Primary的构建日志 `/opt/clash-sub/logs/rebuild.log` 寻找提取或校验错误。或者手动以 root 执行 `/usr/local/sbin/rebuild-clash-subscription` 强制重新合成。
 *   **面板无法启动 (502 / 端口被占用)**：
     *   *排查方式*：查看 Systemd 服务日志 `journalctl -u clash-subscribe -f`。确认 Flask 监听端口（默认 8080）未被其他服务占用。
 

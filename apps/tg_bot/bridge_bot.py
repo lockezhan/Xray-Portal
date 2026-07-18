@@ -91,15 +91,20 @@ WEB_HOST = os.environ.get("BRIDGE_WEB_HOST", "127.0.0.1")  # 限制为本地监�
 WEB_PORT = int(os.environ.get("BRIDGE_WEB_PORT", 8082))
 
 # 域名配置 (由于要物理隔离，使用独立端口，不干扰 Nginx 443 主服务)
-SERVER_PUBLIC_IP = os.environ.get("BRIDGE_SERVER_PUBLIC_IP")
-if not SERVER_PUBLIC_IP:
-    raise ValueError("错误: BRIDGE_SERVER_PUBLIC_IP 环境变量未配置！")
+# 域名/Base URL 配置
+_base_url_raw = os.environ.get("BRIDGE_PUBLIC_BASE_URL", "").strip()
+_legacy_ip_raw = os.environ.get("BRIDGE_SERVER_PUBLIC_IP", "").strip()
+_public_port = os.environ.get("BRIDGE_PUBLIC_PORT", "8083").strip()
+
+from url_config import get_webhook_url, format_view_url as _format_view_url
+
+try:
+    PUBLIC_BASE_URL = get_webhook_url(_base_url_raw, _legacy_ip_raw, _public_port)
+except ValueError:
+    PUBLIC_BASE_URL = ""
 
 def format_view_url(token):
-    host = SERVER_PUBLIC_IP.strip().rstrip("/")
-    if not host.startswith("http://") and not host.startswith("https://"):
-        return f"https://{host}:8083/view?token={token}"
-    return f"{host}:8083/view?token={token}"
+    return _format_view_url(PUBLIC_BASE_URL, token)
 # ============================================
 
 # 路径配置

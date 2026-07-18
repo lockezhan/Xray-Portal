@@ -1,4 +1,4 @@
-#!/usr/local/vpn-web/venv/bin/python
+#!/usr/local/tg_bot/venv/bin/python
 # -*- coding: utf-8 -*-
 import os
 import sys

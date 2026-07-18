@@ -13,9 +13,12 @@ if [[ -z "$ORIG_CMD" ]]; then
 fi
 
 case "$ORIG_CMD" in
-  upload-nl)
+  upload-secondary|upload-nl)
+    if [[ "$ORIG_CMD" == "upload-nl" ]]; then
+      echo "Warning: upload-nl is deprecated; use upload-secondary." >&2
+    fi
     BASE_DIR="${CLASH_SUB_TEST_BASE:-/opt/clash-sub}"
-    READY_FILE="$BASE_DIR/incoming/nl-full.yaml.ready"
+    READY_FILE="$BASE_DIR/incoming/secondary-full.yaml.ready"
     VALIDATOR_PATH="$BASE_DIR/scripts/upload_validator.py"
     
     # 执行安全校验

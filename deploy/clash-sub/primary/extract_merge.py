@@ -2,7 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 节点提取与合并脚本
-从美国/荷兰原始 Clash YAML 中提取 proxies，重命名后合并到基础模板
+从Primary/Secondary原始 Clash YAML 中提取 proxies，重命名后合并到基础模板
 支持非对称故障转移、硬性阻断链式代理以及降级容灾模式
 """
 
@@ -114,17 +114,17 @@ def rename_proxies(proxies: List[dict], prefix: str) -> List[dict]:
     return renamed
 
 
-def build_proxy_groups(us_names: List[str], nl_names: List[str]) -> List[dict]:
+def build_proxy_groups(primary_names: List[str], secondary_names: List[str]) -> List[dict]:
     """
     构建非对称故障转移代理组：
     - GENERAL-PROXY: 境外普通流量代理组，fallback 自动容灾模式（美在前，荷在后）
-    - SENSITIVE-NL: 仅能通过荷兰节点出站的敏感组，荷兰失效时强制 REJECT
+    - SENSITIVE-SECONDARY: 仅能通过Secondary节点出站的敏感组，Secondary失效时强制 REJECT
     - MANUAL: 手动选择组
     """
     groups = []
 
-    # 1. GENERAL-PROXY 境外普通组 (美国优先，荷兰备用)
-    gp_proxies = us_names + nl_names
+    # 1. GENERAL-PROXY 境外普通组 (Primary优先，Secondary备用)
+    gp_proxies = primary_names + secondary_names
     if not gp_proxies:
         gp_proxies = ['DIRECT']
 
@@ -151,25 +151,25 @@ def build_proxy_groups(us_names: List[str], nl_names: List[str]) -> List[dict]:
         'max-failed-times': 2
     })
 
-    # 2. SENSITIVE-NL 敏感 AI 组 (只走荷兰，绝不回落美国或直连)
-    if nl_names:
+    # 2. SENSITIVE-SECONDARY 敏感 AI 组 (只走Secondary，绝不回落Primary或直连)
+    if secondary_names:
         groups.append({
-            'name': 'SENSITIVE-NL',
+            'name': 'SENSITIVE-SECONDARY',
             'type': 'select',
-            'proxies': nl_names
+            'proxies': secondary_names
         })
     else:
-        logger.warning("荷兰节点完全缺失，为了防止泄露，SENSITIVE-NL 代理组已退化至内置安全策略: REJECT")
+        logger.warning("Secondary节点完全缺失，为了防止泄露，SENSITIVE-SECONDARY 代理组已退化至内置安全策略: REJECT")
         groups.append({
-            'name': 'SENSITIVE-NL',
+            'name': 'SENSITIVE-SECONDARY',
             'type': 'select',
             'proxies': ['REJECT']
         })
 
     # 3. MANUAL 手动选择组
     manual_proxies = ['GENERAL-PROXY']
-    if nl_names:
-        manual_proxies.append('SENSITIVE-NL')
+    if secondary_names:
+        manual_proxies.append('SENSITIVE-SECONDARY')
     manual_proxies.append('DIRECT')
 
     groups.append({
@@ -188,20 +188,20 @@ def build_rules() -> List[str]:
     # OpenAI / ChatGPT
     for domain in ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com',
                    'oaistatsig.com', 'openaimerge.com']:
-        rules.append('DOMAIN-SUFFIX,{},SENSITIVE-NL'.format(domain))
+        rules.append('DOMAIN-SUFFIX,{},SENSITIVE-SECONDARY'.format(domain))
 
     # Claude
     for domain in ['claude.ai', 'claude.com', 'anthropic.com']:
-        rules.append('DOMAIN-SUFFIX,{},SENSITIVE-NL'.format(domain))
+        rules.append('DOMAIN-SUFFIX,{},SENSITIVE-SECONDARY'.format(domain))
 
     # Perplexity
-    rules.append('DOMAIN-SUFFIX,perplexity.ai,SENSITIVE-NL')
+    rules.append('DOMAIN-SUFFIX,perplexity.ai,SENSITIVE-SECONDARY')
 
     # Gemini / AI Studio
-    rules.append('DOMAIN,gemini.google.com,SENSITIVE-NL')
-    rules.append('DOMAIN,aistudio.google.com,SENSITIVE-NL')
-    rules.append('DOMAIN,generativelanguage.googleapis.com,SENSITIVE-NL')
-    rules.append('DOMAIN-SUFFIX,ai.google.dev,SENSITIVE-NL')
+    rules.append('DOMAIN,gemini.google.com,SENSITIVE-SECONDARY')
+    rules.append('DOMAIN,aistudio.google.com,SENSITIVE-SECONDARY')
+    rules.append('DOMAIN,generativelanguage.googleapis.com,SENSITIVE-SECONDARY')
+    rules.append('DOMAIN-SUFFIX,ai.google.dev,SENSITIVE-SECONDARY')
 
     # 中国大陆直连 (CN 流量)
     rules.append('GEOSITE,CN,DIRECT')
@@ -272,7 +272,13 @@ def validate_config(config: dict) -> bool:
     groups = config.get('proxy-groups', [])
     group_names = {g['name'] for g in groups}
 
-    # 1. 检查节点字段是否包含链式代理
+    # 1. 检查节点名与代理组名是否产生重名交集
+    overlap = proxy_names.intersection(group_names)
+    if overlap:
+        logger.error("检测到节点名与代理组名发生冲突（交集）: {}".format(overlap))
+        return False
+
+    # 2. 检查节点字段是否包含链式代理
     for p in proxies:
         name = p.get('name', '')
         for field in CHAINED_PROXY_FIELDS:
@@ -281,26 +287,26 @@ def validate_config(config: dict) -> bool:
                 logger.error("节点 '{}' 含有非法的链式依赖字段: {} = {}".format(name, field, val))
                 return False
 
-        # 交叉校验：美国节点不得含有荷兰节点名作为其任何字段的值，反之亦然
+        # 交叉校验：Primary节点不得含有Secondary节点名作为其任何字段的值，反之亦然
         for key, val in p.items():
             if isinstance(val, str):
-                if name.startswith('NL-SENSITIVE') and 'US-MAIN' in val:
-                    logger.error("荷兰节点 '{}' 引用了美国节点: {} = {}".format(name, key, val))
+                if name.startswith('SECONDARY-NODE') and 'PRIMARY-NODE' in val:
+                    logger.error("Secondary节点 '{}' 引用了Primary节点: {} = {}".format(name, key, val))
                     return False
-                if name.startswith('US-MAIN') and 'NL-SENSITIVE' in val:
-                    logger.error("美国节点 '{}' 引用了荷兰节点: {} = {}".format(name, key, val))
+                if name.startswith('PRIMARY-NODE') and 'SECONDARY-NODE' in val:
+                    logger.error("Primary节点 '{}' 引用了Secondary节点: {} = {}".format(name, key, val))
                     return False
 
-    # 2. 检查代理组引用的节点是否存在，且执行敏感组白名单过滤
+    # 3. 检查代理组引用的节点是否存在，且执行敏感组白名单过滤
     for group in groups:
         gname = group['name']
         group_proxies = group.get('proxies', [])
 
-        # 敏感组 SENSITIVE-NL 绝不允许包含美国节点、GENERAL-PROXY 或 DIRECT/REJECT (REJECT 策略除外)
-        if gname == 'SENSITIVE-NL':
+        # 敏感组 SENSITIVE-SECONDARY 绝不允许包含Primary节点、GENERAL-PROXY 或 DIRECT/REJECT (REJECT 策略除外)
+        if gname == 'SENSITIVE-SECONDARY':
             for ref in group_proxies:
-                if ref == 'DIRECT' or ref == 'GENERAL-PROXY' or ref.startswith('US-MAIN'):
-                    logger.error("SENSITIVE-NL 代理组包含非法出站目的地: {}".format(ref))
+                if ref == 'DIRECT' or ref == 'GENERAL-PROXY' or ref.startswith('PRIMARY-NODE'):
+                    logger.error("SENSITIVE-SECONDARY 代理组包含非法出站目的地: {}".format(ref))
                     return False
 
         for ref in group_proxies:
@@ -329,54 +335,54 @@ def validate_config(config: dict) -> bool:
 
 
 def merge_and_generate(
-    us_source: str,
-    nl_source: str,
+    primary_source: str,
+    secondary_source: str,
     output_path: str
 ) -> bool:
-    """主合并入口（支持美国缺失、单荷兰紧急模式构建）"""
+    """主合并入口（支持Primary缺失、单Secondary紧急模式构建）"""
     logger.info("=== 开始节点提取与合并 ===")
 
-    # 加载美国配置
-    us_proxies_raw = []
-    if os.path.isfile(us_source):
-        us_data = load_yaml_safe(us_source)
-        if us_data is None:
-            logger.error("美国配置存在但解析失败，可能是损坏的文件！中止构建。")
+    # 加载Primary配置
+    primary_proxies_raw = []
+    if os.path.isfile(primary_source):
+        primary_data = load_yaml_safe(primary_source)
+        if primary_data is None:
+            logger.error("Primary配置存在但解析失败，可能是损坏的文件！中止构建。")
             return False
-        us_proxies_raw = extract_proxies(us_data, 'US')
+        primary_proxies_raw = extract_proxies(primary_data, 'PRIMARY')
     else:
-        logger.warning("美国配置不存在，将采用空美国节点集进行构建。")
+        logger.warning("Primary配置不存在，将采用空Primary节点集进行构建。")
 
-    # 加载荷兰配置
-    nl_proxies_raw = []
-    if os.path.isfile(nl_source):
-        nl_data = load_yaml_safe(nl_source)
-        if nl_data is None:
-            logger.error("荷兰配置存在但解析失败，可能是损坏的文件！中止构建。")
+    # 加载Secondary配置
+    secondary_proxies_raw = []
+    if os.path.isfile(secondary_source):
+        secondary_data = load_yaml_safe(secondary_source)
+        if secondary_data is None:
+            logger.error("Secondary配置存在但解析失败，可能是损坏的文件！中止构建。")
             return False
-        nl_proxies_raw = extract_proxies(nl_data, 'NL')
+        secondary_proxies_raw = extract_proxies(secondary_data, 'SECONDARY')
     else:
-        logger.warning("荷兰配置不存在，将采用空荷兰节点集进行构建。")
+        logger.warning("Secondary配置不存在，将采用空Secondary节点集进行构建。")
 
     # 双端缺失则中止构建
-    if not us_proxies_raw and not nl_proxies_raw:
-        logger.error("美国与荷兰配置源中均无任何有效的远程节点！中止构建。")
+    if not primary_proxies_raw and not secondary_proxies_raw:
+        logger.error("Primary与Secondary配置源中均无任何有效的远程节点！中止构建。")
         return False
 
     # 重命名节点
-    us_proxies = rename_proxies(us_proxies_raw, 'US-MAIN')
-    nl_proxies = rename_proxies(nl_proxies_raw, 'NL-SENSITIVE')
+    primary_proxies = rename_proxies(primary_proxies_raw, 'PRIMARY-NODE')
+    secondary_proxies = rename_proxies(secondary_proxies_raw, 'SECONDARY-NODE')
 
-    us_names = [p['name'] for p in us_proxies]
-    nl_names = [p['name'] for p in nl_proxies]
+    primary_names = [p['name'] for p in primary_proxies]
+    secondary_names = [p['name'] for p in secondary_proxies]
 
-    logger.info("美国可用节点: {}".format(us_names))
-    logger.info("荷兰可用节点: {}".format(nl_names))
+    logger.info("Primary可用节点: {}".format(primary_names))
+    logger.info("Secondary可用节点: {}".format(secondary_names))
 
     # 合成最终配置
     config = build_base_config()
-    config['proxies'] = us_proxies + nl_proxies
-    config['proxy-groups'] = build_proxy_groups(us_names, nl_names)
+    config['proxies'] = primary_proxies + secondary_proxies
+    config['proxy-groups'] = build_proxy_groups(primary_names, secondary_names)
     config['rules'] = build_rules()
 
     # 逻辑规则检测
@@ -420,12 +426,12 @@ def merge_and_generate(
 
 if __name__ == '__main__':
     if len(sys.argv) != 4:
-        print("用法: {} <us-source.yaml> <nl-source.yaml> <output.yaml>".format(sys.argv[0]))
+        print("用法: {} <primary-source.yaml> <secondary-source.yaml> <output.yaml>".format(sys.argv[0]))
         sys.exit(1)
 
-    us_src = sys.argv[1]
-    nl_src = sys.argv[2]
+    primary_src = sys.argv[1]
+    secondary_src = sys.argv[2]
     out = sys.argv[3]
 
-    success = merge_and_generate(us_src, nl_src, out)
+    success = merge_and_generate(primary_src, secondary_src, out)
     sys.exit(0 if success else 1)

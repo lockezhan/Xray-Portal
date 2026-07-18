@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Xray_portal 荷兰副服务器完整部署流水线 (deploy/lib/install-nl.sh)
+# Xray_portal Secondary副服务器完整部署流水线 (deploy/lib/install-secondary.sh)
 #
 # 12 个阶段，每阶段失败立即退出（fail-closed）
 # =============================================================================
 
 set -euo pipefail
 
-install_nl() {
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install-bots.sh"
+
+install_secondary() {
     # ------------------------------------------------------------------------
     # 解析传入选项
     # ------------------------------------------------------------------------
@@ -15,6 +18,7 @@ install_nl() {
     local _proxy_only="false"
     local _skip_nginx="false"
     local _no_certbot="false"
+    local _bots_only="false"
     local _state_file=""
 
     while [[ $# -gt 0 ]]; do
@@ -22,7 +26,8 @@ install_nl() {
             --skip-proxy)  _skip_proxy="$2"; shift 2 ;;
             --proxy-only)  _proxy_only="$2"; shift 2 ;;
             --skip-nginx)  _skip_nginx="$2"; shift 2 ;;
-            --no-certbot)  _no_certbot="$2"; shift 2 ;;
+            --no-certbot)   _no_certbot="$2";  shift 2 ;;
+            --bots-only)    _bots_only="$2";   shift 2 ;;
             --state-file)  _state_file="$2"; shift 2 ;;
             *) shift ;;
         esac
@@ -32,20 +37,30 @@ install_nl() {
     root_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
     log_info "============================================================"
-    log_info "  荷兰副服务器 (NL) 部署流水线启动"
+    log_info "  Secondary副服务器 (Secondary) 部署流水线启动"
     log_info "============================================================"
 
     # =========================================================================
     # 阶段 1: preflight
     # =========================================================================
+    if [[ "${_bots_only}" == "true" ]]; then
+        log_info "============================================================"
+        log_info "  仅部署 Bots 流水线启动 (Secondary)"
+        log_info "============================================================"
+        install_bots "${root_dir}" "secondary"
+        configure_bot_nginx "secondary"
+        _secondary_print_bot_only_summary
+        return 0
+    fi
+
     log_info "--- [1/12] Preflight 预检 ---"
-    _nl_preflight "${root_dir}"
+    _secondary_preflight "${root_dir}"
 
     # =========================================================================
     # 阶段 2: install_packages
     # =========================================================================
     log_info "--- [2/12] 安装系统依赖包 ---"
-    _nl_install_packages
+    _secondary_install_packages
 
     # =========================================================================
     # 阶段 3: install_proxy
@@ -55,13 +70,13 @@ install_nl() {
         _state_update "${_state_file}" "proxy" "skipped"
     else
         log_info "--- [3/12] 安装 Xray 代理 ---"
-        _nl_install_proxy "${root_dir}"
+        _secondary_install_proxy "${root_dir}"
         _state_update "${_state_file}" "proxy" "installed"
     fi
 
     if [[ "${_proxy_only}" == "true" ]]; then
         log_info "--- [--proxy-only 模式: 跳过阶段 4-12] ---"
-        _nl_print_summary "${_state_file}" "${_skip_proxy}" "${_skip_nginx}" "${_no_certbot}"
+        _secondary_print_summary "${_state_file}" "${_skip_proxy}" "${_skip_nginx}" "${_no_certbot}"
         return 0
     fi
 
@@ -83,8 +98,8 @@ install_nl() {
     # =========================================================================
     # 阶段 5: generate_clash_source
     # =========================================================================
-    log_info "--- [5/12] 生成荷兰 Clash 原始配置 ---"
-    _nl_generate_clash_source "${root_dir}" || {
+    log_info "--- [5/12] 生成Secondary Clash 原始配置 ---"
+    _secondary_generate_clash_source "${root_dir}" || {
         log_error "[5/12] Clash 源生成失败，中止部署！"
         exit 1
     }
@@ -93,7 +108,7 @@ install_nl() {
     # 阶段 6: install_mirror_service — 建立镜像站目录和权限
     # =========================================================================
     log_info "--- [6/12] 安装订阅镜像服务 ---"
-    _nl_install_mirror_service || {
+    _secondary_install_mirror_service || {
         log_error "[6/12] 镜像服务安装失败！"
         exit 1
     }
@@ -102,7 +117,7 @@ install_nl() {
     # 阶段 7: install_push_client — 安装推送客户端脚本
     # =========================================================================
     log_info "--- [7/12] 安装订阅推送客户端 ---"
-    _nl_install_push_client "${root_dir}" || {
+    _secondary_install_push_client "${root_dir}" || {
         log_error "[7/12] 推送客户端安装失败！"
         exit 1
     }
@@ -115,7 +130,7 @@ install_nl() {
         _state_update "${_state_file}" "nginx_http" "skipped"
     else
         log_info "--- [8/12] 配置 Nginx（HTTP 阶段）---"
-        _nl_configure_nginx_http "${root_dir}" || {
+        _secondary_configure_nginx_http "${root_dir}" || {
             log_error "[8/12] Nginx HTTP 配置失败！"
             exit 1
         }
@@ -131,7 +146,7 @@ install_nl() {
         _state_update "${_state_file}" "nginx_tls" "skipped"
     else
         log_info "--- [9/12] 申请 TLS 证书 ---"
-        _nl_configure_tls || {
+        _secondary_configure_tls || {
             log_error "[9/12] TLS 配置失败！"
             exit 1
         }
@@ -143,7 +158,7 @@ install_nl() {
     # 阶段 10: generate_subpush_key — 生成 SSH 密钥（幂等）
     # =========================================================================
     log_info "--- [10/12] 生成订阅推送密钥 ---"
-    _nl_generate_subpush_key || {
+    _secondary_generate_subpush_key || {
         log_error "[10/12] 密钥生成失败！"
         exit 1
     }
@@ -152,28 +167,28 @@ install_nl() {
     # 阶段 11: verify_local_mirror — 验证本地镜像状态
     # =========================================================================
     log_info "--- [11/12] 验证本地镜像状态 ---"
-    _nl_verify_local_mirror "${_state_file}"
+    _secondary_verify_local_mirror "${_state_file}"
     # 注意: verify 仅判断状态（PENDING/PASS），不因 PENDING 中止
 
     # =========================================================================
     # 阶段 12: print_deployment_summary
     # =========================================================================
     log_info "--- [12/12] 生成部署摘要 ---"
-    _nl_print_summary "${_state_file}" "${_skip_proxy}" "${_skip_nginx}" "${_no_certbot}"
+    _secondary_print_summary "${_state_file}" "${_skip_proxy}" "${_skip_nginx}" "${_no_certbot}"
 }
 
 # =============================================================================
 # 内部函数
 # =============================================================================
 
-_nl_preflight() {
+_secondary_preflight() {
     local root_dir="$1"
 
     local required_files=(
         "${root_dir}/apps/vpn_web/proxy/install-noninteractive.sh"
         "${root_dir}/apps/vpn_web/proxy/gen_clash_config.sh"
-        "${root_dir}/deploy/clash-sub/nl/push-clash-subscription-nl.sh"
-        "${root_dir}/deploy/clash-sub/nl/nl_init.sh"
+        "${root_dir}/deploy/clash-sub/secondary/push-clash-subscription-secondary.sh"
+        "${root_dir}/deploy/clash-sub/secondary/secondary_init.sh"
     )
     for f in "${required_files[@]}"; do
         if [[ ! -f "${f}" ]]; then
@@ -182,7 +197,7 @@ _nl_preflight() {
         fi
     done
 
-    local required_vars=(NL_SUB_DOMAIN SUB_TOKEN)
+    local required_vars=(SECONDARY_SUB_DOMAIN SUB_TOKEN)
     for var in "${required_vars[@]}"; do
         if [[ -z "${!var:-}" ]]; then
             log_error "预检失败: 环境变量未设置: ${var}"
@@ -193,7 +208,7 @@ _nl_preflight() {
     log_success "[1/12] 预检通过"
 }
 
-_nl_install_packages() {
+_secondary_install_packages() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         log_info "[DRY-RUN] apt-get install nginx certbot rsync curl openssl ufw"
         return 0
@@ -215,7 +230,7 @@ _nl_install_packages() {
     log_success "[2/12] 系统包安装完成"
 }
 
-_nl_install_proxy() {
+_secondary_install_proxy() {
     local root_dir="$1"
 
     # shellcheck disable=SC1091
@@ -241,7 +256,7 @@ _nl_install_proxy() {
     log_success "[3/12] Xray 代理安装完成"
 }
 
-_nl_generate_clash_source() {
+_secondary_generate_clash_source() {
     local root_dir="$1"
 
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -254,7 +269,7 @@ _nl_generate_clash_source() {
         return 1
     fi
 
-    local clash_source="${CLASH_NL_SOURCE:-/var/www/clash/clash.yaml}"
+    local clash_source="${CLASH_SECONDARY_SOURCE:-/var/www/clash/clash.yaml}"
     if [[ ! -f "${clash_source}" ]]; then
         log_error "Clash 源文件未生成: ${clash_source}"
         return 1
@@ -265,12 +280,12 @@ _nl_generate_clash_source() {
         return 1
     }
 
-    log_success "[5/12] 荷兰 Clash 原始配置生成完成"
+    log_success "[5/12] Secondary Clash 原始配置生成完成"
 }
 
-_nl_install_mirror_service() {
+_secondary_install_mirror_service() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        log_info "[DRY-RUN] 建立镜像目录: ${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}"
+        log_info "[DRY-RUN] 建立镜像目录: ${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}"
         return 0
     fi
 
@@ -285,13 +300,13 @@ _nl_install_mirror_service() {
     fi
 
     # 建立镜像目录（权限 775，组限定）
-    safe_mkdir "${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}" 0775 "root:${SUBMIRROR_GROUP:-submirror}"
+    safe_mkdir "${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}" 0775 "root:${SUBMIRROR_GROUP:-submirror}"
     safe_mkdir "/home/${SUBMIRROR_USER:-submirror}/.ssh" 0700 "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}"
 
     log_success "[6/12] 镜像服务目录初始化完成"
 }
 
-_nl_install_push_client() {
+_secondary_install_push_client() {
     local root_dir="$1"
     local run_user="${SUBMIRROR_USER:-submirror}"
     local run_group="${SUBMIRROR_GROUP:-submirror}"
@@ -318,11 +333,11 @@ _nl_install_push_client() {
         tmp_cfg="$(mktemp "${work_dir}/.config.env.XXXXXX")"
 
         if ! cat > "${tmp_cfg}" <<EOF
-US_IP=${US_SERVER_IP}
+PRIMARY_IP=${PRIMARY_SERVER_IP}
 EOF
         then
             rm -f -- "${tmp_cfg}"
-            log_error "生成 NL 推送配置失败"
+            log_error "生成 Secondary 推送配置失败"
             return 1
         fi
 
@@ -336,13 +351,13 @@ EOF
     fi
 
     safe_install \
-        "${root_dir}/deploy/clash-sub/nl/push-clash-subscription-nl.sh" \
-        "/usr/local/sbin/push-clash-subscription-nl" \
+        "${root_dir}/deploy/clash-sub/secondary/push-clash-subscription-secondary.sh" \
+        "/usr/local/sbin/push-clash-subscription-secondary" \
         0755 \
         "root:root"
 
     safe_install \
-        "${root_dir}/deploy/clash-sub/nl/nl_init.sh" \
+        "${root_dir}/deploy/clash-sub/secondary/secondary_init.sh" \
         "/usr/local/sbin/nl_init" \
         0755 \
         "root:root"
@@ -350,11 +365,11 @@ EOF
     log_success "[7/12] 推送客户端脚本安装完成"
 }
 
-_nl_configure_nginx_http() {
+_secondary_configure_nginx_http() {
     local root_dir="$1"
 
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        log_info "[DRY-RUN] 渲染 NL Nginx HTTP 配置"
+        log_info "[DRY-RUN] 渲染 Secondary Nginx HTTP 配置"
         return 0
     fi
 
@@ -369,14 +384,14 @@ _nl_configure_nginx_http() {
     fi
 
     local tmp_conf
-    tmp_conf=$(mktemp /tmp/nl-subscription.conf.XXXXXX)
+    tmp_conf=$(mktemp /tmp/secondary-subscription.conf.XXXXXX)
 
     cat > "${tmp_conf}" <<NGINX_EOF
-# 荷兰只读镜像站 - HTTP Phase 1（TLS 申请前）
+# Secondary只读镜像站 - HTTP Phase 1（TLS 申请前）
 server {
     listen 80;
     listen [::]:80;
-    server_name ${NL_SUB_DOMAIN};
+    server_name ${SECONDARY_SUB_DOMAIN};
 
     # Let's Encrypt 验证
     location ^~ /.well-known/acme-challenge/ {
@@ -386,7 +401,7 @@ server {
 
     # 订阅镜像文件（Token 保护）
     location = /${SUB_TOKEN}/clash.yaml {
-        alias ${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml;
+        alias ${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml;
         add_header X-Robots-Tag "noindex, nofollow";
         add_header Content-Type "text/yaml; charset=utf-8";
         auth_basic off;
@@ -406,15 +421,15 @@ server {
 NGINX_EOF
 
     chmod 644 "${tmp_conf}"
-    mv -f "${tmp_conf}" /etc/nginx/sites-available/nl-subscription.conf
+    mv -f "${tmp_conf}" /etc/nginx/sites-available/secondary-subscription.conf
 
-    ln -sf /etc/nginx/sites-available/nl-subscription.conf \
-        /etc/nginx/sites-enabled/nl-subscription.conf
+    ln -sf /etc/nginx/sites-available/secondary-subscription.conf \
+        /etc/nginx/sites-enabled/secondary-subscription.conf
 
     # 语法测试（fail closed）
     nginx -t -q 2>&1 || {
         log_error "Nginx 语法测试失败！"
-        rm -f /etc/nginx/sites-enabled/nl-subscription.conf
+        rm -f /etc/nginx/sites-enabled/secondary-subscription.conf
         return 1
     }
 
@@ -423,12 +438,12 @@ NGINX_EOF
         return 1
     }
 
-    log_success "[8/12] NL Nginx HTTP 配置部署完成"
+    log_success "[8/12] Secondary Nginx HTTP 配置部署完成"
 }
 
-_nl_configure_tls() {
+_secondary_configure_tls() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        log_info "[DRY-RUN] certbot → 渲染 NL HTTPS Nginx 配置"
+        log_info "[DRY-RUN] certbot → 渲染 Secondary HTTPS Nginx 配置"
         return 0
     fi
 
@@ -437,44 +452,44 @@ _nl_configure_tls() {
     if ! certbot certonly \
         --webroot \
         --webroot-path /var/www/html \
-        --domain "${NL_SUB_DOMAIN}" \
+        --domain "${SECONDARY_SUB_DOMAIN}" \
         --non-interactive \
         --agree-tos \
-        --email "admin@${NL_SUB_DOMAIN}" \
+        --email "admin@${SECONDARY_SUB_DOMAIN}" \
         --quiet 2>&1; then
         log_error "Certbot 证书申请失败！"
         return 1
     fi
 
-    local cert_path="/etc/letsencrypt/live/${NL_SUB_DOMAIN}/fullchain.pem"
+    local cert_path="/etc/letsencrypt/live/${SECONDARY_SUB_DOMAIN}/fullchain.pem"
     [[ ! -f "${cert_path}" ]] && {
         log_error "证书文件不存在！"
         return 1
     }
 
     local tmp_conf
-    tmp_conf=$(mktemp /tmp/nl-subscription-tls.conf.XXXXXX)
+    tmp_conf=$(mktemp /tmp/secondary-subscription-tls.conf.XXXXXX)
 
     cat > "${tmp_conf}" <<NGINX_EOF
-# 荷兰只读镜像站 - HTTPS Phase 2
+# Secondary只读镜像站 - HTTPS Phase 2
 server {
-    server_name ${NL_SUB_DOMAIN};
+    server_name ${SECONDARY_SUB_DOMAIN};
     listen 80;
     listen [::]:80;
     return 301 https://\$host\$request_uri;
 }
 
 server {
-    server_name ${NL_SUB_DOMAIN};
+    server_name ${SECONDARY_SUB_DOMAIN};
     listen 443 ssl;
     listen [::]:443 ssl;
 
-    ssl_certificate /etc/letsencrypt/live/${NL_SUB_DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${NL_SUB_DOMAIN}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${SECONDARY_SUB_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${SECONDARY_SUB_DOMAIN}/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
     location = /${SUB_TOKEN}/clash.yaml {
-        alias ${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml;
+        alias ${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml;
         add_header X-Robots-Tag "noindex, nofollow";
         add_header Content-Type "text/yaml; charset=utf-8";
     }
@@ -490,10 +505,10 @@ server {
 NGINX_EOF
 
     chmod 644 "${tmp_conf}"
-    mv -f "${tmp_conf}" /etc/nginx/sites-available/nl-subscription.conf
+    mv -f "${tmp_conf}" /etc/nginx/sites-available/secondary-subscription.conf
 
     nginx -t -q 2>&1 || {
-        log_error "NL HTTPS Nginx 语法测试失败！"
+        log_error "Secondary HTTPS Nginx 语法测试失败！"
         return 1
     }
 
@@ -502,39 +517,34 @@ NGINX_EOF
         return 1
     }
 
-    log_success "[9/12] NL TLS 证书部署完成"
+    log_success "[9/12] Secondary TLS 证书部署完成"
 }
 
-_nl_generate_subpush_key() {
-    local key_path="/home/${SUBMIRROR_USER:-submirror}/.ssh/subpush_key"
+_secondary_generate_subpush_key() {
+    # Secondary -> Primary 推送密钥的唯一规范位置。推送客户端、公钥展示
+    # 和权限验证必须引用同一路径，避免 /home 与 /opt 两套副本漂移。
+    local key_path="/opt/clash-sub-mirror/subpush_key"
 
     # 幂等：密钥已存在则复用
     if [[ ! -f "${key_path}" ]]; then
         # shellcheck disable=SC1091
         generate_ssh_keypair "${key_path}" \
-            "nl-subpush@$(hostname)" \
+            "secondary-subpush@$(hostname)" \
             "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}"
         log_success "[10/12] subpush SSH 密钥生成完成: ${key_path}"
     else
         log_info "SSH 推送密钥已存在，复用: ${key_path}"
     fi
 
-    # 确保同时存在于 /opt/clash-sub-mirror/ 供客户端使用
-    if [[ "${DRY_RUN:-false}" != "true" ]]; then
-        cp -f "${key_path}" "/opt/clash-sub-mirror/subpush_key"
-        chmod 600 "/opt/clash-sub-mirror/subpush_key"
-        chown "${SUBMIRROR_USER:-submirror}:${SUBMIRROR_GROUP:-submirror}" "/opt/clash-sub-mirror/subpush_key"
-    fi
-
-    log_info "公钥内容（需手动复制到美国服务器）:"
+    log_info "公钥内容（需安装到 Primary 服务器）:"
     log_info "---"
     cat "${key_path}.pub" 2>/dev/null || log_warn "公钥文件未生成"
     log_info "---"
 }
 
-_nl_verify_local_mirror() {
+_secondary_verify_local_mirror() {
     local state_file="$1"
-    local mirror_file="${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml"
+    local mirror_file="${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml"
 
     log_info "验证本地镜像状态..."
 
@@ -546,14 +556,14 @@ _nl_verify_local_mirror() {
     fi
 
     # 目录权限
-    if [[ -d "${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}" ]]; then
+    if [[ -d "${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}" ]]; then
         log_success "[PASS] 镜像目录存在"
     else
         log_error "[FAIL] 镜像目录不存在"
     fi
 
     # 密钥权限
-    local key_path="/home/${SUBMIRROR_USER:-submirror}/.ssh/subpush_key"
+    local key_path="/opt/clash-sub-mirror/subpush_key"
     if [[ -f "${key_path}" ]]; then
         local perm
         perm=$(stat -c "%a" "${key_path}" 2>/dev/null || echo "unknown")
@@ -570,24 +580,24 @@ _nl_verify_local_mirror() {
         _state_update "${state_file}" "subscription" "pending-mirror"
     else
         log_warn "[PENDING] 镜像文件尚未同步: ${mirror_file}"
-        log_warn "  → 首份镜像需美国端生成订阅后主动推送到本机"
+        log_warn "  → 首份镜像需 Primary 生成订阅后主动推送到本机"
         _state_update "${state_file}" "subscription" "pending"
     fi
 }
 
-_nl_print_summary() {
+_secondary_print_summary() {
     local state_file="$1"
     local skip_proxy="$2"
     local skip_nginx="$3"
     local no_certbot="$4"
 
-    local key_path="/home/${SUBMIRROR_USER:-submirror}/.ssh/subpush_key.pub"
+    local key_path="/opt/clash-sub-mirror/subpush_key.pub"
     local has_mirror_file="false"
-    [[ -f "${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml" ]] && has_mirror_file="true"
+    [[ -f "${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}/clash.yaml" ]] && has_mirror_file="true"
 
     log_info ""
     log_info "================================================================"
-    log_info "  荷兰服务器部署摘要"
+    log_info "  Secondary服务器部署摘要"
     log_info "================================================================"
 
     log_info ""
@@ -602,31 +612,31 @@ _nl_print_summary() {
 
     log_info ""
     log_info "【需要人工完成】"
-    log_warn "  ⊡ 将以下公钥内容复制到美国服务器（subpush 用户 authorized_keys）:"
+    log_warn "  ⊡ 将以下公钥内容安装到 Primary（subpush 用户 authorized_keys）:"
     if [[ -f "${key_path}" ]]; then
         log_info "  $(cat "${key_path}" 2>/dev/null)"
     else
         log_warn "  （公钥文件未找到: ${key_path}）"
     fi
-    log_warn "  ⊡ 执行首次节点配置推送: sudo push-clash-subscription-nl"
+    log_warn "  ⊡ 执行首次节点配置推送: sudo push-clash-subscription-secondary"
 
     log_info ""
     if [[ "${has_mirror_file}" == "true" ]]; then
         log_info "【订阅镜像状态: PASS】"
-        log_info "  镜像地址: https://${NL_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml"
+        log_info "  镜像地址: https://${SECONDARY_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml"
     else
         log_warn "【订阅镜像状态: PENDING】"
         log_warn "  首份镜像文件尚未同步，访问将返回 404"
-        log_warn "  同步命令: sudo /usr/local/sbin/push-clash-subscription-nl"
+        log_warn "  同步命令: sudo /usr/local/sbin/push-clash-subscription-secondary"
     fi
 
     log_info ""
     log_info "【排障命令】"
     log_info "  systemctl status xray nginx"
-    log_info "  sudo ./deploy/verify.sh nl --env <env-file>"
+    log_info "  sudo ./deploy/verify.sh secondary --env <env-file>"
 }
 
-# 复用 US 的 _state_update 函数
+# 复用 Primary 的 _state_update 函数
 _state_update() {
     local state_file="$1"
     local key="$2"
@@ -638,4 +648,17 @@ _state_update() {
     if [[ -f "${state_file}" ]]; then
         sed -i "s|\"${key}\": \"[^\"]*\"|\"${key}\": \"${value}\"|g" "${state_file}" 2>/dev/null || true
     fi
+}
+
+_secondary_print_bot_only_summary() {
+    log_info ""
+    log_info "================================================================"
+    log_info "  Secondary Bots-Only 部署摘要"
+    log_info "================================================================"
+    log_info ""
+    log_info "【已自动完成】"
+    log_success "  ✓ tg_bot 依赖安装与隔离配置"
+    log_success "  ✓ Bot Nginx 公共端口配置"
+    log_info ""
+    print_bot_summary "secondary"
 }

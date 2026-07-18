@@ -33,7 +33,7 @@ pip install -r requirements.txt
 *   `BRIDGE_BOT_TOKEN`：桥接 Bot 的 Telegram API 凭证。
 *   `BRIDGE_TARGET_QQ_GROUP`：需要桥接互通的目标 QQ 群号。
 *   `BRIDGE_TARGET_QQ_TYPE`：目标类型，`group` 表示 QQ 群，`user` 表示个人私聊；默认 `group`。
-*   `BRIDGE_SERVER_PUBLIC_IP`：美国服务器的公网域名或 IP。
+*   `BRIDGE_SERVER_PUBLIC_IP`：Primary服务器的公网域名或 IP。
 *   `BRIDGE_NAPCAT_API_URL`：本地 NapCat (OneBot) 接口地址。
 *   `BRIDGE_NAPCAT_TIMEOUT`：等待 NapCat 完成媒体上传的秒数，默认 `300`。
 *   `BRIDGE_NAPCAT_MAX_CONCURRENCY`：同时提交给 NapCat 的媒体数，默认 `1`，避免相册并发挤满上传队列。
@@ -41,7 +41,7 @@ pip install -r requirements.txt
 *   `BRIDGE_NAPCAT_STREAM_THRESHOLD`：启用分块上传的文件大小阈值（字节），默认 `52428800`（50 MiB）。普通上传出现 `rich media transfer failed` 时，小文件也会自动改走 Stream API 重试。
 *   `BRIDGE_NAPCAT_STREAM_CHUNK_SIZE`：Stream API 分块大小（字节），默认 `1048576`（1 MiB）。
 *   `BRIDGE_MEDIA_GROUP_SETTLE_DELAY`：媒体组最后一个文件完成后，等待多少秒再发送链接和完成提示，默认 `8`。
-*   `BRIDGE_WEB_TRANSCODE_MAX_CONCURRENCY`：网页视频兼容转码的最大并发数，默认 `1`；NL 升级到 2 vCPU/2 GB 后仍建议先保持为 `1`。
+*   `BRIDGE_WEB_TRANSCODE_MAX_CONCURRENCY`：网页视频兼容转码的最大并发数，默认 `1`；Secondary 升级到 2 vCPU/2 GB 后仍建议先保持为 `1`。
 *   `BRIDGE_WEB_TRANSCODE_PRESET` / `BRIDGE_WEB_TRANSCODE_CRF`：网页 H.264 转码速度和质量，默认 `veryfast` / `23`。
 *   `BRIDGE_FORWARD_MODE`：转发模式，支持 `link`（仅链接）、`file`（仅源文件）、`both`（两者，默认）。旧的 `BRIDGE_FORWARD_FILES=0` 仍兼容为仅链接模式。
 *   `BRIDGE_ADMIN_USER_ID`：允许执行运行时切群命令的 Telegram 数字用户 ID；未设置时复用 `CHANNEL_ADMIN_ID`。

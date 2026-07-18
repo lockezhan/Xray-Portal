@@ -7,16 +7,16 @@ import subprocess
 import tempfile
 
 # 将 extract_merge.py 所在的目录加入 sys.path
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../deploy/clash-sub/us')))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../../deploy/clash-sub/primary')))
 import extract_merge
 
 class TestClashMerge(unittest.TestCase):
     def setUp(self):
         self.fixture_dir = os.path.dirname(__file__)
-        self.us_src = os.path.join(self.fixture_dir, 'fixtures/us-source.example.yaml')
-        self.nl_src = os.path.join(self.fixture_dir, 'fixtures/nl-source.example.yaml')
+        self.primary_src = os.path.join(self.fixture_dir, 'fixtures/primary-source.example.yaml')
+        self.secondary_src = os.path.join(self.fixture_dir, 'fixtures/secondary-source.example.yaml')
         self.out = os.path.join(self.fixture_dir, 'fixtures/merged.building.yaml')
-        
+
     def tearDown(self):
         if os.path.exists(self.out):
             os.remove(self.out)
@@ -34,7 +34,7 @@ class TestClashMerge(unittest.TestCase):
         mihomo_bin = self._get_mihomo_bin()
         if not mihomo_bin:
             return True
-            
+
         import tempfile
         tmpdir = tempfile.mkdtemp()
         os.makedirs(tmpdir, exist_ok=True)
@@ -57,59 +57,96 @@ class TestClashMerge(unittest.TestCase):
 
     def test_scenario_both_nodes(self):
         # 场景一：双节点同时存在
-        success = extract_merge.merge_and_generate(self.us_src, self.nl_src, self.out)
+        success = extract_merge.merge_and_generate(self.primary_src, self.secondary_src, self.out)
         self.assertTrue(success)
         self.assertTrue(self._run_mihomo_t(self.out))
 
     def test_scenario_only_us(self):
-        # 场景二：仅美国节点存在
-        success = extract_merge.merge_and_generate(self.us_src, '/tmp/non_existent_nl.yaml', self.out)
+        # 场景二：仅Primary节点存在
+        success = extract_merge.merge_and_generate(self.primary_src, '/tmp/non_existent_secondary.yaml', self.out)
         self.assertTrue(success)
         self.assertTrue(self._run_mihomo_t(self.out))
 
     def test_scenario_only_nl(self):
-        # 场景三：仅荷兰节点存在 (紧急降级模式)
-        success = extract_merge.merge_and_generate('/tmp/non_existent_us.yaml', self.nl_src, self.out)
+        # 场景三：仅Secondary节点存在 (紧急降级模式)
+        success = extract_merge.merge_and_generate('/tmp/non_existent_primary.yaml', self.secondary_src, self.out)
         self.assertTrue(success)
         self.assertTrue(self._run_mihomo_t(self.out))
 
     def test_scenario_both_missing(self):
         # 场景四：双端均缺失 (应当构建失败)
-        success = extract_merge.merge_and_generate('/tmp/non_existent_us.yaml', '/tmp/non_existent_nl.yaml', self.out)
+        success = extract_merge.merge_and_generate('/tmp/non_existent_primary.yaml', '/tmp/non_existent_secondary.yaml', self.out)
         self.assertFalse(success)
 
-    def test_scenario_multiple_nodes(self):
-        # 场景五：多美国和多荷兰节点生成校验
-        us_multi_data = {
-            'proxies': [
-                {'name': 'US-1', 'type': 'ss', 'server': 'us1.example.com', 'port': 20001, 'cipher': 'aes-128-gcm', 'password': 'pw'},
-                {'name': 'US-2', 'type': 'ss', 'server': 'us2.example.com', 'port': 20002, 'cipher': 'aes-128-gcm', 'password': 'pw'},
-            ]
-        }
-        nl_multi_data = {
-            'proxies': [
-                {'name': 'NL-1', 'type': 'ss', 'server': 'nl1.example.com', 'port': 20001, 'cipher': 'aes-128-gcm', 'password': 'pw'},
-                {'name': 'NL-2', 'type': 'ss', 'server': 'nl2.example.com', 'port': 20002, 'cipher': 'aes-128-gcm', 'password': 'pw'},
-            ]
-        }
-        us_file = os.path.join(self.fixture_dir, 'fixtures/us-multi.yaml')
-        nl_file = os.path.join(self.fixture_dir, 'fixtures/nl-multi.yaml')
-        try:
-            with open(us_file, 'w') as f: yaml.dump(us_multi_data, f)
-            with open(nl_file, 'w') as f: yaml.dump(nl_multi_data, f)
-            
-            success = extract_merge.merge_and_generate(us_file, nl_file, self.out)
-            self.assertTrue(success)
-            self.assertTrue(self._run_mihomo_t(self.out))
-        finally:
-            if os.path.exists(us_file): os.remove(us_file)
-            if os.path.exists(nl_file): os.remove(nl_file)
+    def test_scenario_single_and_multiple_nodes(self):
+        # 场景五：测试单节点和多节点命名及组名无交集
+        primary_single = {'proxies': [{'name': 'P-1', 'type': 'ss', 'server': 'p1', 'port': 1}]}
+        secondary_single = {'proxies': [{'name': 'S-1', 'type': 'ss', 'server': 's1', 'port': 2}]}
+
+        primary_multi = {'proxies': [
+            {'name': 'P-1', 'type': 'ss', 'server': 'p1', 'port': 1},
+            {'name': 'P-2', 'type': 'ss', 'server': 'p2', 'port': 2}
+        ]}
+
+        secondary_multi = {'proxies': [
+            {'name': 'S-1', 'type': 'ss', 'server': 's1', 'port': 1},
+            {'name': 'S-2', 'type': 'ss', 'server': 's2', 'port': 2}
+        ]}
+
+        test_cases = [
+            (primary_single, secondary_single, ['PRIMARY-NODE'], ['SECONDARY-NODE']),
+            (primary_single, None, ['PRIMARY-NODE'], []),
+            (None, secondary_single, [], ['SECONDARY-NODE']),
+            (primary_multi, secondary_multi, ['PRIMARY-NODE-1', 'PRIMARY-NODE-2'], ['SECONDARY-NODE-1', 'SECONDARY-NODE-2'])
+        ]
+
+        for p_data, s_data, exp_p, exp_s in test_cases:
+            p_file = os.path.join(self.fixture_dir, 'fixtures/p-temp.yaml')
+            s_file = os.path.join(self.fixture_dir, 'fixtures/s-temp.yaml')
+            try:
+                if p_data:
+                    with open(p_file, 'w') as f: yaml.dump(p_data, f)
+                else:
+                    p_file = '/tmp/non_existent_primary.yaml'
+
+                if s_data:
+                    with open(s_file, 'w') as f: yaml.dump(s_data, f)
+                else:
+                    s_file = '/tmp/non_existent_secondary.yaml'
+
+                success = extract_merge.merge_and_generate(p_file, s_file, self.out)
+                self.assertTrue(success)
+
+                with open(self.out, 'r', encoding='utf-8') as f:
+                    data = yaml.safe_load(f)
+
+                actual_names = [p['name'] for p in data['proxies']]
+                self.assertEqual(sorted(actual_names), sorted(exp_p + exp_s))
+
+                group_names = [g['name'] for g in data['proxy-groups']]
+                # 确认节点名与代理组名无交集
+                overlap = set(actual_names).intersection(set(group_names))
+                self.assertEqual(len(overlap), 0)
+
+                # SENSITIVE-SECONDARY 校验
+                snl = next((g for g in data['proxy-groups'] if g['name'] == 'SENSITIVE-SECONDARY'), None)
+                self.assertIsNotNone(snl)
+                if exp_s:
+                    for ref in snl['proxies']:
+                        self.assertTrue(ref.startswith('SECONDARY-NODE'))
+                else:
+                    self.assertEqual(snl['proxies'], ['REJECT'])
+
+                self.assertTrue(self._run_mihomo_t(self.out))
+            finally:
+                if os.path.exists(p_file) and p_data: os.remove(p_file)
+                if os.path.exists(s_file) and s_data: os.remove(s_file)
 
     def test_scenario_chained_proxy_rejected(self):
         # 场景六：含有链式代理节点 (应当构建阻断)
         bad_us_data = {
             'proxies': [
-                {'name': 'US-BAD-1', 'type': 'ss', 'server': 'us.example.com', 'port': 20001, 'cipher': 'aes-128-gcm', 'password': 'pw', 'dialer-proxy': 'parent'},
+                {'name': 'PRIMARY-BAD-1', 'type': 'ss', 'server': 'primary.example.com', 'port': 20001, 'cipher': 'aes-128-gcm', 'password': 'pw', 'dialer-proxy': 'parent'},
             ]
         }
         with self.assertRaises(SystemExit) as cm:
@@ -121,57 +158,57 @@ class TestClashMerge(unittest.TestCase):
     # =========================================================================
 
     def test_failover_asymmetric_semantics(self):
-        # A. 正常状态：美国和荷兰同时存在
-        extract_merge.merge_and_generate(self.us_src, self.nl_src, self.out)
+        # A. 正常状态：Primary和Secondary同时存在
+        extract_merge.merge_and_generate(self.primary_src, self.secondary_src, self.out)
         with open(self.out, 'r', encoding='utf-8') as f:
             data = yaml.safe_load(f)
         groups = {g['name']: g for g in data['proxy-groups']}
-        
-        # GENERAL-PROXY 选择 fallback，且美国优先（排在前），荷兰在后
+
+        # GENERAL-PROXY 选择 fallback，且Primary优先（排在前），Secondary在后
         gp = groups['GENERAL-PROXY']
         self.assertEqual(gp['type'], 'fallback')
-        self.assertTrue(gp['proxies'][0].startswith('US-MAIN'))
-        self.assertTrue(gp['proxies'][-1].startswith('NL-SENSITIVE'))
+        self.assertTrue(gp['proxies'][0].startswith('PRIMARY-NODE'))
+        self.assertTrue(gp['proxies'][-1].startswith('SECONDARY-NODE'))
 
-        # 敏感流量不得命中美国、GENERAL-PROXY 或 DIRECT
-        snl = groups['SENSITIVE-NL']
+        # 敏感流量不得命中Primary、GENERAL-PROXY 或 DIRECT
+        snl = groups['SENSITIVE-SECONDARY']
         for ref in snl['proxies']:
-            self.assertTrue(ref.startswith('NL-SENSITIVE'))
-            self.assertNotIn(ref, ['DEFAULT-US', 'GENERAL-PROXY', 'DIRECT'])
+            self.assertTrue(ref.startswith('SECONDARY-NODE'))
+            self.assertNotIn(ref, ['PRIMARY-NODE', 'GENERAL-PROXY', 'DIRECT'])
 
-        # B. 美国故障时：仅荷兰存在
-        extract_merge.merge_and_generate('/tmp/non_existent_us.yaml', self.nl_src, self.out)
+        # B. Primary故障时：仅Secondary存在
+        extract_merge.merge_and_generate('/tmp/non_existent_primary.yaml', self.secondary_src, self.out)
         with open(self.out, 'r', encoding='utf-8') as f:
             data_us_fail = yaml.safe_load(f)
         groups_us_fail = {g['name']: g for g in data_us_fail['proxy-groups']}
-        
-        # 普通国外流量 GENERAL-PROXY 应该被指派到荷兰
+
+        # 普通国外流量 GENERAL-PROXY 应该被指派到Secondary
         gp_us_fail = groups_us_fail['GENERAL-PROXY']
         self.assertTrue(len(gp_us_fail['proxies']) > 0)
         for ref in gp_us_fail['proxies']:
-            self.assertTrue(ref.startswith('NL-SENSITIVE'))
+            self.assertTrue(ref.startswith('SECONDARY-NODE'))
 
-        # C. 荷兰故障时：仅美国存在
-        extract_merge.merge_and_generate(self.us_src, '/tmp/non_existent_nl.yaml', self.out)
+        # C. Secondary故障时：仅Primary存在
+        extract_merge.merge_and_generate(self.primary_src, '/tmp/non_existent_secondary.yaml', self.out)
         with open(self.out, 'r', encoding='utf-8') as f:
             data_nl_fail = yaml.safe_load(f)
         groups_nl_fail = {g['name']: g for g in data_nl_fail['proxy-groups']}
-        
-        # 普通流量仍走美国
+
+        # 普通流量仍走Primary
         gp_nl_fail = groups_nl_fail['GENERAL-PROXY']
         for ref in gp_nl_fail['proxies']:
-            self.assertTrue(ref.startswith('US-MAIN'))
-            
-        # 敏感组 SENSITIVE-NL 必须失败 (REJECT)，严禁包含美国节点或 DIRECT
-        snl_nl_fail = groups_nl_fail['SENSITIVE-NL']
+            self.assertTrue(ref.startswith('PRIMARY-NODE'))
+
+        # 敏感组 SENSITIVE-SECONDARY 必须失败 (REJECT)，严禁包含Primary节点或 DIRECT
+        snl_nl_fail = groups_nl_fail['SENSITIVE-SECONDARY']
         self.assertEqual(snl_nl_fail['proxies'], ['REJECT'])
 
     def test_python_ok_but_mihomo_bad(self):
         # 场景七：校验通过 Python 逻辑但被 Mihomo 拒绝的 fixture
-        bad_meta_src = os.path.join(self.fixture_dir, 'fixtures/nl-python-ok-meta-bad.yaml')
-        success = extract_merge.merge_and_generate(self.us_src, bad_meta_src, self.out)
+        bad_meta_src = os.path.join(self.fixture_dir, 'fixtures/secondary-python-ok-meta-bad.yaml')
+        success = extract_merge.merge_and_generate(self.primary_src, bad_meta_src, self.out)
         self.assertTrue(success, "Python 逻辑检验应当正常通过")
-        
+
         mihomo_bin = self._get_mihomo_bin()
         if mihomo_bin:
             # 只有当环境有 Mihomo 内核时，内核校验才应当失败，将此测试标记为成功

@@ -6,7 +6,7 @@
 
 ## 1. 服务状态速查
 
-### 美国主机
+### Primary主机
 
 ```bash
 # 一键状态总览
@@ -18,7 +18,7 @@ journalctl -u vpn-web -f -n 50
 journalctl -u nginx -f -n 50
 ```
 
-### 荷兰副机
+### Secondary副机
 
 ```bash
 systemctl status xray nginx
@@ -30,18 +30,18 @@ journalctl -u xray -f -n 50
 ## 2. 一键健康验证
 
 ```bash
-# 美国（完整检查：服务、端口、HTTP、YAML、访问控制）
-sudo ./deploy/verify.sh us --env .env
+# Primary（完整检查：服务、端口、HTTP、YAML、访问控制）
+sudo ./deploy/verify.sh primary --env .env
 
-# 荷兰（含订阅同步 PENDING 状态检测）
-sudo ./deploy/verify.sh nl --env .env
+# Secondary（含订阅同步 PENDING 状态检测）
+sudo ./deploy/verify.sh secondary --env .env
 ```
 
 ---
 
 ## 3. 订阅手动重建与推送
 
-### 重建美国订阅
+### 重建Primary订阅
 
 ```bash
 # 重新生成 Clash 源文件并发布
@@ -55,13 +55,13 @@ python3 -c "import yaml; yaml.safe_load(open('/opt/clash-sub/published/clash.yam
 mihomo -t -d /opt/clash-sub/published/
 ```
 
-### 手动推送到荷兰（在荷兰机执行）
+### 手动推送到Secondary（在Secondary机执行）
 
 ```bash
-# 荷兰机：推送本地 Clash 源到美国存储
-sudo /usr/local/sbin/push-clash-subscription-nl
+# Secondary机：推送本地 Clash 源到Primary存储
+sudo /usr/local/sbin/push-clash-subscription-secondary
 
-# 验证荷兰镜像文件存在
+# 验证Secondary镜像文件存在
 ls -la /var/www/sub/<SUB_TOKEN>/clash.yaml
 ```
 
@@ -86,7 +86,7 @@ sudo nginx -s reload
 
 ## 5. 节点重装后更新流程
 
-### 5.1 美国节点 Xray 更新
+### 5.1 Primary节点 Xray 更新
 
 ```bash
 # 重新渲染 Xray 配置（保持原密钥）
@@ -100,21 +100,21 @@ sudo bash apps/vpn_web/proxy/gen_clash_config.sh
 sudo /usr/local/sbin/rebuild-clash-subscription
 
 # 验证
-sudo ./deploy/verify.sh us --env .env
+sudo ./deploy/verify.sh primary --env .env
 ```
 
-### 5.2 荷兰节点 Xray 更新
+### 5.2 Secondary节点 Xray 更新
 
 ```bash
-# 荷兰机：重渲染配置，重启服务
+# Secondary机：重渲染配置，重启服务
 sudo bash apps/vpn_web/proxy/lib/render-xray-config.sh
 sudo systemctl restart xray
 
-# 更新荷兰 Clash 源
+# 更新Secondary Clash 源
 sudo bash apps/vpn_web/proxy/gen_clash_config.sh
 
-# 推送到美国触发重建
-sudo /usr/local/sbin/push-clash-subscription-nl
+# 推送到Primary触发重建
+sudo /usr/local/sbin/push-clash-subscription-secondary
 ```
 
 ---
@@ -165,10 +165,10 @@ sudo /usr/local/sbin/rebuild-clash-subscription
 ```bash
 git pull
 # 更新 Web 面板（不重装代理）
-sudo ./deploy/install.sh us --env .env --skip-proxy
+sudo ./deploy/install.sh primary --env .env --skip-proxy
 
 # 仅更新代理（不重装 Web 面板）
-sudo ./deploy/install.sh us --env .env --proxy-only
+sudo ./deploy/install.sh primary --env .env --proxy-only
 ```
 
 ---
@@ -182,7 +182,7 @@ sudo ./deploy/install.sh us --env .env --proxy-only
 | Nginx 访问日志 | `/var/log/nginx/access.log` |
 | Nginx 错误日志 | `/var/log/nginx/error.log` |
 | 重建订阅日志 | `/opt/clash-sub/logs/rebuild.log` |
-| 荷兰推送日志 | 通过 `journalctl -u push-clash-nl` 查看 |
+| Secondary推送日志 | 通过 `journalctl -u push-clash-secondary` 查看 |
 | 部署状态记录 | `/var/lib/xray-portal/deployment-state.json` |
 
 ---

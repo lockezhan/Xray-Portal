@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
-# nl_init.sh — 荷兰副服务器初始化配置模板
+# secondary_init.sh — Secondary副服务器初始化配置模板
 # 使用说明: 请将相关占位符替换为实际安全参数。
 # =============================================================================
 set -euo pipefail
 
 SUB_TOKEN="<SUB_TOKEN>"
-US_IP="<US_SERVER_IP>"
-# 请将此公钥内容替换为您在美国服务器上生成的 /opt/clash-sub/scripts/submirror_key.pub 的真实公钥内容
+PRIMARY_IP="<PRIMARY_SERVER_IP>"
+# 请将此公钥内容替换为您在Primary服务器上生成的 /opt/clash-sub/scripts/submirror_key.pub 的真实公钥内容
 SUBMIRROR_PUB="ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...REPLACE_WITH_YOUR_ACTUAL_SUBMIRROR_PUB_KEY... submirror@clash-sub"
 
 echo "=== 1. 配置 config.env ==="
 mkdir -p /opt/clash-sub-mirror/scripts /opt/clash-sub-mirror/logs
 cat > /opt/clash-sub-mirror/config.env << NLENV
 SUB_TOKEN=${SUB_TOKEN}
-US_IP=${US_IP}
-US_DOMAIN=us-sub.example.com
-NL_DOMAIN=nl-sub.example.com
-NL_SUB_DIR=/var/www/sub/${SUB_TOKEN}
-US_INCOMING=/opt/clash-sub/incoming
+PRIMARY_IP=${PRIMARY_IP}
+PRIMARY_DOMAIN=primary-sub.example.com
+SECONDARY_DOMAIN=secondary-sub.example.com
+SECONDARY_SUB_DIR=/var/www/sub/\${SUB_TOKEN}
+PRIMARY_INCOMING=/opt/clash-sub/incoming
 LOG_FILE=/opt/clash-sub-mirror/logs/sync.log
 NLENV
 chmod 600 /opt/clash-sub-mirror/config.env

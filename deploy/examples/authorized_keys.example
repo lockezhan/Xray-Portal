@@ -1,11 +1,11 @@
 # ==========================================
-# 示例：美国服务器上 subpush 账号的 authorized_keys 限制配置
+# 示例：Primary 服务器上 subpush 账号的 authorized_keys 限制配置
 # ==========================================
 
-restrict,no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-pty,command="/opt/clash-sub/scripts/subpush-cmd-wrapper" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...替代为荷兰生成的subpush_key.pub真实公钥内容... subpush@clash-sub
+restrict,no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-pty,command="/opt/clash-sub/scripts/subpush-cmd-wrapper" ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...替换为Secondary生成的subpush_key.pub真实公钥内容... secondary-subpush@secondary
 
 # ==========================================
-# 示例：荷兰服务器上 submirror 账号的 authorized_keys 限制配置
+# 示例：Secondary 服务器上 submirror 账号的 authorized_keys 限制配置
 # ==========================================
 
-restrict,no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-pty ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...替代为美国生成的submirror_key.pub真实公钥内容... submirror@clash-sub
+restrict,no-agent-forwarding,no-port-forwarding,no-X11-forwarding,no-pty ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAA...替换为Primary生成的submirror_key.pub真实公钥内容... submirror@primary

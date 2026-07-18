@@ -91,7 +91,7 @@ install_authorized_key() {
 
 # =============================================================================
 # submirror 专用强制命令授权（P6 要求）
-# 限制 NL 端只能执行特定 rsync 命令，禁止交互式 Shell
+# 限制 Secondary 端只能执行特定 rsync 命令，禁止交互式 Shell
 #
 # 用法: install_submirror_authorized_key <pubkey_str> <target_path> <sub_token>
 # =============================================================================

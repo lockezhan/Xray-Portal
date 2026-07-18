@@ -128,9 +128,12 @@ fi
 # =============================================================================
 mkdir -p "${SUBSCRIBE_DIR}"
 
+ROLE_PREFIX="${DEPLOY_ROLE:-primary}"
+ROLE_PREFIX_UPPER=$(echo "${ROLE_PREFIX}" | tr '[:lower:]' '[:upper:]')
+
 # 构建代理节点列表（条件包含 IPv6/Legacy）
 # 注意：IPv4 节点强制使用裸 IPv4 地址（非域名），避免客户端 DNS 解析时 IPv6 优先导致双栈冲突
-PROXIES_YAML="  - name: \"US-IPv4\"
+PROXIES_YAML="  - name: \"${ROLE_PREFIX_UPPER}-NODE-IPv4\"
     type: ss
     server: ${IPV4}
     port: ${PORT_V4}
@@ -141,7 +144,7 @@ PROXIES_YAML="  - name: \"US-IPv4\"
 if [[ "${PROXY_ENABLE_IPV6:-true}" == "true" && -n "${PASS_V6}" && -n "${IPV6}" ]]; then
     PROXIES_YAML+="
 
-  - name: \"US-IPv6\"
+  - name: \"${ROLE_PREFIX_UPPER}-NODE-IPv6\"
     type: ss
     server: ${IPV6}
     port: ${PORT_V6}
@@ -154,7 +157,7 @@ if [[ "${PROXY_ENABLE_LEGACY:-false}" == "true" && -n "${PASS_LEGACY}" ]]; then
     # Legacy 节点同样使用裸 IPv4，避免双栈冲突
     PROXIES_YAML+="
 
-  - name: \"US-Legacy\"
+  - name: \"${ROLE_PREFIX_UPPER}-NODE-Legacy\"
     type: ss
     server: ${IPV4}
     port: ${PORT_LEGACY}
@@ -182,9 +185,9 @@ proxy-groups:
   - name: "Proxy"
     type: select
     proxies:
-      - "US-IPv4"
-$([ "${PROXY_ENABLE_IPV6:-true}" == "true" ] && echo '      - "US-IPv6"' || true)
-$([ "${PROXY_ENABLE_LEGACY:-false}" == "true" ] && echo '      - "US-Legacy"' || true)
+      - "${ROLE_PREFIX_UPPER}-NODE-IPv4"
+$([ "${PROXY_ENABLE_IPV6:-true}" == "true" ] && echo "      - \"${ROLE_PREFIX_UPPER}-NODE-IPv6\"" || true)
+$([ "${PROXY_ENABLE_LEGACY:-false}" == "true" ] && echo "      - \"${ROLE_PREFIX_UPPER}-NODE-Legacy\"" || true)
       - DIRECT
 
 rules:

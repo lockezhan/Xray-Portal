@@ -17,7 +17,7 @@ Environment="PYTHONUNBUFFERED=1"
 
 # 核心：执行命令。前半部分是虚拟环境的 python 绝对路径，后半部分是脚本绝对路径
 # 例如：/home/ubuntu/mybot/venv/bin/python /home/ubuntu/mybot/bridge_bot.py
-ExecStart=/usr/local/vpn-web/venv/bin/python /usr/local/tg_bot/bridge_bot.py
+ExecStart=/usr/local/tg_bot/venv/bin/python /usr/local/tg_bot/bridge_bot.py
 # 异常退出时自动重启
 Restart=always
 # 重启前的等待时间（秒），防止无限极速重启导致 CPU 占用过高

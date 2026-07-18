@@ -2,7 +2,7 @@
 # =============================================================================
 # Xray_portal 部署状态完整验证脚本 (deploy/verify.sh)
 #
-# 用法: sudo ./deploy/verify.sh <us|nl> --env <配置文件> [--verbose]
+# 用法: sudo ./deploy/verify.sh <primary|secondary> --env <配置文件> [--verbose]
 #
 # 输出格式:
 #   [PASS]    - 检查通过
@@ -19,6 +19,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/lib/common.sh"
 # shellcheck disable=SC1091
 source "${SCRIPT_DIR}/lib/env.sh"
+source "${SCRIPT_DIR}/lib/install-bots.sh"
 
 ROLE=""
 ENV_FILE=""
@@ -26,19 +27,30 @@ VERBOSE="false"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        us|nl)   ROLE="$1"; shift ;;
+        primary|secondary|us|nl)
+            if [[ "$1" == "us" ]]; then
+                log_warn "[DEPRECATED] 角色 'us' 已弃用，自动映射为 'primary'"
+                ROLE="primary"
+            elif [[ "$1" == "nl" ]]; then
+                log_warn "[DEPRECATED] 角色 'nl' 已弃用，自动映射为 'secondary'"
+                ROLE="secondary"
+            else
+                ROLE="$1"
+            fi
+            shift
+            ;;
         --env)   ENV_FILE="${2:-}"; shift 2 ;;
         --verbose|-v) VERBOSE="true"; shift ;;
         *)
             log_error "未知参数: $1"
-            echo "用法: $0 <us|nl> --env <文件路径> [--verbose]"
+            echo "用法: $0 <primary|secondary> --env <文件路径> [--verbose]"
             exit 1
             ;;
     esac
 done
 
 if [[ -z "${ROLE}" || -z "${ENV_FILE}" ]]; then
-    log_error "用法: $0 <us|nl> --env <文件路径>"
+    log_error "用法: $0 <primary|secondary> --env <文件路径>"
     exit 1
 fi
 
@@ -120,10 +132,10 @@ _file_perm() {
 }
 
 # =============================================================================
-# US 角色验证
+# Primary 角色验证
 # =============================================================================
 
-verify_us() {
+verify_primary() {
     log_info ""
     log_info "--- Xray 代理服务 ---"
 
@@ -144,7 +156,7 @@ verify_us() {
     log_info ""
     log_info "--- Clash 订阅构建 ---"
 
-    local clash_source="${CLASH_US_SOURCE:-/var/www/clash/clash.yaml}"
+    local clash_source="${CLASH_PRIMARY_SOURCE:-/var/www/clash/clash.yaml}"
     _check "Clash 原始配置 ${clash_source} 存在" \
         "$([ -f "${clash_source}" ] && echo PASS || echo FAIL)" \
         "排障: sudo bash apps/vpn_web/proxy/gen_clash_config.sh"
@@ -154,7 +166,7 @@ verify_us() {
     _check "mihomo 可执行文件存在" \
         "$(command -v mihomo >/dev/null 2>&1 && echo PASS || echo FAIL)"
 
-    local published="${US_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml"
+    local published="${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml"
     _check "最终订阅文件存在: ${published}" \
         "$([ -f "${published}" ] && echo PASS || echo FAIL)" \
         "排障: sudo /usr/local/sbin/rebuild-clash-subscription"
@@ -176,7 +188,7 @@ verify_us() {
         _check "Mihomo 内核校验" "SKIP"
     fi
 
-    # 验证 GENERAL-PROXY 为 fallback 类型、SENSITIVE-NL 不含美国节点
+    # 验证 GENERAL-PROXY 为 fallback 类型、SENSITIVE-SECONDARY 不含Primary节点
     if [[ -f "${published}" ]]; then
         local gp_type
         gp_type=$(python3 -c "
@@ -189,18 +201,18 @@ print(gp.get('type', 'missing'))
         _check "GENERAL-PROXY 代理组类型为 fallback" \
             "$([ "${gp_type}" = "fallback" ] && echo PASS || echo "FAIL:${gp_type}")"
 
-        local sensitive_us_count
-        sensitive_us_count=$(python3 -c "
+        local sensitive_primary_count
+        sensitive_primary_count=$(python3 -c "
 import yaml
 c = yaml.safe_load(open('${published}'))
 groups = {g['name']: g for g in c.get('proxy-groups', [])}
-nl = groups.get('SENSITIVE-NL', {})
-proxies = nl.get('proxies', [])
-bad = [p for p in proxies if p.startswith('US-') or p == 'DIRECT' or p == 'GENERAL-PROXY']
+secondary = groups.get('SENSITIVE-SECONDARY', {})
+proxies = secondary.get('proxies', [])
+bad = [p for p in proxies if p.startswith('PRIMARY-NODE-') or p == 'DIRECT' or p == 'GENERAL-PROXY']
 print(len(bad))
 " 2>/dev/null || echo "error")
-        _check "SENSITIVE-NL 不含美国节点或 DIRECT" \
-            "$([ "${sensitive_us_count}" = "0" ] && echo PASS || echo "FAIL:found-${sensitive_us_count}")"
+        _check "SENSITIVE-SECONDARY 不含 Primary 节点或 DIRECT" \
+            "$([ "${sensitive_primary_count}" = "0" ] && echo PASS || echo "FAIL:found-${sensitive_primary_count}")"
     fi
 
     log_info ""
@@ -226,7 +238,7 @@ print(len(bad))
     fi
 
     # 访问控制验证（通过 127.0.0.1 + Host 头）
-    local domain="${US_SUB_DOMAIN}"
+    local domain="${PRIMARY_SUB_DOMAIN}"
     local token="${SUB_TOKEN}"
 
     if systemctl is-active --quiet nginx.service 2>/dev/null; then
@@ -261,13 +273,15 @@ print(len(bad))
     else
         _check "Nginx 访问控制验证" "SKIP"
     fi
+
+    verify_bots "primary"
 }
 
 # =============================================================================
-# NL 角色验证
+# Secondary 角色验证
 # =============================================================================
 
-verify_nl() {
+verify_secondary() {
     log_info ""
     log_info "--- Xray 代理服务 ---"
 
@@ -278,11 +292,11 @@ verify_nl() {
     _check "IPv4 代理端口 ${port_v4} 正在监听" "$(_port_listening "${port_v4}")"
 
     log_info ""
-    log_info "--- NL Clash 源配置 ---"
+    log_info "--- Secondary Clash 源配置 ---"
 
-    local nl_source="${CLASH_NL_SOURCE:-/var/www/clash/clash.yaml}"
-    _check "NL Clash 源文件存在" "$([ -f "${nl_source}" ] && echo PASS || echo FAIL)"
-    _check "NL Clash 源 YAML 语法合法" "$(_yaml_valid "${nl_source}")"
+    local secondary_source="${CLASH_SECONDARY_SOURCE:-/var/www/clash/clash.yaml}"
+    _check "Secondary Clash 源文件存在" "$([ -f "${secondary_source}" ] && echo PASS || echo FAIL)"
+    _check "Secondary Clash 源 YAML 语法合法" "$(_yaml_valid "${secondary_source}")"
 
     log_info ""
     log_info "--- 镜像服务 ---"
@@ -291,7 +305,7 @@ verify_nl() {
     _check "submirror 用户存在" \
         "$(id -u "${submirror}" >/dev/null 2>&1 && echo PASS || echo FAIL)"
 
-    local mirror_dir="${NL_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}"
+    local mirror_dir="${SECONDARY_MIRROR_DIR:-/var/www/sub}/${SUB_TOKEN}"
     _check "镜像目录存在: ${mirror_dir}" \
         "$([ -d "${mirror_dir}" ] && echo PASS || echo FAIL)"
 
@@ -313,7 +327,7 @@ verify_nl() {
         _check "Nginx 配置语法测试通过" "${nginx_test}"
     fi
 
-    local domain="${NL_SUB_DOMAIN}"
+    local domain="${SECONDARY_SUB_DOMAIN}"
     local token="${SUB_TOKEN}"
     local mirror_file="${mirror_dir}/clash.yaml"
 
@@ -338,7 +352,7 @@ verify_nl() {
                 "$([ "${mirror_code}" = "200" ] && echo PASS || echo "FAIL:${mirror_code}")"
         else
             _check "订阅镜像文件" "PENDING" \
-                "等待美国端首次推送。命令: sudo /usr/local/sbin/push-clash-subscription-nl"
+                "等待Primary端首次推送。命令: sudo /usr/local/sbin/push-clash-subscription-secondary"
         fi
     fi
 
@@ -352,14 +366,16 @@ verify_nl() {
     else
         _check "subpush 私钥" "PENDING" "尚未生成密钥（正常，若部署时跳过了密钥生成阶段）"
     fi
+
+    verify_bots "secondary"
 }
 
 # =============================================================================
 # 执行验证
 # =============================================================================
 case "${ROLE}" in
-    us) verify_us ;;
-    nl) verify_nl ;;
+    primary) verify_primary ;;
+    secondary) verify_secondary ;;
 esac
 
 # =============================================================================

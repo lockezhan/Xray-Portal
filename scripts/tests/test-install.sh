@@ -150,11 +150,11 @@ test_07_key_idempotency() {
 # T08: Xray 失败时 exit（install_xray || { 写法）
 # =============================================================================
 test_08_fail_closed_xray() {
-    # install-us.sh 用 install_xray || { log_error ... ; exit 1; } 方式 fail-closed
+    # install-primary.sh 用 install_xray || { log_error ... ; exit 1; } 方式 fail-closed
     local n
     n=$(_grep_count 'install_xray.*exit|install_xray.*\|\||Xray.*失败' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
-    _chk_gt0 "T08: install-us.sh 中 Xray 失败后 exit 1" "${n}"
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
+    _chk_gt0 "T08: install-primary.sh 中 Xray 失败后 exit 1" "${n}"
 }
 
 # =============================================================================
@@ -164,8 +164,8 @@ test_09_fail_closed_clash() {
     # 由 set -euo pipefail + log_error 保证，fail-closed 通过 bash 脚本自身机制
     local n
     n=$(_grep_count 'Clash.*失败|clash.*exit|gen_clash.*exit|Clash 源.*exit|log_error.*Clash' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
-    _chk_gt0 "T09: install-us.sh 中 Clash 源失败后 exit 1" "${n}"
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
+    _chk_gt0 "T09: install-primary.sh 中 Clash 源失败后 exit 1" "${n}"
 }
 
 # =============================================================================
@@ -173,7 +173,7 @@ test_09_fail_closed_clash() {
 # =============================================================================
 test_10_fail_closed_pip() {
     local n
-    n=$(grep -A2 'pip install' "${ROOT_DIR}/deploy/lib/install-us.sh" 2>/dev/null \
+    n=$(grep -A2 'pip install' "${ROOT_DIR}/deploy/lib/install-primary.sh" 2>/dev/null \
         | grep -cE '\|\| true|log_warn.*pip' 2>/dev/null || true)
     n=$(echo "${n}" | tr -d '[:space:]'); n=${n:-0}
     _chk_eq0 "T10: pip 失败不被 || true 忽略" "${n}" "发现 ${n} 处 pip 失败被忽略"
@@ -185,7 +185,7 @@ test_10_fail_closed_pip() {
 test_11_fail_closed_vpn_web() {
     local n
     n=$(_grep_count 'vpn-web.*exit|Web 面板.*exit|vpn-web.service 启动失败' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
     _chk_gt0 "T11: vpn-web 启动失败后 exit 1" "${n}"
 }
 
@@ -195,7 +195,7 @@ test_11_fail_closed_vpn_web() {
 test_12_fail_closed_health_check() {
     local n
     n=$(_grep_count '8080.*health|health.*exit|禁止.*Nginx' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
     _chk_gt0 "T12: 8080 健康检查失败时禁止 Nginx 启用" "${n}"
 }
 
@@ -205,11 +205,11 @@ test_12_fail_closed_health_check() {
 test_13_nginx_no_web_backend() {
     local n
     n=$(_grep_count 'ENABLE_WEB.*true|enable_web.*true' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
     _chk_gt0 "T13: Nginx 渲染有 ENABLE_WEB 条件判断" "${n}"
 
     local n2
-    n2=$(_grep_count '503|not configured' "${ROOT_DIR}/deploy/lib/install-us.sh")
+    n2=$(_grep_count '503|not configured' "${ROOT_DIR}/deploy/lib/install-primary.sh")
     _chk_gt0 "T13b: ENABLE_WEB=false 时返回 503 状态" "${n2}"
 }
 
@@ -219,7 +219,7 @@ test_13_nginx_no_web_backend() {
 test_14_nginx_no_api_upstream() {
     local n
     n=$(_grep_count 'ENABLE_API.*true|enable_api.*true' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
     _chk_gt0 "T14: Nginx 渲染有 ENABLE_API 条件判断" "${n}"
 }
 
@@ -229,7 +229,7 @@ test_14_nginx_no_api_upstream() {
 test_15_nginx_no_bots_block() {
     local n
     n=$(_grep_count 'ENABLE_BOTS.*true|enable_bots.*true' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
     _chk_gt0 "T15: Nginx 渲染有 ENABLE_BOTS 条件判断" "${n}"
 }
 
@@ -243,8 +243,8 @@ test_16_executable_bits() {
         "apps/vpn_web/proxy/install.sh"
         "apps/vpn_web/proxy/install-noninteractive.sh"
         "apps/vpn_web/proxy/gen_clash_config.sh"
-        "deploy/clash-sub/us/rebuild-clash-subscription.sh"
-        "deploy/clash-sub/nl/push-clash-subscription-nl.sh"
+        "deploy/clash-sub/primary/rebuild-clash-subscription.sh"
+        "deploy/clash-sub/secondary/push-clash-subscription-secondary.sh"
     )
     local all_ok=true
     for script in "${entry_scripts[@]}"; do
@@ -263,8 +263,8 @@ test_16_executable_bits() {
 test_17_dry_run_no_changes() {
     local n
     n=$(_grep_count 'DRY_RUN.*true|dry.run.*true' \
-        "${ROOT_DIR}/deploy/lib/install-us.sh")
-    _chk_gt0 "T17: install-us.sh 含多处 DRY_RUN 检查 (${n} 处)" "${n}" \
+        "${ROOT_DIR}/deploy/lib/install-primary.sh")
+    _chk_gt0 "T17: install-primary.sh 含多处 DRY_RUN 检查 (${n} 处)" "${n}" \
         "只发现 ${n} 处 DRY_RUN 检查（期望 > 5）"
 }
 
@@ -275,8 +275,8 @@ test_18_no_secrets_in_logs() {
     local files=(
         "${ROOT_DIR}/apps/vpn_web/proxy/lib/render-xray-config.sh"
         "${ROOT_DIR}/apps/vpn_web/proxy/install-noninteractive.sh"
-        "${ROOT_DIR}/deploy/lib/install-us.sh"
-        "${ROOT_DIR}/deploy/lib/install-nl.sh"
+        "${ROOT_DIR}/deploy/lib/install-primary.sh"
+        "${ROOT_DIR}/deploy/lib/install-secondary.sh"
     )
     local total=0
     for f in "${files[@]}"; do
@@ -292,18 +292,18 @@ test_18_no_secrets_in_logs() {
 }
 
 # =============================================================================
-# T19: US 与 NL 环境秘密隔离
+# T19: Primary 与 Secondary 环境秘密隔离
 # =============================================================================
 test_19_env_secret_isolation() {
     local n
-    n=$(_grep_count 'PORTAL_PASSWORD|FLASK_SECRET_KEY|unset.*us_secrets' \
+    n=$(_grep_count 'primary_secrets=.*PORTAL_PASSWORD.*FLASK_SECRET_KEY' \
         "${ROOT_DIR}/deploy/lib/env.sh")
-    _chk_gt0 "T19: env.sh 含 NL 角色凭据隔离逻辑" "${n}"
+    _chk_gt0 "T19: env.sh 定义 Primary 专有凭据隔离列表" "${n}"
 
     local n2
-    n2=$(_grep_count 'unset.*PORTAL_PASSWORD|us_secrets.*PORTAL_PASSWORD' \
+    n2=$(_grep_count 'unset.*primary_secrets' \
         "${ROOT_DIR}/deploy/lib/env.sh")
-    _chk_gt0 "T19b: NL 角色中 PORTAL_PASSWORD 被 unset" "${n2}"
+    _chk_gt0 "T19b: Secondary 角色剥离 Primary 专有凭据" "${n2}"
 }
 
 # =============================================================================

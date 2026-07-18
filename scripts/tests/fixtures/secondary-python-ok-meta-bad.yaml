@@ -1,7 +1,7 @@
 proxies:
-  - name: NL-METADATA-BAD
+  - name: SECONDARY-METADATA-BAD
     type: ss
-    server: nl-node.example.com
+    server: secondary-node.example.com
     port: 20001
     cipher: non-existent-cipher-12345
     password: pwd

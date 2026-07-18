@@ -51,7 +51,7 @@ _load_env .env
 
 ```bash
 XRAY_VERSION="v25.6.3"
-XRAY_SHA256="<从 us.env.example 注释中的 SHA256>"
+XRAY_SHA256="<从 primary.env.example 注释中的 SHA256>"
 ARCH="linux-64"  # 或 linux-arm64-v8a
 
 TMPDIR=$(mktemp -d)
@@ -116,7 +116,7 @@ systemctl is-active xray && echo "xray running"
 
 ```bash
 MIHOMO_VERSION="v1.18.10"
-MIHOMO_SHA256="<从 nl.env.example 注释中的 SHA256>"
+MIHOMO_SHA256="<从 secondary.env.example 注释中的 SHA256>"
 
 TMPDIR=$(mktemp -d)
 curl -fL --retry 3 \
@@ -235,7 +235,7 @@ sudo rm -f /etc/nginx/sites-enabled/default
 sudo tee /etc/nginx/sites-available/xray-portal.conf > /dev/null <<NGINX
 server {
     listen 80;
-    server_name ${US_SUB_DOMAIN};
+    server_name ${PRIMARY_SUB_DOMAIN};
 
     # 订阅路由
     location ~ ^/${SUB_TOKEN}/clash\.yaml$ {
@@ -267,15 +267,15 @@ sudo nginx -t && sudo nginx -s reload
 
 ```bash
 # 先验证 HTTP 可达性
-curl -fsSL "http://${US_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml" | head -5
+curl -fsSL "http://${PRIMARY_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml" | head -5
 
 # 申请证书
-sudo certbot --nginx -d "${US_SUB_DOMAIN}" \
+sudo certbot --nginx -d "${PRIMARY_SUB_DOMAIN}" \
     --non-interactive --agree-tos \
-    -m admin@${US_SUB_DOMAIN}
+    -m admin@${PRIMARY_SUB_DOMAIN}
 
 # 验证 HTTPS
-curl -IfsS "https://${US_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml"
+curl -IfsS "https://${PRIMARY_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml"
 ```
 
 ### 6.4 重新加载
@@ -324,5 +324,5 @@ rm -rf "${TESTDIR}"
 
 完成所有步骤后运行完整验证：
 ```bash
-sudo ./deploy/verify.sh us --env .env
+sudo ./deploy/verify.sh primary --env .env --env .env
 ```

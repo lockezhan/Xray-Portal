@@ -1,14 +1,17 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Xray_portal 美国主控端完整部署流水线 (deploy/lib/install-us.sh)
+# Xray_portal Primary主控端完整部署流水线 (deploy/lib/install-primary.sh)
 #
 # 13 个阶段，每阶段失败立即退出（fail-closed）
-# 调用方式: install_us --skip-proxy false --proxy-only false ... --state-file <path>
+# 调用方式: install_primary --skip-proxy false --proxy-only false ... --state-file <path>
 # =============================================================================
 
 set -euo pipefail
 
-install_us() {
+# shellcheck disable=SC1091
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/install-bots.sh"
+
+install_primary() {
     # ------------------------------------------------------------------------
     # 解析传入选项
     # ------------------------------------------------------------------------
@@ -38,54 +41,29 @@ install_us() {
 
     if [[ "${_bots_only}" == "true" ]]; then
         log_info "============================================================"
-        log_info "  仅更新/部署 Telegram & QQ 机器人 (tg_bot) 流水线启动"
+        log_info "  仅部署 Bots 流水线启动"
         log_info "============================================================"
-        
-        # 确保 vpn-web 虚拟环境存在，否则无法单独部署机器人
-        if [[ ! -x /usr/local/vpn-web/venv/bin/python ]]; then
-            log_error "vpn-web 虚拟环境不存在 (/usr/local/vpn-web/venv)，请先运行一次常规完整安装！"
-            exit 1
-        fi
-        
-        _us_install_tg_bot "${root_dir}" || {
-            log_error "机器人模块部署失败！"
-            exit 1
-        }
-        
-        log_success "================================================================"
-        log_success "  机器人部署/更新步骤已执行完毕！"
-        log_info ""
-        log_warn "  👉 【注意：请务必按照提示进行以下手动操作以完成最终部署】 👈"
-        log_warn "  1. 授权登录 Telegram 账号（如果是初次部署，请运行以下命令进行登录）："
-        log_warn "     /usr/local/vpn-web/venv/bin/python /usr/local/tg_bot/login_userbot.py"
-        log_warn ""
-        log_warn "  2. 启用并立即启动系统服务（如果您还未启用它们）："
-        log_warn "     sudo systemctl daemon-reload"
-        log_warn "     sudo systemctl enable --now tgbot tg-qq-bridge"
-        log_warn ""
-        if [[ "${ENABLE_BOTS:-false}" != "true" ]]; then
-            log_info "  * 当前主配置文件中 ENABLE_BOTS 为 false（未开启状态）。"
-            log_info "    如果您稍后修改为 true 并重跑脚本，它们会自动启动；或者您可以随时手动执行上述 enable 命令启动。"
-        fi
-        log_success "================================================================"
+        install_bots "${root_dir}" "primary"
+        configure_bot_nginx "primary"
+        log_success "Bots 部署已执行完毕"
         return 0
     fi
 
     log_info "============================================================"
-    log_info "  美国主服务器 (US) 部署流水线启动"
+    log_info "  Primary 主服务器 (Primary) 部署流水线启动"
     log_info "============================================================"
 
     # =========================================================================
     # 阶段 1: preflight — 环境预检
     # =========================================================================
     log_info "--- [1/13] Preflight 预检 ---"
-    _us_preflight "${root_dir}"
+    _primary_preflight "${root_dir}"
 
     # =========================================================================
     # 阶段 2: install_packages — 安装系统包
     # =========================================================================
     log_info "--- [2/13] 安装系统依赖包 ---"
-    _us_install_packages
+    _primary_install_packages
 
     # =========================================================================
     # 阶段 3: install_proxy — 安装 Xray 代理
@@ -95,13 +73,13 @@ install_us() {
         _state_update "${_state_file}" "proxy" "skipped"
     else
         log_info "--- [3/13] 安装 Xray 代理 ---"
-        _us_install_proxy "${root_dir}"
+        _primary_install_proxy "${root_dir}"
         _state_update "${_state_file}" "proxy" "installed"
     fi
 
     if [[ "${_proxy_only}" == "true" ]]; then
         log_info "--- [--proxy-only 模式: 跳过控制面阶段 4-13] ---"
-        _us_print_summary "${_state_file}" "${_skip_proxy}" "${_proxy_only}" "${_skip_web}" "${_skip_nginx}" "${_no_certbot}"
+        _primary_print_summary "${_state_file}" "${_skip_proxy}" "${_proxy_only}" "${_skip_web}" "${_skip_nginx}" "${_no_certbot}"
         return 0
     fi
 
@@ -124,7 +102,7 @@ install_us() {
     # 阶段 5: generate_clash_source — 生成本机 Clash 原始配置
     # =========================================================================
     log_info "--- [5/13] 生成 Clash 原始配置 ---"
-    _us_generate_clash_source "${root_dir}" || {
+    _primary_generate_clash_source "${root_dir}" || {
         log_error "[5/13] Clash 源配置生成失败，中止部署！"
         exit 1
     }
@@ -133,7 +111,7 @@ install_us() {
     # 阶段 6: install_clash_builder — 安装 Mihomo + 订阅构建脚本
     # =========================================================================
     log_info "--- [6/13] 安装 Clash 订阅构建器 ---"
-    _us_install_clash_builder "${root_dir}" || {
+    _primary_install_clash_builder "${root_dir}" || {
         log_error "[6/13] Clash 构建器安装失败，中止部署！"
         exit 1
     }
@@ -146,15 +124,12 @@ install_us() {
         _state_update "${_state_file}" "web" "skipped"
     else
         log_info "--- [7/13] 部署 Flask Web 面板 ---"
-        _us_install_vpn_web "${root_dir}" || {
+        _primary_install_vpn_web "${root_dir}" || {
             log_error "[7/13] Web 面板部署失败，中止部署！"
             exit 1
         }
-        log_info "--- [7.5] 部署 Telegram & QQ 机器人 (tg_bot) ---"
-        _us_install_tg_bot "${root_dir}" || {
-            log_error "[7.5] 机器人模块部署失败，中止部署！"
-            exit 1
-        }
+        log_info "--- [7.5] 部署 Bots ---"
+        install_bots "${root_dir}" "primary"
         _state_update "${_state_file}" "web" "active"
     fi
 
@@ -165,7 +140,7 @@ install_us() {
         log_info "--- [8/13] Web 健康检查 [SKIPPED: --skip-web] ---"
     else
         log_info "--- [8/13] 本地 Web 健康检查 ---"
-        _us_verify_vpn_web_local || {
+        _primary_verify_vpn_web_local || {
             log_error "[8/13] Web 健康检查失败，禁止继续配置 Nginx 指向死后端！"
             exit 1
         }
@@ -179,7 +154,7 @@ install_us() {
         _state_update "${_state_file}" "nginx_http" "skipped"
     else
         log_info "--- [9/13] 配置 Nginx（HTTP 阶段）---"
-        _us_configure_nginx_http "${root_dir}" "${_skip_web}" || {
+        _primary_configure_nginx_http "${root_dir}" "${_skip_web}" || {
             log_error "[9/13] Nginx HTTP 配置失败，中止部署！"
             exit 1
         }
@@ -195,7 +170,7 @@ install_us() {
         _state_update "${_state_file}" "nginx_tls" "skipped"
     else
         log_info "--- [10/13] 申请 TLS 证书（两阶段）---"
-        _us_configure_tls "${root_dir}" || {
+        _primary_configure_tls "${root_dir}" || {
             log_error "[10/13] TLS 证书配置失败，中止部署！"
             exit 1
         }
@@ -207,7 +182,7 @@ install_us() {
     # 阶段 11: build_initial_subscription — 构建首份订阅
     # =========================================================================
     log_info "--- [11/13] 构建初始订阅快照 ---"
-    _us_build_initial_subscription || {
+    _primary_build_initial_subscription || {
         log_error "[11/13] 初始订阅构建失败，中止部署！"
         exit 1
     }
@@ -217,7 +192,7 @@ install_us() {
     # 阶段 12: verify_subscription — 用 Mihomo 校验订阅
     # =========================================================================
     log_info "--- [12/13] Mihomo 订阅校验 ---"
-    _us_verify_subscription || {
+    _primary_verify_subscription || {
         log_error "[12/13] 订阅 Mihomo 校验失败，中止部署！"
         exit 1
     }
@@ -226,14 +201,14 @@ install_us() {
     # 阶段 13: print_deployment_summary — 输出部署摘要
     # =========================================================================
     log_info "--- [13/13] 生成部署摘要 ---"
-    _us_print_summary "${_state_file}" "${_skip_proxy}" "${_proxy_only}" "${_skip_web}" "${_skip_nginx}" "${_no_certbot}"
+    _primary_print_summary "${_state_file}" "${_skip_proxy}" "${_proxy_only}" "${_skip_web}" "${_skip_nginx}" "${_no_certbot}"
 }
 
 # =============================================================================
 # 内部实现函数
 # =============================================================================
 
-_us_preflight() {
+_primary_preflight() {
     local root_dir="$1"
 
     # 检查必需的源文件存在
@@ -242,8 +217,8 @@ _us_preflight() {
         "${root_dir}/apps/vpn_web/proxy/gen_clash_config.sh"
         "${root_dir}/apps/vpn_web/web/app.py"
         "${root_dir}/apps/vpn_web/requirements.txt"
-        "${root_dir}/deploy/clash-sub/us/rebuild-clash-subscription.sh"
-        "${root_dir}/deploy/clash-sub/us/extract_merge.py"
+        "${root_dir}/deploy/clash-sub/primary/rebuild-clash-subscription.sh"
+        "${root_dir}/deploy/clash-sub/primary/extract_merge.py"
     )
     for f in "${required_files[@]}"; do
         if [[ ! -f "${f}" ]]; then
@@ -288,7 +263,7 @@ _us_preflight() {
     fi
 
     # 校验必要环境变量已设置
-    local required_vars=(US_SUB_DOMAIN SUB_TOKEN PORTAL_PASSWORD FLASK_SECRET_KEY)
+    local required_vars=(PRIMARY_SUB_DOMAIN SUB_TOKEN PORTAL_PASSWORD FLASK_SECRET_KEY)
     for var in "${required_vars[@]}"; do
         if [[ -z "${!var:-}" ]]; then
             log_error "预检失败: 环境变量未设置: ${var}"
@@ -299,7 +274,7 @@ _us_preflight() {
     log_success "[1/13] 预检通过"
 }
 
-_us_install_packages() {
+_primary_install_packages() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         log_info "[DRY-RUN] apt-get install python3 python3-venv nginx certbot python3-certbot-nginx"
         return 0
@@ -327,7 +302,7 @@ _us_install_packages() {
     log_success "[2/13] 系统包安装完成"
 }
 
-_us_install_proxy() {
+_primary_install_proxy() {
     local root_dir="$1"
 
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -377,7 +352,7 @@ _us_install_proxy() {
     log_success "[3/13] Xray 代理安装完成"
 }
 
-_us_generate_clash_source() {
+_primary_generate_clash_source() {
     local root_dir="$1"
 
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -393,7 +368,7 @@ _us_generate_clash_source() {
     fi
 
     # 验证输出文件存在且合法
-    local clash_source="${CLASH_US_SOURCE:-/var/www/clash/clash.yaml}"
+    local clash_source="${CLASH_PRIMARY_SOURCE:-/var/www/clash/clash.yaml}"
     if [[ ! -f "${clash_source}" ]]; then
         log_error "Clash 源文件未生成: ${clash_source}"
         return 1
@@ -408,7 +383,7 @@ _us_generate_clash_source() {
     log_success "[5/13] Clash 原始配置生成完成: ${clash_source}"
 }
 
-_us_install_clash_builder() {
+_primary_install_clash_builder() {
     local root_dir="$1"
     local clash_sub_dir="${CLASH_SUB_DIR:-/opt/clash-sub}"
     local subpush_user="${SUBPUSH_USER:-subpush}"
@@ -449,16 +424,16 @@ _us_install_clash_builder() {
     done
 
     # 3. 安装核心脚本
-    safe_install "${root_dir}/deploy/clash-sub/us/extract_merge.py" \
+    safe_install "${root_dir}/deploy/clash-sub/primary/extract_merge.py" \
         "${clash_sub_dir}/scripts/extract_merge.py" 0750 "root:${SUBPUSH_GROUP:-subpush}"
 
-    safe_install "${root_dir}/deploy/clash-sub/us/upload_validator.py" \
+    safe_install "${root_dir}/deploy/clash-sub/primary/upload_validator.py" \
         "${clash_sub_dir}/scripts/upload_validator.py" 0750 "root:${SUBPUSH_GROUP:-subpush}"
 
-    safe_install "${root_dir}/deploy/clash-sub/us/subpush-cmd-wrapper" \
+    safe_install "${root_dir}/deploy/clash-sub/primary/subpush-cmd-wrapper" \
         "${clash_sub_dir}/scripts/subpush-cmd-wrapper" 0750 "root:${SUBPUSH_GROUP:-subpush}"
 
-    safe_install "${root_dir}/deploy/clash-sub/us/rebuild-clash-subscription.sh" \
+    safe_install "${root_dir}/deploy/clash-sub/primary/rebuild-clash-subscription.sh" \
         "/usr/local/sbin/rebuild-clash-subscription" 0755 "root:root"
 
     # 配置 sudoers 规则，允许 subpush 用户免密执行 rebuild-clash-subscription
@@ -477,13 +452,13 @@ _us_install_clash_builder() {
         tmp_cfg=$(mktemp /tmp/config.env.XXXXXX)
         cat > "${tmp_cfg}" <<EOF
 SUB_TOKEN="${SUB_TOKEN}"
-CLASH_US_SOURCE="${CLASH_US_SOURCE:-/var/www/clash/clash.yaml}"
-US_SOURCE="${CLASH_US_SOURCE:-/var/www/clash/clash.yaml}"
-US_PUBLISH_DIR="${US_PUBLISH_DIR:-/opt/clash-sub/published}"
-PUBLISHED_DIR="${US_PUBLISH_DIR:-/opt/clash-sub/published}"
+CLASH_PRIMARY_SOURCE="${CLASH_PRIMARY_SOURCE:-/var/www/clash/clash.yaml}"
+US_SOURCE="${CLASH_PRIMARY_SOURCE:-/var/www/clash/clash.yaml}"
+PRIMARY_PUBLISH_DIR="${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}"
+PUBLISHED_DIR="${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}"
 INCOMING_DIR="${clash_sub_dir}/incoming"
-US_SUB_DOMAIN="${US_SUB_DOMAIN}"
-NL_SUB_DOMAIN="${NL_SUB_DOMAIN:-}"
+PRIMARY_SUB_DOMAIN="${PRIMARY_SUB_DOMAIN}"
+SECONDARY_SUB_DOMAIN="${SECONDARY_SUB_DOMAIN:-}"
 LOG_FILE="${clash_sub_dir}/logs/rebuild.log"
 MIHOMO_BIN="/usr/local/bin/mihomo"
 EOF
@@ -495,7 +470,7 @@ EOF
     log_success "[6/13] Clash 构建器安装完成"
 }
 
-_us_install_vpn_web() {
+_primary_install_vpn_web() {
     local root_dir="$1"
 
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -542,8 +517,8 @@ PYEOF
     tmp_env=$(mktemp /tmp/vpn-web.env.XXXXXX)
     cat > "${tmp_env}" <<ENVEOF
 SUB_TOKEN=${SUB_TOKEN}
-SUB_PUBLIC_URL=https://${US_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml
-SUB_PUBLIC_BASE_URL=https://${US_SUB_DOMAIN}
+SUB_PUBLIC_URL=https://${PRIMARY_SUB_DOMAIN}/${SUB_TOKEN}/clash.yaml
+SUB_PUBLIC_BASE_URL=https://${PRIMARY_SUB_DOMAIN}
 PORTAL_PASSWORD=${PORTAL_PASSWORD}
 FLASK_SECRET_KEY=${FLASK_SECRET_KEY}
 ENVEOF
@@ -607,175 +582,8 @@ ENVEOF
     log_success "[7/13] Flask Web 面板部署完成"
 }
 
-_us_install_tg_bot() {
-    local root_dir="$1"
 
-    # Bot 是可选组件。必须在创建目录、写入配置和安装依赖之前判断，
-    # 否则 ENABLE_BOTS=false 仍会执行完整 Bot 安装流程，导致 US-only
-    # 部署被无关的 NapCat/Telegram 依赖拖垮。
-    if [[ "${ENABLE_BOTS:-false}" != "true" ]]; then
-        log_info "ENABLE_BOTS 未开启，跳过 tg_bot 部署"
-        if [[ "${DRY_RUN:-false}" != "true" ]]; then
-            systemctl disable tgbot tg-qq-bridge >/dev/null 2>&1 || true
-            systemctl stop tgbot tg-qq-bridge >/dev/null 2>&1 || true
-        fi
-        return 0
-    fi
-
-    if [[ "${DRY_RUN:-false}" == "true" ]]; then
-        log_info "[DRY-RUN] 部署 tg_bot 模块 → /usr/local/tg_bot"
-        return 0
-    fi
-
-    log_info "创建 tg_bot 工作目录和缓存目录..."
-    mkdir -p /usr/local/tg_bot
-    mkdir -p /var/lib/tg-bridge-cache
-    chmod 755 /var/lib/tg-bridge-cache
-
-    log_info "创建 NapCat Docker 挂载目录及 OneBot 11 JSON 配置文件..."
-    mkdir -p /opt/napcat/qq/stickers
-    mkdir -p /opt/napcat/config
-    chmod -R 777 /opt/napcat/qq
-
-    # 写入并更新 NapCat 最新版 OneBot 11 配置文件（支持 network.httpServers 架构）
-    local napcat_cfg_content='{
-  "enableLocalFile2Url": true,
-  "network": {
-    "httpServers": [
-      {
-        "name": "HTTPServer",
-        "enable": true,
-        "port": 3000,
-        "host": "0.0.0.0",
-        "enableCors": true,
-        "enableWebsocket": false,
-        "messagePostFormat": "array",
-        "token": "",
-        "debug": false
-      }
-    ],
-    "httpSseServers": [],
-    "httpClients": [],
-    "websocketServers": [
-      {
-        "name": "BridgeStreamServer",
-        "enable": true,
-        "host": "127.0.0.1",
-        "port": 3001,
-        "messagePostFormat": "array",
-        "reportSelfMessage": false,
-        "token": "",
-        "enableForcePushEvent": false,
-        "debug": false,
-        "heartInterval": 30000
-      }
-    ],
-    "websocketClients": [],
-    "plugins": []
-  },
-  "musicSignUrl": "",
-  "parseMultMsg": false,
-  "imageDownloadProxy": ""
-}'
-    echo "${napcat_cfg_content}" > "/opt/napcat/config/onebot11.json"
-    chmod 644 "/opt/napcat/config/onebot11.json"
-
-    # 若存在以 QQ 号命名的已有配置文件 (如 onebot11_3430774280.json) 也一并覆写更新
-    for cfg_file in /opt/napcat/config/onebot11_*.json; do
-        if [[ -f "${cfg_file}" ]]; then
-            echo "${napcat_cfg_content}" > "${cfg_file}"
-            chmod 644 "${cfg_file}"
-        fi
-    done
-
-    # 部署源码
-    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/tg_bot.py" /usr/local/tg_bot/tg_bot.py
-    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/bridge_bot.py" /usr/local/tg_bot/bridge_bot.py
-    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/fetch_link.py" /usr/local/tg_bot/fetch_link.py
-    install -o root -g root -m 0755 "${root_dir}/apps/tg_bot/login_userbot.py" /usr/local/tg_bot/login_userbot.py
-
-    # 写入专用 .env 配置文件
-    local env_dest="/usr/local/tg_bot/.env"
-    
-    # 智能回退：若未配置 BRIDGE_SERVER_PUBLIC_IP，回退使用美国主机的 US_SUB_DOMAIN 或 US_SERVER_IP
-    local public_ip="${BRIDGE_SERVER_PUBLIC_IP:-${US_SUB_DOMAIN:-${US_SERVER_IP}}}"
-    
-    cat > "${env_dest}" <<ENVEOF
-# 由 install.sh 自动生成
-CHANNEL_BOT_TOKEN=${CHANNEL_BOT_TOKEN:-}
-CHANNEL_ADMIN_ID=${CHANNEL_ADMIN_ID:-}
-CHANNEL_GROUP_ID=${CHANNEL_GROUP_ID:-}
-BRIDGE_BOT_TOKEN=${BRIDGE_BOT_TOKEN:-}
-BRIDGE_TARGET_QQ_GROUP=${BRIDGE_TARGET_QQ_GROUP:-}
-BRIDGE_TARGET_QQ_TYPE=${BRIDGE_TARGET_QQ_TYPE:-group}
-BRIDGE_SERVER_PUBLIC_IP=${public_ip}
-BRIDGE_NAPCAT_API_URL=${BRIDGE_NAPCAT_API_URL:-http://127.0.0.1:3000/send_msg}
-BRIDGE_NAPCAT_TIMEOUT=${BRIDGE_NAPCAT_TIMEOUT:-300}
-BRIDGE_NAPCAT_MAX_CONCURRENCY=${BRIDGE_NAPCAT_MAX_CONCURRENCY:-1}
-BRIDGE_NAPCAT_WS_URL=${BRIDGE_NAPCAT_WS_URL:-ws://127.0.0.1:3001}
-BRIDGE_NAPCAT_STREAM_THRESHOLD=${BRIDGE_NAPCAT_STREAM_THRESHOLD:-52428800}
-BRIDGE_NAPCAT_STREAM_CHUNK_SIZE=${BRIDGE_NAPCAT_STREAM_CHUNK_SIZE:-1048576}
-BRIDGE_MEDIA_GROUP_SETTLE_DELAY=${BRIDGE_MEDIA_GROUP_SETTLE_DELAY:-8}
-BRIDGE_WEB_TRANSCODE_MAX_CONCURRENCY=${BRIDGE_WEB_TRANSCODE_MAX_CONCURRENCY:-1}
-BRIDGE_WEB_TRANSCODE_PRESET=${BRIDGE_WEB_TRANSCODE_PRESET:-veryfast}
-BRIDGE_WEB_TRANSCODE_CRF=${BRIDGE_WEB_TRANSCODE_CRF:-23}
-BRIDGE_FORWARD_MODE=${BRIDGE_FORWARD_MODE:-both}
-TELEGRAM_USER_API_ID=${TELEGRAM_USER_API_ID:-}
-TELEGRAM_USER_API_HASH=${TELEGRAM_USER_API_HASH:-}
-ENVEOF
-    chmod 600 "${env_dest}"
-    chown root:root "${env_dest}"
-
-    # 安装依赖
-    log_info "为 tg_bot 安装 Python 依赖..."
-    if [[ -x /usr/local/vpn-web/venv/bin/pip ]]; then
-        /usr/local/vpn-web/venv/bin/pip install -q -r "${root_dir}/apps/tg_bot/requirements.txt" || {
-            log_error "tg_bot 依赖安装失败！请检查网络连接。"
-            return 1
-        }
-        log_success "tg_bot 依赖安装完成"
-    else
-        log_error "vpn-web venv 虚拟环境不存在，无法为 tg_bot 安装依赖！"
-        return 1
-    fi
-
-    # 部署 systemd 服务
-    local tgbot_svc="${root_dir}/deploy/systemd/tgbot.service"
-    local bridge_svc="${root_dir}/deploy/systemd/tg-qq-bridge.service"
-
-    if [[ -f "${tgbot_svc}" ]]; then
-        install -o root -g root -m 0644 "${tgbot_svc}" /etc/systemd/system/tgbot.service
-    else
-        log_error "tgbot.service 模板不存在！"
-        return 1
-    fi
-
-    if [[ -f "${bridge_svc}" ]]; then
-        install -o root -g root -m 0644 "${bridge_svc}" /etc/systemd/system/tg-qq-bridge.service
-    else
-        log_error "tg-qq-bridge.service 模板不存在！"
-        return 1
-    fi
-
-    systemctl daemon-reload
-
-    # 根据 ENABLE_BOTS 配置决定是否启动并使能
-    if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
-        log_info "启用并启动 tgbot 与 tg-qq-bridge 服务..."
-        systemctl enable tgbot tg-qq-bridge >/dev/null 2>&1
-        systemctl restart tgbot tg-qq-bridge || {
-            log_warn "启动 tgbot 或 tg-qq-bridge 失败（可能是因为尚未进行 Userbot 登录授权）"
-        }
-    else
-        log_info "ENABLE_BOTS 未开启或设为 false，禁用并关闭 bot 相关服务..."
-        systemctl disable tgbot tg-qq-bridge >/dev/null 2>&1
-        systemctl stop tgbot tg-qq-bridge >/dev/null 2>&1 || true
-    fi
-
-    log_success "[7.5] tg_bot 模块部署完成"
-}
-
-_us_verify_vpn_web_local() {
+_primary_verify_vpn_web_local() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         log_info "[DRY-RUN] curl http://127.0.0.1:8080/health"
         return 0
@@ -800,7 +608,7 @@ _us_verify_vpn_web_local() {
     fi
 }
 
-_us_configure_nginx_http() {
+_primary_configure_nginx_http() {
     local root_dir="$1"
     local skip_web="$2"
 
@@ -809,7 +617,7 @@ _us_configure_nginx_http() {
         return 0
     fi
 
-    local tpl="${root_dir}/deploy/nginx/us-subscription.conf.template"
+    local tpl="${root_dir}/deploy/nginx/primary-subscription.conf.template"
     if [[ ! -f "${tpl}" ]]; then
         log_error "Nginx 模板不存在: ${tpl}"
         return 1
@@ -828,10 +636,10 @@ _us_configure_nginx_http() {
 
     # 渲染 HTTP-only 配置（Phase 1，不含 SSL）
     local tmp_conf
-    tmp_conf=$(mktemp /tmp/us-subscription.conf.XXXXXX)
+    tmp_conf=$(mktemp /tmp/primary-subscription.conf.XXXXXX)
 
     # 生成 Nginx 配置（条件渲染）
-    _render_us_nginx_conf_http "${skip_web}" > "${tmp_conf}"
+    _render_primary_nginx_conf_http "${skip_web}" > "${tmp_conf}"
 
     # 语法校验
     if ! nginx -t -q 2>/dev/null; then
@@ -840,16 +648,16 @@ _us_configure_nginx_http() {
     fi
 
     chmod 644 "${tmp_conf}"
-    mv -f "${tmp_conf}" /etc/nginx/sites-available/us-subscription.conf
+    mv -f "${tmp_conf}" /etc/nginx/sites-available/primary-subscription.conf
 
     # 启用站点
-    ln -sf /etc/nginx/sites-available/us-subscription.conf \
-        /etc/nginx/sites-enabled/us-subscription.conf
+    ln -sf /etc/nginx/sites-available/primary-subscription.conf \
+        /etc/nginx/sites-enabled/primary-subscription.conf
 
     # 语法测试（fail closed）
     if ! nginx -t -q 2>&1; then
         log_error "Nginx 语法测试失败！"
-        rm -f /etc/nginx/sites-enabled/us-subscription.conf
+        rm -f /etc/nginx/sites-enabled/primary-subscription.conf
         return 1
     fi
 
@@ -862,7 +670,7 @@ _us_configure_nginx_http() {
     log_success "[9/13] Nginx HTTP 配置部署完成"
 }
 
-_render_us_nginx_conf_http() {
+_render_primary_nginx_conf_http() {
     local skip_web="$1"
 
     # 构建条件块
@@ -904,7 +712,7 @@ _render_us_nginx_conf_http() {
 # HTTP Phase 1（TLS 申请前）
 
 server {
-    server_name ${US_SUB_DOMAIN};
+    server_name ${PRIMARY_SUB_DOMAIN};
     listen 80;
     listen [::]:80;
 
@@ -916,7 +724,7 @@ server {
 
     # 订阅文件（Token 保护）
     location = /${SUB_TOKEN}/clash.yaml {
-        alias ${US_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml;
+        alias ${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml;
         add_header X-Robots-Tag "noindex, nofollow";
         add_header Content-Type "text/yaml; charset=utf-8";
         auth_basic off;
@@ -933,7 +741,7 @@ server {
 NGINX_EOF
 }
 
-_us_configure_tls() {
+_primary_configure_tls() {
     local root_dir="$1"
 
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
@@ -941,7 +749,7 @@ _us_configure_tls() {
         return 0
     fi
 
-    log_info "申请 TLS 证书: ${US_SUB_DOMAIN}"
+    log_info "申请 TLS 证书: ${PRIMARY_SUB_DOMAIN}"
 
     # 确保 webroot 目录存在
     mkdir -p /var/www/html/.well-known/acme-challenge
@@ -950,10 +758,10 @@ _us_configure_tls() {
     if ! certbot certonly \
         --webroot \
         --webroot-path /var/www/html \
-        --domain "${US_SUB_DOMAIN}" \
+        --domain "${PRIMARY_SUB_DOMAIN}" \
         --non-interactive \
         --agree-tos \
-        --email "admin@${US_SUB_DOMAIN}" \
+        --email "admin@${PRIMARY_SUB_DOMAIN}" \
         --quiet 2>&1; then
         log_error "Certbot 证书申请失败！"
         log_error "常见原因: DNS 未解析到本机 IP / 端口 80 未对外开放 / 请求频率限制"
@@ -961,8 +769,8 @@ _us_configure_tls() {
     fi
 
     # 验证证书文件存在
-    local cert_path="/etc/letsencrypt/live/${US_SUB_DOMAIN}/fullchain.pem"
-    local key_path="/etc/letsencrypt/live/${US_SUB_DOMAIN}/privkey.pem"
+    local cert_path="/etc/letsencrypt/live/${PRIMARY_SUB_DOMAIN}/fullchain.pem"
+    local key_path="/etc/letsencrypt/live/${PRIMARY_SUB_DOMAIN}/privkey.pem"
     if [[ ! -f "${cert_path}" || ! -f "${key_path}" ]]; then
         log_error "证书文件不存在，禁止写入 HTTPS Nginx 配置！"
         return 1
@@ -972,10 +780,10 @@ _us_configure_tls() {
 
     # Phase 2：渲染含 SSL 的完整配置
     local tmp_conf
-    tmp_conf=$(mktemp /tmp/us-subscription-tls.conf.XXXXXX)
-    _render_us_nginx_conf_tls > "${tmp_conf}"
+    tmp_conf=$(mktemp /tmp/primary-subscription-tls.conf.XXXXXX)
+    _render_primary_nginx_conf_tls > "${tmp_conf}"
     chmod 644 "${tmp_conf}"
-    mv -f "${tmp_conf}" /etc/nginx/sites-available/us-subscription.conf
+    mv -f "${tmp_conf}" /etc/nginx/sites-available/primary-subscription.conf
 
     # 语法测试（fail closed）
     if ! nginx -t -q 2>&1; then
@@ -993,17 +801,17 @@ _us_configure_tls() {
     local https_code
     https_code=$(curl --silent --fail --max-time 10 \
         --write-out '%{http_code}' --output /dev/null \
-        "https://${US_SUB_DOMAIN}/health" 2>/dev/null || echo "000")
+        "https://${PRIMARY_SUB_DOMAIN}/health" 2>/dev/null || echo "000")
 
     if [[ "${https_code}" == "200" ]]; then
         log_success "[10/13] TLS 证书部署完成，HTTPS 健康检查通过"
     else
         log_warn "HTTPS 健康检查返回 ${https_code}（DNS 传播可能仍在进行中）"
-        log_info "手动验证: curl https://${US_SUB_DOMAIN}/health"
+        log_info "手动验证: curl https://${PRIMARY_SUB_DOMAIN}/health"
     fi
 }
 
-_render_us_nginx_conf_tls() {
+_render_primary_nginx_conf_tls() {
     local web_location=""
     if [[ "${ENABLE_WEB:-true}" == "true" ]]; then
         web_location='
@@ -1031,36 +839,13 @@ _render_us_nginx_conf_tls() {
     }'
     fi
 
-    local bots_block=""
-    if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
-        bots_block="
-# Bot 媒体服务（ENABLE_BOTS=true）
-server {
-    listen 8083 ssl;
-    listen [::]:8083 ssl;
-    server_name ${US_SUB_DOMAIN};
-
-    ssl_certificate /etc/letsencrypt/live/${US_SUB_DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${US_SUB_DOMAIN}/privkey.pem;
-
-    # 自动处理误用 http:// 打开 HTTPS 端口的情况 (Nginx 497 状态码自动重定向为 https://)
-    error_page 497 https://\$host:8083\$request_uri;
-
-    location / {
-        proxy_pass http://127.0.0.1:8082;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_buffering off;
-    }
-}"
-    fi
 
     cat <<NGINX_EOF
 # 由 install.sh 自动生成 - 请勿手动修改
 # HTTPS Phase 2
 
 server {
-    server_name ${US_SUB_DOMAIN};
+    server_name ${PRIMARY_SUB_DOMAIN};
 
     # HTTP → HTTPS 重定向
     listen 80;
@@ -1069,13 +854,13 @@ server {
 }
 
 server {
-    server_name ${US_SUB_DOMAIN};
+    server_name ${PRIMARY_SUB_DOMAIN};
     # 修复: 不重复声明 ipv6only=on（避免多 server block 冲突）
     listen 443 ssl;
     listen [::]:443 ssl;
 
-    ssl_certificate /etc/letsencrypt/live/${US_SUB_DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${US_SUB_DOMAIN}/privkey.pem;
+    ssl_certificate /etc/letsencrypt/live/${PRIMARY_SUB_DOMAIN}/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/${PRIMARY_SUB_DOMAIN}/privkey.pem;
 
     ssl_protocols TLSv1.2 TLSv1.3;
     ssl_ciphers ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305;
@@ -1083,7 +868,7 @@ server {
 
     # 订阅文件（Token 保护）
     location = /${SUB_TOKEN}/clash.yaml {
-        alias ${US_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml;
+        alias ${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml;
         add_header X-Robots-Tag "noindex, nofollow";
         add_header Content-Type "text/yaml; charset=utf-8";
         auth_basic off;
@@ -1097,11 +882,10 @@ server {
     ${web_location}
     ${api_location}
 }
-${bots_block}
 NGINX_EOF
 }
 
-_us_build_initial_subscription() {
+_primary_build_initial_subscription() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         log_info "[DRY-RUN] /usr/local/sbin/rebuild-clash-subscription"
         return 0
@@ -1118,7 +902,7 @@ _us_build_initial_subscription() {
         return 1
     fi
 
-    local published_file="${US_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml"
+    local published_file="${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml"
     if [[ ! -f "${published_file}" ]]; then
         log_error "订阅文件未生成: ${published_file}"
         return 1
@@ -1127,13 +911,13 @@ _us_build_initial_subscription() {
     log_success "[11/13] 初始订阅快照发布完成"
 }
 
-_us_verify_subscription() {
+_primary_verify_subscription() {
     if [[ "${DRY_RUN:-false}" == "true" ]]; then
         log_info "[DRY-RUN] mihomo -t 校验订阅"
         return 0
     fi
 
-    local published_file="${US_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml"
+    local published_file="${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}/clash.yaml"
     local mihomo_bin="/usr/local/bin/mihomo"
 
     if [[ ! -x "${mihomo_bin}" ]]; then
@@ -1158,7 +942,7 @@ _us_verify_subscription() {
     log_success "[12/13] 订阅 Mihomo 内核校验通过"
 }
 
-_us_print_summary() {
+_primary_print_summary() {
     local state_file="$1"
     local skip_proxy="$2"
     local proxy_only="$3"
@@ -1168,7 +952,7 @@ _us_print_summary() {
 
     log_info ""
     log_info "================================================================"
-    log_info "  美国服务器部署摘要"
+    log_info "  Primary服务器部署摘要"
     log_info "================================================================"
 
     log_info ""
@@ -1185,25 +969,25 @@ _us_print_summary() {
 
     log_info ""
     log_info "【需要人工完成】"
-    log_warn "  ⊡ 交换荷兰副机 SSH 公钥（subpush 双机互信）"
-    log_warn "  ⊡ 将 NL 节点配置首次推送到本机触发合并"
+    log_warn "  ⊡ 交换Secondary 副机 SSH 公钥（subpush 双机互信）"
+    log_warn "  ⊡ 将 Secondary 节点配置首次推送到本机触发合并"
     log_warn "  ⊡ 将订阅 URL 分发给客户端"
     if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
-        log_warn "  ⊡ 运行 /usr/local/vpn-web/venv/bin/python /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
+        log_warn "  ⊡ 运行 /usr/local/tg_bot/venv/bin/python /usr/local/tg_bot/login_userbot.py 登录授权 Telegram 账号"
         log_warn "  ⊡ 启动 NapCat QQ 容器（已自动生成 /opt/napcat/config/onebot11.json 配置）："
         log_warn "    sudo docker run -d --name napcat --restart=always --network host -v /opt/napcat/qq:/app/.config/QQ -v /opt/napcat/config:/app/napcat/config mlikiowa/napcat-docker:latest"
     fi
 
     log_info ""
     log_info "【访问地址】"
-    log_info "  Web 面板:   https://${US_SUB_DOMAIN}/"
-    log_info "  订阅地址:   https://${US_SUB_DOMAIN}/<TOKEN>/clash.yaml"
+    log_info "  Web 面板:   https://${PRIMARY_SUB_DOMAIN}/"
+    log_info "  订阅地址:   https://${PRIMARY_SUB_DOMAIN}/<TOKEN>/clash.yaml"
 
     log_info ""
     log_info "【排障命令】"
     log_info "  systemctl status xray vpn-web nginx"
     log_info "  journalctl -u vpn-web -n 50 --no-pager"
-    log_info "  sudo ./deploy/verify.sh us --env <env-file>"
+    log_info "  sudo ./deploy/verify.sh primary --env .env --env <env-file>"
 
     # 更新部署状态文件时间戳
     if [[ -f "${state_file}" && "${DRY_RUN:-false}" != "true" ]]; then

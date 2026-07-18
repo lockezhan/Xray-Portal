@@ -16,25 +16,25 @@ class TestDeploySystem(unittest.TestCase):
 
     def test_env_templates_exist_and_isolated(self):
         """测试角色专属 .env.example 模板存在性及敏感信息隔离性"""
-        us_env = os.path.join(DEPLOY_DIR, "env", "us.env.example")
-        nl_env = os.path.join(DEPLOY_DIR, "env", "nl.env.example")
+        primary_env = os.path.join(DEPLOY_DIR, "env", "primary.env.example")
+        secondary_env = os.path.join(DEPLOY_DIR, "env", "secondary.env.example")
 
-        self.assertTrue(os.path.exists(us_env), "us.env.example 模板不存在")
-        self.assertTrue(os.path.exists(nl_env), "nl.env.example 模板不存在")
+        self.assertTrue(os.path.exists(primary_env), "primary.env.example 模板不存在")
+        self.assertTrue(os.path.exists(secondary_env), "secondary.env.example 模板不存在")
 
-        with open(us_env, "r", encoding="utf-8") as f:
+        with open(primary_env, "r", encoding="utf-8") as f:
             us_content = f.read()
-        with open(nl_env, "r", encoding="utf-8") as f:
+        with open(secondary_env, "r", encoding="utf-8") as f:
             nl_content = f.read()
 
-        # 美国模板应包含面板与机器人凭据
+        # Primary模板应包含面板与机器人凭据
         self.assertIn("PORTAL_PASSWORD=", us_content)
         self.assertIn("FLASK_SECRET_KEY=", us_content)
 
-        # 荷兰模板绝对不能包含 Flask 口令或 Bot Token 等美国专属凭证
+        # Secondary模板绝对不能包含 Flask 口令或 Bot Token 等Primary专属凭证
         forbidden_in_nl = ["PORTAL_PASSWORD=", "FLASK_SECRET_KEY=", "BRIDGE_BOT_TOKEN=", "CHANNEL_BOT_TOKEN="]
         for key in forbidden_in_nl:
-            self.assertNotIn(key, nl_content, f"荷兰环境模板中违规包含了 {key}")
+            self.assertNotIn(key, nl_content, f"Secondary环境模板中违规包含了 {key}")
 
     def test_shell_syntax_validation(self):
         """校验所有 shell 脚本语法 (bash -n)"""
@@ -46,23 +46,23 @@ class TestDeploySystem(unittest.TestCase):
             os.path.join(DEPLOY_DIR, "lib", "common.sh"),
             os.path.join(DEPLOY_DIR, "lib", "env.sh"),
             os.path.join(DEPLOY_DIR, "lib", "ssh-keys.sh"),
-            os.path.join(DEPLOY_DIR, "lib", "install-us.sh"),
-            os.path.join(DEPLOY_DIR, "lib", "install-nl.sh"),
+            os.path.join(DEPLOY_DIR, "lib", "install-primary.sh"),
+            os.path.join(DEPLOY_DIR, "lib", "install-secondary.sh"),
         ]
         for script in scripts:
             self.assertTrue(os.path.exists(script), f"目标脚本未找到: {script}")
             res = subprocess.run(["bash", "-n", script], capture_output=True, text=True)
             self.assertEqual(res.returncode, 0, f"脚本语法检查失败 {script}: {res.stderr}")
 
-    def test_dry_run_install_us(self):
-        """测试美国角色一键部署 Dry-Run 模式运行"""
+    def test_dry_run_install_primary(self):
+        """测试Primary角色一键部署 Dry-Run 模式运行"""
         import tempfile
         with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
             f.write(
-                "US_SERVER_IP=1.1.1.1\n"
-                "NL_SERVER_IP=2.2.2.2\n"
-                "US_SUB_DOMAIN=us.example.com\n"
-                "NL_SUB_DOMAIN=nl.example.com\n"
+                "PRIMARY_SERVER_IP=1.1.1.1\n"
+                "SECONDARY_SERVER_IP=2.2.2.2\n"
+                "PRIMARY_SUB_DOMAIN=primary.example.com\n"
+                "SECONDARY_SUB_DOMAIN=secondary.example.com\n"
                 "SUB_TOKEN=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n"
                 "PORTAL_PASSWORD=secret_pass\n"
                 "FLASK_SECRET_KEY=secret_flask\n"
@@ -72,26 +72,29 @@ class TestDeploySystem(unittest.TestCase):
             os.chmod(tmp_env, 0o600)
             cmd = [
                 os.path.join(DEPLOY_DIR, "install.sh"),
-                "us",
+                "primary",
                 "--env",
                 tmp_env,
                 "--dry-run"
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            self.assertEqual(res.returncode, 0, f"US dry-run 执行异常:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
-            self.assertIn("美国主控端 (US Role) 环境初始化", res.stdout)
+            env = os.environ.copy()
+            for key in ["PRIMARY_SERVER_IP", "SECONDARY_SERVER_IP", "PRIMARY_SUB_DOMAIN", "SECONDARY_SUB_DOMAIN", "PRIMARY_PUBLISH_DIR", "SECONDARY_MIRROR_DIR", "US_SERVER_IP", "NL_SERVER_IP", "US_SUB_DOMAIN", "NL_SUB_DOMAIN"]:
+                env.pop(key, None)
+            res = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            self.assertEqual(res.returncode, 0, f"Primary dry-run 执行异常:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
+            self.assertIn("Primary 主服务器", res.stdout)
         finally:
             if os.path.exists(tmp_env):
                 os.unlink(tmp_env)
 
-    def test_dry_run_install_nl(self):
-        """测试荷兰角色一键部署 Dry-Run 模式运行与安全隔离过滤"""
+    def test_dry_run_install_secondary(self):
+        """测试Secondary角色一键部署 Dry-Run 模式运行与安全隔离过滤"""
         import tempfile
         with tempfile.NamedTemporaryFile(mode="w", suffix=".env", delete=False) as f:
             f.write(
-                "NL_SERVER_IP=2.2.2.2\n"
-                "US_SERVER_IP=1.1.1.1\n"
-                "NL_SUB_DOMAIN=nl.example.com\n"
+                "SECONDARY_SERVER_IP=2.2.2.2\n"
+                "PRIMARY_SERVER_IP=1.1.1.1\n"
+                "SECONDARY_SUB_DOMAIN=secondary.example.com\n"
                 "SUB_TOKEN=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef\n"
                 "PORTAL_PASSWORD=should_be_stripped\n"
             )
@@ -100,15 +103,18 @@ class TestDeploySystem(unittest.TestCase):
             os.chmod(tmp_env, 0o600)
             cmd = [
                 os.path.join(DEPLOY_DIR, "install.sh"),
-                "nl",
+                "secondary",
                 "--env",
                 tmp_env,
                 "--dry-run"
             ]
-            res = subprocess.run(cmd, capture_output=True, text=True)
-            self.assertEqual(res.returncode, 0, f"NL dry-run 执行异常:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
-            self.assertIn("荷兰副服务器 (NL Role) 环境初始化", res.stdout)
-            self.assertIn("检测到荷兰环境变量中包含无关的 Flask/Bot 凭据", res.stderr)
+            env = os.environ.copy()
+            for key in ["PRIMARY_SERVER_IP", "SECONDARY_SERVER_IP", "PRIMARY_SUB_DOMAIN", "SECONDARY_SUB_DOMAIN", "PRIMARY_PUBLISH_DIR", "SECONDARY_MIRROR_DIR", "US_SERVER_IP", "NL_SERVER_IP", "US_SUB_DOMAIN", "NL_SUB_DOMAIN"]:
+                env.pop(key, None)
+            res = subprocess.run(cmd, capture_output=True, text=True, env=env)
+            self.assertEqual(res.returncode, 0, f"Secondary dry-run 执行异常:\nSTDOUT:{res.stdout}\nSTDERR:{res.stderr}")
+            self.assertIn("Secondary副服务器", res.stdout)
+            self.assertIn("检测到 Secondary 环境变量中包含 Primary 专有凭据", res.stderr)
         finally:
             if os.path.exists(tmp_env):
                 os.unlink(tmp_env)

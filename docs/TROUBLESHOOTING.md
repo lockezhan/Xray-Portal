@@ -4,9 +4,9 @@
 
 ```bash
 # 一键诊断（需要 .env 文件）
-sudo ./deploy/verify.sh us --env .env
+sudo ./deploy/verify.sh primary --env .env
 # 或
-sudo ./deploy/verify.sh nl --env .env
+sudo ./deploy/verify.sh secondary --env .env
 ```
 
 ---
@@ -27,7 +27,7 @@ chmod 600 .env
 ### 1.2 必填变量为 replace_me
 
 ```
-[ERROR] 环境变量 US_SERVER_IP 未配置（仍为 replace_me）
+[ERROR] 环境变量 PRIMARY_SERVER_IP 未配置（仍为 replace_me）
 ```
 
 **修复：** 编辑 `.env`，填写所有 `replace_me` 字段。
@@ -56,7 +56,7 @@ E: Unable to connect to deb.debian.org
 ```bash
 export http_proxy=http://127.0.0.1:7890
 export https_proxy=http://127.0.0.1:7890
-sudo ./deploy/install.sh us --env .env
+sudo ./deploy/install.sh primary --env .env
 ```
 
 ---
@@ -169,12 +169,12 @@ grep -A5 'map.*valid_token' /etc/nginx/sites-enabled/*.conf
 
 ```bash
 # 手动排查 Certbot
-certbot certonly --nginx -d us.example.com --dry-run
+certbot certonly --nginx -d primary.example.com --dry-run
 
 # DNS 未就绪时先跳过 TLS
-sudo ./deploy/install.sh us --env .env --no-certbot
+sudo ./deploy/install.sh primary --env .env --no-certbot
 # DNS 就绪后再申请证书
-sudo certbot --nginx -d us.example.com
+sudo certbot --nginx -d primary.example.com
 ```
 
 ---
@@ -203,37 +203,37 @@ sudo stat /etc/xray-portal/vpn-web.env
 
 ---
 
-## 六、SSH 互联问题（荷兰→美国订阅推送）
+## 六、SSH 互联问题（Secondary→Primary订阅推送）
 
 ### 6.1 推送失败：Permission denied
 
 ```bash
-# 在荷兰机检查私钥权限
-ls -la /home/subpush/.ssh/subpush_key  # 必须 0600
+# 在Secondary机检查私钥权限
+ls -la /opt/clash-sub-mirror/subpush_key  # 必须 0600
 
-# 测试连通性（只能 rsync，不能交互式 Shell）
-ssh -i /home/subpush/.ssh/subpush_key -o StrictHostKeyChecking=no \
-    subpush@<US_IP> "echo test"  # 应报 forced-commands-only 错误
+# 确认交互式 Shell 被拒绝（应返回 Interactive shell access is disabled）
+ssh -i /opt/clash-sub-mirror/subpush_key \
+    -o StrictHostKeyChecking=no subpush@<PRIMARY_IP>
 ```
 
-### 6.2 美国端 authorized_keys 配置
+### 6.2 Primary端 authorized_keys 配置
 
 ```bash
-# 美国机：检查 subpush 用户 authorized_keys
-sudo cat /home/subpush/.ssh/authorized_keys
-# 应以 restrict,...,command="rsync ..." 开头
+# Primary机：检查 subpush 用户 authorized_keys
+sudo cat /opt/clash-sub/.ssh/authorized_keys
+# 应包含 restrict 和 command="/opt/clash-sub/scripts/subpush-cmd-wrapper"
 ```
 
 ### 6.3 手动推送
 
 ```bash
-# 荷兰机
-sudo /usr/local/sbin/push-clash-subscription-nl
+# Secondary机
+sudo /usr/local/sbin/push-clash-subscription-secondary
 
-# 等价命令（调试用）
-rsync -e "ssh -i /home/subpush/.ssh/subpush_key" \
-    /var/www/clash/clash.yaml \
-    subpush@<US_IP>:/opt/clash-sub/staging/clash.yaml
+# 等价协议（调试用；正常情况请使用上面的推送脚本）
+cat /var/www/clash/clash.yaml | \
+    ssh -i /opt/clash-sub-mirror/subpush_key \
+    subpush@<PRIMARY_IP> upload-secondary
 ```
 
 ---

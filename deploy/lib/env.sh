@@ -1,20 +1,10 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Xray_portal 部署系统 - 安全环境变量解析库 (deploy/lib/env.sh)
-#
-# 安全设计：
-#   - 严禁使用 source / . 直接加载 .env 文件，防止 Shell 注入
-#   - 仅允许 KEY=VALUE 格式（KEY：字母/数字/下划线，且首字符不为数字）
-#   - 自动过滤注释行、空行
-#   - 拒绝值中包含 $() 或反引号等命令替换语法
-#   - env 文件权限必须为 0600，否则拒绝加载（不降级为 warn）
 # =============================================================================
 
 set -euo pipefail
 
-# =============================================================================
-# 安全逐行加载环境变量: env_load_safe <env_file>
-# =============================================================================
 env_load_safe() {
     local env_file="$1"
 
@@ -23,7 +13,6 @@ env_load_safe() {
         return 1
     fi
 
-    # 强制权限检查：必须为 0600，拒绝加载宽松权限文件
     if [[ "$(uname -s)" == "Linux" ]]; then
         local perm
         perm=$(stat -c "%a" "${env_file}" 2>/dev/null || echo "unknown")
@@ -42,33 +31,20 @@ env_load_safe() {
 
     while IFS= read -r line || [[ -n "${line}" ]]; do
         line_num=$((line_num + 1))
-
-        # 去除首尾空白
         stripped="${line#"${line%%[![:space:]]*}"}"
         stripped="${stripped%"${stripped##*[![:space:]]}"}"
-
-        # 跳过空行
         [[ -z "${stripped}" ]] && continue
-
-        # 跳过注释行（以 # 开头）
         [[ "${stripped}" == \#* ]] && continue
 
-        # 严格匹配 KEY=VALUE 格式
-        # KEY: 必须由字母或下划线开头，后续为字母/数字/下划线
         if [[ "${stripped}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
             key="${BASH_REMATCH[1]}"
             val="${BASH_REMATCH[2]}"
-
-            # 去除值首尾的双引号（"value" → value）
             if [[ "${val}" == '"'*'"' ]]; then
                 val="${val:1:${#val}-2}"
             fi
-            # 去除值首尾的单引号（'value' → value）
             if [[ "${val}" == "'"*"'" ]]; then
                 val="${val:1:${#val}-2}"
             fi
-
-            # 拒绝值中包含命令替换语法（防止注入）
             if [[ "${val}" == *'$('* ]]; then
                 log_error "env 文件第 ${line_num} 行包含非法命令替换语法 \$(: ${key}"
                 return 1
@@ -77,75 +53,150 @@ env_load_safe() {
                 log_error "env 文件第 ${line_num} 行包含非法反引号命令替换: ${key}"
                 return 1
             fi
-
-            # 安全导出变量（使用 printf 避免 eval）
             export "${key}"="${val}"
         else
-            # 不符合格式的行：如果非空且非注释，记录警告
             log_warn "env 文件第 ${line_num} 行格式不合规，已跳过: ${stripped:0:60}"
         fi
-
     done < "${env_file}"
 
     log_info "环境变量安全解析完成: ${env_file} (共 ${line_num} 行)"
 }
 
-# =============================================================================
-# 加载并严格校验环境变量: env_load_and_validate <role: us|nl> <env_file>
-# =============================================================================
+_map_legacy_vars() {
+    local mappings=(
+        "US_SERVER_IP:PRIMARY_SERVER_IP"
+        "NL_SERVER_IP:SECONDARY_SERVER_IP"
+        "US_SUB_DOMAIN:PRIMARY_SUB_DOMAIN"
+        "NL_SUB_DOMAIN:SECONDARY_SUB_DOMAIN"
+        "CLASH_US_SOURCE:CLASH_PRIMARY_SOURCE"
+        "CLASH_NL_SOURCE:CLASH_SECONDARY_SOURCE"
+        "US_PUBLISH_DIR:PRIMARY_PUBLISH_DIR"
+        "NL_MIRROR_DIR:SECONDARY_MIRROR_DIR"
+    )
+
+    for mapping in "${mappings[@]}"; do
+        local old_key="${mapping%%:*}"
+        local new_key="${mapping##*:}"
+
+        local old_val="${!old_key:-}"
+        local new_val="${!new_key:-}"
+
+        if [[ -n "${old_val}" ]]; then
+            if [[ -z "${new_val}" ]]; then
+                log_warn "[DEPRECATED] 环境变量 ${old_key} 已弃用，已自动映射为 ${new_key}"
+                export "${new_key}"="${old_val}"
+            elif [[ "${old_val}" != "${new_val}" ]]; then
+                log_error "发现冲突的环境变量: ${old_key} (${old_val}) 与 ${new_key} (${new_val}) 值不一致，请统一配置为 ${new_key} 后重试！"
+                return 1
+            fi
+        fi
+    done
+}
+
 env_load_and_validate() {
     local role="$1"
     local env_file="$2"
 
-    # 使用安全解析器加载（不使用 source）
     env_load_safe "${env_file}"
+    _map_legacy_vars || return 1
 
-    # 通用必需项校验（SUB_TOKEN 长度与占位符校验）
     if [[ -z "${SUB_TOKEN:-}" || "${SUB_TOKEN}" == "replace_me" ]]; then
         log_error "未正确配置 SUB_TOKEN，请在配置文件中填入强随机合规 Token。"
         return 1
     fi
 
-    # 校验 SUB_TOKEN 最低长度（建议 32 字节 hex = 64 字符）
     if [[ "${#SUB_TOKEN}" -lt 32 ]]; then
         log_error "SUB_TOKEN 长度不足 32 字符（当前: ${#SUB_TOKEN}），安全强度不够，请重新生成。"
         return 1
     fi
 
-    case "${role}" in
-        us)
-            _validate_us_env
-            ;;
-        nl)
-            _validate_nl_env
-            ;;
-        *)
-            log_error "未知的节点部署角色: ${role} (支持参数: us 或 nl)"
-            return 1
-            ;;
-    esac
-}
+    DEFAULT_EGRESS_ROLE="${DEFAULT_EGRESS_ROLE:-primary}"
+    SENSITIVE_EGRESS_ROLE="${SENSITIVE_EGRESS_ROLE:-secondary}"
 
-# =============================================================================
-# 美国角色环境变量校验与默认值填充
-# =============================================================================
-_validate_us_env() {
-    local required_us=(US_SERVER_IP US_SUB_DOMAIN SUB_TOKEN PORTAL_PASSWORD FLASK_SECRET_KEY)
-    for var in "${required_us[@]}"; do
-        if [[ -z "${!var:-}" || "${!var}" == "replace_me" ]]; then
-            log_error "美国节点必需的环境变量未填或仍为占位符: ${var}"
+    for r in "${DEFAULT_EGRESS_ROLE}" "${SENSITIVE_EGRESS_ROLE}"; do
+        if [[ "$r" != "primary" && "$r" != "secondary" ]]; then
+            log_error "非法出站策略角色: $r (必须为 primary 或 secondary)"
             return 1
         fi
     done
 
-    # 设置美国环境默认路径与账户配置
-    CLASH_US_SOURCE="${CLASH_US_SOURCE:-/var/www/clash/clash.yaml}"
-    US_PUBLISH_DIR="${US_PUBLISH_DIR:-/opt/clash-sub/published}"
+    # 统一转换角色名
+    if [[ "${role}" == "us" ]]; then
+        role="primary"
+    elif [[ "${role}" == "nl" ]]; then
+        role="secondary"
+    fi
+
+    case "${role}" in
+        primary) _validate_primary_env ;;
+        secondary) _validate_secondary_env ;;
+        *)
+            log_error "未知的节点部署角色: ${role} (支持参数: primary 或 secondary)"
+            return 1
+            ;;
+    esac
+
+    _validate_bots_env "${role}" || return 1
+}
+
+_validate_bots_env() {
+    local role="$1"
+
+    if [[ "${BOT_HOST_ROLE}" != "primary" && "${BOT_HOST_ROLE}" != "secondary" && "${BOT_HOST_ROLE}" != "none" ]]; then
+        log_error "非法 BOT_HOST_ROLE 配置: ${BOT_HOST_ROLE} (必须为 primary, secondary 或 none)"
+        return 1
+    fi
+
+    if [[ "${ENABLE_BOTS:-false}" == "true" ]]; then
+        if [[ "${BOT_HOST_ROLE}" == "${role}" ]]; then
+            if [[ -z "${BRIDGE_PUBLIC_BASE_URL:-}" && -z "${BRIDGE_SERVER_PUBLIC_IP:-}" ]]; then
+                log_error "节点配置了运行 Bot，但未配置 BRIDGE_PUBLIC_BASE_URL。"
+                return 1
+            fi
+            if [[ -z "${BRIDGE_BOT_TOKEN:-}" || "${BRIDGE_BOT_TOKEN}" == "replace_me" ]]; then
+                log_error "节点配置了运行 Bot，但 BRIDGE_BOT_TOKEN 未正确配置。"
+                return 1
+            fi
+            if [[ -z "${TELEGRAM_USER_API_ID:-}" || "${TELEGRAM_USER_API_ID}" == "replace_me" ]]; then
+                log_error "节点配置了运行 Bot，但 TELEGRAM_USER_API_ID 未正确配置。"
+                return 1
+            fi
+            if [[ -z "${TELEGRAM_USER_API_HASH:-}" || "${TELEGRAM_USER_API_HASH}" == "replace_me" ]]; then
+                log_error "节点配置了运行 Bot，但 TELEGRAM_USER_API_HASH 未正确配置。"
+                return 1
+            fi
+
+            # 校验端口范围 1-65535
+            local web_port="${BRIDGE_WEB_PORT:-8082}"
+            if ! [[ "${web_port}" =~ ^[0-9]+$ ]] || [ "${web_port}" -lt 1 ] || [ "${web_port}" -gt 65535 ]; then
+                log_error "BRIDGE_WEB_PORT 必须在 1-65535 范围内，当前: ${web_port}"
+                return 1
+            fi
+
+            local pub_port="${BRIDGE_PUBLIC_PORT:-8083}"
+            if ! [[ "${pub_port}" =~ ^[0-9]+$ ]] || [ "${pub_port}" -lt 1 ] || [ "${pub_port}" -gt 65535 ]; then
+                log_error "BRIDGE_PUBLIC_PORT 必须在 1-65535 范围内，当前: ${pub_port}"
+                return 1
+            fi
+        fi
+    fi
+}
+
+_validate_primary_env() {
+    local required_primary=(PRIMARY_SERVER_IP PRIMARY_SUB_DOMAIN SUB_TOKEN PORTAL_PASSWORD FLASK_SECRET_KEY)
+    for var in "${required_primary[@]}"; do
+        if [[ -z "${!var:-}" || "${!var}" == "replace_me" ]]; then
+            log_error "Primary 节点必需的环境变量未填或仍为占位符: ${var}"
+            return 1
+        fi
+    done
+
+    CLASH_PRIMARY_SOURCE="${CLASH_PRIMARY_SOURCE:-/var/www/clash/clash.yaml}"
+    PRIMARY_PUBLISH_DIR="${PRIMARY_PUBLISH_DIR:-/opt/clash-sub/published}"
     SUBPUSH_USER="${SUBPUSH_USER:-subpush}"
     SUBPUSH_GROUP="${SUBPUSH_GROUP:-subpush}"
-    US_INSTALL_DIR="${US_INSTALL_DIR:-/opt/clash-sub}"
+    PRIMARY_INSTALL_DIR="${PRIMARY_INSTALL_DIR:-/opt/clash-sub}"
 
-    # 代理安装默认值
     INSTALL_PROXY="${INSTALL_PROXY:-true}"
     PROXY_PORT_V4="${PROXY_PORT_V4:-20001}"
     PROXY_PORT_V6="${PROXY_PORT_V6:-20002}"
@@ -157,58 +208,51 @@ _validate_us_env() {
     CONFIGURE_UFW="${CONFIGURE_UFW:-true}"
     ENABLE_BBR="${ENABLE_BBR:-true}"
 
-    # Nginx 条件渲染开关默认值
     ENABLE_WEB="${ENABLE_WEB:-true}"
     ENABLE_API="${ENABLE_API:-false}"
     ENABLE_BOTS="${ENABLE_BOTS:-false}"
+    BOT_HOST_ROLE="${BOT_HOST_ROLE:-none}"
 
-    # 固定版本默认值（可在 env 中覆盖）
     XRAY_VERSION="${XRAY_VERSION:-v25.6.3}"
     MIHOMO_VERSION="${MIHOMO_VERSION:-v1.18.10}"
 
-    export CLASH_US_SOURCE US_PUBLISH_DIR SUBPUSH_USER SUBPUSH_GROUP US_INSTALL_DIR
+    export CLASH_PRIMARY_SOURCE PRIMARY_PUBLISH_DIR SUBPUSH_USER SUBPUSH_GROUP PRIMARY_INSTALL_DIR
     export INSTALL_PROXY PROXY_PORT_V4 PROXY_PORT_V6 PROXY_PORT_LEGACY
     export PROXY_ENABLE_IPV6 PROXY_ENABLE_LEGACY PROXY_METHOD_V4 PROXY_METHOD_V6
-    export CONFIGURE_UFW ENABLE_BBR ENABLE_WEB ENABLE_API ENABLE_BOTS
+    export CONFIGURE_UFW ENABLE_BBR ENABLE_WEB ENABLE_API ENABLE_BOTS BOT_HOST_ROLE
     export XRAY_VERSION MIHOMO_VERSION
 
-    log_info "美国主服务器环境变量校验通过。"
+    log_info "Primary 主服务器环境变量校验通过。"
 }
 
-# =============================================================================
-# 荷兰角色环境变量校验与默认值填充
-# =============================================================================
-_validate_nl_env() {
-    local required_nl=(NL_SERVER_IP NL_SUB_DOMAIN SUB_TOKEN US_SERVER_IP)
-    for var in "${required_nl[@]}"; do
+_validate_secondary_env() {
+    local required_secondary=(SECONDARY_SERVER_IP SECONDARY_SUB_DOMAIN SUB_TOKEN PRIMARY_SERVER_IP)
+    for var in "${required_secondary[@]}"; do
         if [[ -z "${!var:-}" || "${!var}" == "replace_me" ]]; then
-            log_error "荷兰节点必需的环境变量未填或仍为占位符: ${var}"
+            log_error "Secondary 节点必需的环境变量未填或仍为占位符: ${var}"
             return 1
         fi
     done
 
-    # 安全隔离：严格清理美国专有凭据，绝不泄露给荷兰系统环境
-    local us_secrets=(PORTAL_PASSWORD FLASK_SECRET_KEY BRIDGE_BOT_TOKEN CHANNEL_BOT_TOKEN
-                      CHANNEL_GROUP_ID CHANNEL_ADMIN_ID BRIDGE_TARGET_QQ_GROUP BRIDGE_NAPCAT_API_URL)
+    # 隔离剥离仅属于 Primary Web 服务的敏感凭据，防止在镜像节点滞留
+    local primary_secrets=(PORTAL_PASSWORD FLASK_SECRET_KEY)
     local found_secrets=()
-    for var in "${us_secrets[@]}"; do
+    for var in "${primary_secrets[@]}"; do
         if [[ -n "${!var:-}" ]]; then
             found_secrets+=("${var}")
         fi
     done
 
     if [[ ${#found_secrets[@]} -gt 0 ]]; then
-        log_warn "检测到荷兰环境变量中包含以下美国专有凭据，已强制剥离: ${found_secrets[*]}"
-        unset "${us_secrets[@]}" 2>/dev/null || true
+        log_warn "检测到 Secondary 环境变量中包含 Primary 专有凭据，已强制剥离: ${found_secrets[*]}"
+        unset "${primary_secrets[@]}" 2>/dev/null || true
     fi
 
-    # 设置荷兰环境默认路径与账户配置
-    CLASH_NL_SOURCE="${CLASH_NL_SOURCE:-/var/www/clash/clash.yaml}"
-    NL_MIRROR_DIR="${NL_MIRROR_DIR:-/var/www/sub}"
+    CLASH_SECONDARY_SOURCE="${CLASH_SECONDARY_SOURCE:-/var/www/clash/clash.yaml}"
+    SECONDARY_MIRROR_DIR="${SECONDARY_MIRROR_DIR:-/var/www/sub}"
     SUBMIRROR_USER="${SUBMIRROR_USER:-submirror}"
     SUBMIRROR_GROUP="${SUBMIRROR_GROUP:-submirror}"
 
-    # 代理安装默认值（同 US）
     INSTALL_PROXY="${INSTALL_PROXY:-true}"
     PROXY_PORT_V4="${PROXY_PORT_V4:-20001}"
     PROXY_PORT_V6="${PROXY_PORT_V6:-20002}"
@@ -220,19 +264,19 @@ _validate_nl_env() {
     CONFIGURE_UFW="${CONFIGURE_UFW:-true}"
     ENABLE_BBR="${ENABLE_BBR:-true}"
 
-    # NL 不启用 Web/API/Bots
     ENABLE_WEB="${ENABLE_WEB:-false}"
     ENABLE_API="${ENABLE_API:-false}"
     ENABLE_BOTS="${ENABLE_BOTS:-false}"
+    BOT_HOST_ROLE="${BOT_HOST_ROLE:-none}"
 
     XRAY_VERSION="${XRAY_VERSION:-v25.6.3}"
     MIHOMO_VERSION="${MIHOMO_VERSION:-v1.18.10}"
 
-    export CLASH_NL_SOURCE NL_MIRROR_DIR SUBMIRROR_USER SUBMIRROR_GROUP
+    export CLASH_SECONDARY_SOURCE SECONDARY_MIRROR_DIR SUBMIRROR_USER SUBMIRROR_GROUP
     export INSTALL_PROXY PROXY_PORT_V4 PROXY_PORT_V6 PROXY_PORT_LEGACY
     export PROXY_ENABLE_IPV6 PROXY_ENABLE_LEGACY PROXY_METHOD_V4 PROXY_METHOD_V6
-    export CONFIGURE_UFW ENABLE_BBR ENABLE_WEB ENABLE_API ENABLE_BOTS
+    export CONFIGURE_UFW ENABLE_BBR ENABLE_WEB ENABLE_API ENABLE_BOTS BOT_HOST_ROLE
     export XRAY_VERSION MIHOMO_VERSION
 
-    log_info "荷兰副服务器环境变量校验与安全隔离过滤完成。"
+    log_info "Secondary 副服务器环境变量校验与安全隔离过滤完成。"
 }

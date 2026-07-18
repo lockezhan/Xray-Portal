@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # Xray_portal 互信节点公钥受限注入工具 (deploy/install-peer-key.sh)
-# 用法: sudo ./deploy/install-peer-key.sh <us|nl> --pubkey <公钥字符串或文件路径>
+# 用法: sudo ./deploy/install-peer-key.sh <primary|secondary> --pubkey <公钥字符串或文件路径>
 # =============================================================================
 
 set -euo pipefail
@@ -19,8 +19,17 @@ USER_OVERRIDE=""
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        us|nl)
+        primary|secondary)
             ROLE="$1"
+            shift
+            ;;
+        us|nl)
+            if [[ "$1" == "us" ]]; then
+                ROLE="primary"
+            else
+                ROLE="secondary"
+            fi
+            log_warn "角色 '$1' 已弃用，请使用 '${ROLE}'"
             shift
             ;;
         --pubkey)
@@ -39,7 +48,7 @@ while [[ $# -gt 0 ]]; do
 done
 
 if [[ -z "${ROLE}" || -z "${PUBKEY_INPUT}" ]]; then
-    log_error "用法: $0 <us|nl> --pubkey <公钥字符串或公钥文件路径>"
+    log_error "用法: $0 <primary|secondary> --pubkey <公钥字符串或公钥文件路径>"
     exit 1
 fi
 
@@ -54,14 +63,14 @@ else
 fi
 
 case "${ROLE}" in
-    us)
-        # 写入美国服务器受限账户 subpush，强制执行 subpush-cmd-wrapper
+    primary)
+        # 写入 Primary 受限账户 subpush，强制执行 subpush-cmd-wrapper
         target_user="${USER_OVERRIDE:-subpush}"
         auth_file="/opt/clash-sub/.ssh/authorized_keys"
         install_authorized_key "${PUBKEY}" "${auth_file}" "/opt/clash-sub/scripts/subpush-cmd-wrapper" "${target_user}:${target_user}"
         ;;
-    nl)
-        # 写入荷兰服务器受限账户 submirror
+    secondary)
+        # 写入 Secondary 受限账户 submirror
         target_user="${USER_OVERRIDE:-submirror}"
         auth_file="/home/${target_user}/.ssh/authorized_keys"
         install_authorized_key "${PUBKEY}" "${auth_file}" "none" "${target_user}:${target_user}"

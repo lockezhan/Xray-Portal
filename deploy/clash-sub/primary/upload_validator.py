@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-荷兰上传配置安全验证器
+Secondary上传配置安全验证器
 独立脚本运行，防范 shell 引号嵌套地狱
 """
 
@@ -72,7 +72,7 @@ def main():
         sys.exit(1)
 
     # 4. 生成固定目录内的随机临时文件，防止命名碰撞与并发越权
-    temp_path = os.path.join(incoming_dir, "nl-full.yaml.uploading.{}".format(uuid.uuid4().hex))
+    temp_path = os.path.join(incoming_dir, "secondary-full.yaml.uploading.{}".format(uuid.uuid4().hex))
 
     temp_fd = None
     try:

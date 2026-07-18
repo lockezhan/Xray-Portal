@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
-# push-clash-subscription-nl — 荷兰节点配置上传与触发重建脚本
-# 流程：读取荷兰原始配置 → 验证有效性 → 上传到美国服务器 → 触发美国服务器构建
+# push-clash-subscription-secondary — Secondary节点配置上传与触发重建脚本
+# 流程：读取Secondary原始配置 → 验证有效性 → 上传到Primary服务器 → 触发Primary服务器构建
 # =============================================================================
 set -euo pipefail
 
@@ -12,14 +12,18 @@ if [[ ! -f "$CONFIG_ENV" ]]; then
   exit 1
 fi
 # shellcheck disable=SC1090
-US_IP=""
+PRIMARY_IP=""
+LEGACY_US_IP=""
 
 while IFS='=' read -r key value || [[ -n "${key}" ]]; do
     value="${value%$'\r'}"
 
     case "${key}" in
+        PRIMARY_IP)
+            PRIMARY_IP="${value}"
+            ;;
         US_IP)
-            US_IP="${value}"
+            LEGACY_US_IP="${value}"
             ;;
         ""|\#*)
             ;;
@@ -29,14 +33,23 @@ while IFS='=' read -r key value || [[ -n "${key}" ]]; do
     esac
 done < "${CONFIG_ENV}"
 
-if [[ -z "${US_IP}" ]]; then
-    echo "[FATAL] config.env 中缺少 US_IP" >&2
+if [[ -n "${PRIMARY_IP}" && -n "${LEGACY_US_IP}" && "${PRIMARY_IP}" != "${LEGACY_US_IP}" ]]; then
+    echo "[FATAL] PRIMARY_IP 与 deprecated US_IP 值冲突" >&2
+    exit 1
+fi
+if [[ -z "${PRIMARY_IP}" && -n "${LEGACY_US_IP}" ]]; then
+    echo "[WARN] US_IP 已弃用，请迁移为 PRIMARY_IP" >&2
+    PRIMARY_IP="${LEGACY_US_IP}"
+fi
+
+if [[ -z "${PRIMARY_IP}" ]]; then
+    echo "[FATAL] config.env 中缺少 PRIMARY_IP" >&2
     exit 1
 fi
 
 # 只允许普通主机名、IPv4 或 IPv6 字符。
-if [[ ! "${US_IP}" =~ ^[A-Za-z0-9._:-]+$ ]]; then
-    echo "[FATAL] US_IP 格式不合法" >&2
+if [[ ! "${PRIMARY_IP}" =~ ^[A-Za-z0-9._:-]+$ ]]; then
+    echo "[FATAL] PRIMARY_IP 格式不合法" >&2
     exit 1
 fi
 
@@ -50,14 +63,14 @@ log() {
 }
 
 log INFO "=========================================="
-log INFO "开始推送荷兰原始 Clash 配置到美国"
+log INFO "开始推送Secondary原始 Clash 配置到Primary"
 log INFO "=========================================="
 
-NL_CLASH_SOURCE="/var/www/clash/clash.yaml"
+SECONDARY_CLASH_SOURCE="/var/www/clash/clash.yaml"
 PRIVATE_KEY="/opt/clash-sub-mirror/subpush_key"
 
-if [[ ! -f "$NL_CLASH_SOURCE" ]]; then
-  log ERROR "未找到荷兰原始 Clash 配置: $NL_CLASH_SOURCE"
+if [[ ! -f "$SECONDARY_CLASH_SOURCE" ]]; then
+  log ERROR "未找到Secondary原始 Clash 配置: $SECONDARY_CLASH_SOURCE"
   exit 1
 fi
 
@@ -70,7 +83,7 @@ fi
 python3 -c "
 import yaml, sys
 try:
-    with open('$NL_CLASH_SOURCE', 'r', encoding='utf-8') as f:
+    with open('$SECONDARY_CLASH_SOURCE', 'r', encoding='utf-8') as f:
         data = yaml.safe_load(f)
     assert isinstance(data, dict), 'YAML root must be dict'
     assert 'proxies' in data, 'missing proxies'
@@ -83,19 +96,19 @@ except Exception as e:
     print('YAML有效性验证失败: {}'.format(e), file=sys.stderr)
     sys.exit(1)
 " 2>&1 | tee -a "$LOG_FILE" || {
-  log ERROR "荷兰配置 YAML 验证未通过，中止推送"
+  log ERROR "Secondary配置 YAML 验证未通过，中止推送"
   exit 2
 }
 
-# 2. 通过标准输入传输配置并触发美国端重新构建
-log INFO "正在通过安全标准输入协议传输配置并唤醒美国端重建..."
-if ! cat "$NL_CLASH_SOURCE" | ssh -i "$PRIVATE_KEY" \
+# 2. 通过标准输入传输配置并触发Primary端重新构建
+log INFO "正在通过安全标准输入协议传输配置并唤醒Primary端重建..."
+if ! cat "$SECONDARY_CLASH_SOURCE" | ssh -i "$PRIVATE_KEY" \
   -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
-  "subpush@${US_IP}" upload-nl 2>&1 | tee -a "$LOG_FILE"; then
+  "subpush@${PRIMARY_IP}" upload-secondary 2>&1 | tee -a "$LOG_FILE"; then
   log ERROR "配置传输与重建触发失败"
   exit 3
 fi
 
 log INFO "=========================================="
-log INFO "荷兰配置推送且触发重建成功！"
+log INFO "Secondary配置推送且触发重建成功！"
 log INFO "=========================================="
