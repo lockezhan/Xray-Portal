@@ -94,3 +94,15 @@ cat /var/lib/xray-portal/deployment-state.json
 
 - [架构设计](docs/ARCHITECTURE.md)
 - [安全配置](docs/SECURITY.md)
+
+## 🌐 Azure IPv6 与网络配置说明
+
+- **Azure VM 私有 IPv6 现象**：Azure VM 内部网卡仅显示私有 IPv6 地址（例如 `fd00:...`），属于 Azure 网络架构设计的正常现象。公网 IPv6 由 Azure 网络层统一管理与 NAT 映射。
+- **公网 IPv6 自动探测与手动配置**：
+  - `install.sh` 与 `gen_clash_config.sh` 会优先通过 IPv6 出口自动探测公网 IPv6 地址。
+  - 若云平台网络映射异常或需固定公网 IPv6，可在 `/etc/xray-portal/proxy-meta.conf` 或 `/etc/xray-meta.conf` 中手动配置：
+    ```ini
+    PUBLIC_IPV6=<YOUR_PUBLIC_IPV6>
+    ```
+  - 修改元配置后，运行 `gen_clash_config.sh` 或重新运行安装脚本即可自动重构节点订阅。
+- **防火墙与安全组要求**：除了在系统内部配置 UFW 规则外，还必须在 **Azure NSG (Network Security Group / 网络安全组)** 中放行相应的 TCP 与 UDP 入站端口。

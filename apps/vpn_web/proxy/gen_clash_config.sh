@@ -12,11 +12,11 @@
 
 set -euo pipefail
 
-CONFIG="/usr/local/etc/xray/config.json"
-PROXY_ENV="/etc/xray-portal/proxy.env"
-PROXY_META="/etc/xray-portal/proxy-meta.conf"
-SUBSCRIBE_DIR="/var/www/clash"
-SUBSCRIBE_FILE="${SUBSCRIBE_DIR}/clash.yaml"
+CONFIG="${CONFIG:-/usr/local/etc/xray/config.json}"
+PROXY_ENV="${PROXY_ENV:-/etc/xray-portal/proxy.env}"
+PROXY_META="${PROXY_META:-/etc/xray-portal/proxy-meta.conf}"
+SUBSCRIBE_DIR="${SUBSCRIBE_DIR:-/var/www/clash}"
+SUBSCRIBE_FILE="${SUBSCRIBE_FILE:-${SUBSCRIBE_DIR}/clash.yaml}"
 
 # 颜色（仅用于非密钥信息输出）
 red='\033[0;31m'
@@ -37,15 +37,60 @@ if [[ ! -f "${CONFIG}" ]]; then
     exit 1
 fi
 
+is_valid_ipv6() {
+  local ip="${1:-}"
+  [[ -z "$ip" ]] && return 1
+  python3 -c 'import sys, ipaddress; sys.exit(0 if ipaddress.ip_address(sys.argv[1]).version == 6 else 1)' "$ip" 2>/dev/null
+}
+
+detect_public_ipv6() {
+  local ip=""
+  if [[ -n "${PUBLIC_IPV6:-}" ]] && is_valid_ipv6 "${PUBLIC_IPV6}"; then
+    echo "${PUBLIC_IPV6}"
+    return 0
+  fi
+
+  for meta_path in "${PROXY_META:-}" "/etc/xray-portal/proxy-meta.conf" "/etc/xray-meta.conf"; do
+    if [[ -n "$meta_path" && -f "$meta_path" ]]; then
+      local meta_v6
+      meta_v6=$(grep -E '^(PUBLIC_IPV6|PROXY_PUBLIC_IPV6)=' "$meta_path" 2>/dev/null | cut -d= -f2- | tr -d '[:space:]"' || true)
+      if [[ -n "$meta_v6" ]] && is_valid_ipv6 "$meta_v6"; then
+        echo "$meta_v6"
+        return 0
+      fi
+    fi
+  done
+
+  ip=$(ip -6 addr 2>/dev/null | awk '/inet6/{print $2}' | cut -d/ -f1 | grep -Ev '^::1$|^fe80:|^fc00:|^fd00:' | head -n1 || true)
+  if [[ -n "$ip" ]] && is_valid_ipv6 "$ip"; then
+    echo "$ip"
+    return 0
+  fi
+
+  ip=$(curl -6 --noproxy '*' -fsSL --max-time 8 https://api64.ipify.org 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ -n "$ip" ]] && is_valid_ipv6 "$ip"; then
+    echo "$ip"
+    return 0
+  fi
+
+  ip=$(curl -6 --noproxy '*' -fsSL --max-time 8 https://ipv6.icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ -n "$ip" ]] && is_valid_ipv6 "$ip"; then
+    echo "$ip"
+    return 0
+  fi
+
+  echo ""
+}
+
 # =============================================================================
 # 读取 IP（始终需要用于 IPv6 节点）
 # =============================================================================
 IPV4=$(ip -4 addr | awk '/inet /{print $2}' | cut -d/ -f1 \
     | grep -Ev '^127\.|^10\.|^172\.(1[6-9]|2[0-9]|3[0-2])\.|^192\.168\.' \
     | head -n1 || true)
-IPV6=$(ip -6 addr | awk '/inet6/{print $2}' | cut -d/ -f1 \
-    | grep -Ev '^::1$|^fe80:|^fc00:|^fd00:' | head -n1 || true)
 [[ -z "${IPV4}" ]] && IPV4=$(curl -fsSL --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo "1.2.3.4")
+IPV6=$(detect_public_ipv6)
+
 
 # =============================================================================
 # 读取域名（优先从 proxy-meta.conf）
@@ -63,6 +108,9 @@ if [[ -f "${PROXY_META}" ]]; then
             case "${k}" in
                 PROXY_DOMAIN)
                     [[ -n "${v}" && "${v}" != "unknown" ]] && DOMAIN="${v}"
+                    ;;
+                PROXY_PUBLIC_IPV6|PUBLIC_IPV6)
+                    [[ -n "${v}" && "${v}" != "unknown" ]] && is_valid_ipv6 "${v}" && IPV6="${v}"
                     ;;
                 PROXY_PORT_V4)   PROXY_PORT_V4="${v}" ;;
                 PROXY_PORT_V6)   PROXY_PORT_V6="${v}" ;;
@@ -146,7 +194,7 @@ if [[ "${PROXY_ENABLE_IPV6:-true}" == "true" && -n "${PASS_V6}" && -n "${IPV6}" 
 
   - name: \"${ROLE_PREFIX_UPPER}-NODE-IPv6\"
     type: ss
-    server: ${IPV6}
+    server: \"${IPV6}\"
     port: ${PORT_V6}
     cipher: ${METHOD_V6}
     password: \"${PASS_V6}\"
@@ -186,7 +234,7 @@ proxy-groups:
     type: select
     proxies:
       - "${ROLE_PREFIX_UPPER}-NODE-IPv4"
-$([ "${PROXY_ENABLE_IPV6:-true}" == "true" ] && echo "      - \"${ROLE_PREFIX_UPPER}-NODE-IPv6\"" || true)
+$([ "${PROXY_ENABLE_IPV6:-true}" == "true" ] && [ -n "${IPV6:-}" ] && echo "      - \"${ROLE_PREFIX_UPPER}-NODE-IPv6\"" || true)
 $([ "${PROXY_ENABLE_LEGACY:-false}" == "true" ] && echo "      - \"${ROLE_PREFIX_UPPER}-NODE-Legacy\"" || true)
       - DIRECT
 
