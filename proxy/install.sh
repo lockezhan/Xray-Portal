@@ -36,11 +36,86 @@ get_ipv4() {
   echo "${ip:-Unknown}"
 }
 
-get_ipv6() {
-  local ip
-  ip=$(ip -6 addr | awk '/inet6/{print $2}' | cut -d/ -f1 | grep -Ev '^::1$|^fe80:|^fc00:|^fd00:' | head -n1 || true)
-  echo "${ip:-Unknown}"
+is_valid_ipv6() {
+  local ip="${1:-}"
+  [[ -z "$ip" ]] && return 1
+  python3 -c 'import sys, ipaddress; sys.exit(0 if ipaddress.ip_address(sys.argv[1]).version == 6 else 1)' "$ip" 2>/dev/null
 }
+
+get_private_ipv6() {
+  local ip
+  ip=$(ip -6 addr 2>/dev/null | awk '/inet6/{print $2}' | cut -d/ -f1 | grep -E '^fc00:|^fd00:' | head -n1 || true)
+  if is_valid_ipv6 "$ip"; then
+    echo "$ip"
+  else
+    echo ""
+  fi
+}
+
+detect_public_ipv6() {
+  local ip=""
+  if [[ -n "${PUBLIC_IPV6:-}" ]] && is_valid_ipv6 "${PUBLIC_IPV6}"; then
+    echo "${PUBLIC_IPV6}"
+    return 0
+  fi
+
+  ip=$(ip -6 addr 2>/dev/null | awk '/inet6/{print $2}' | cut -d/ -f1 | grep -Ev '^::1$|^fe80:|^fc00:|^fd00:' | head -n1 || true)
+  if [[ -n "$ip" ]] && is_valid_ipv6 "$ip"; then
+    echo "$ip"
+    return 0
+  fi
+
+  ip=$(curl -6 --noproxy '*' -fsSL --max-time 8 https://api64.ipify.org 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ -n "$ip" ]] && is_valid_ipv6 "$ip"; then
+    echo "$ip"
+    return 0
+  fi
+
+  ip=$(curl -6 --noproxy '*' -fsSL --max-time 8 https://ipv6.icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
+  if [[ -n "$ip" ]] && is_valid_ipv6 "$ip"; then
+    echo "$ip"
+    return 0
+  fi
+
+  echo ""
+}
+
+prompt_ipv6() {
+  echo
+  echo -e "[${green}Step${plain}] 配置公网 IPv6 地址（可选）"
+  local input_v6
+  while true; do
+    read -rp "Public IPv6 address (leave empty to auto-detect): " input_v6
+    if [[ -z "${input_v6}" ]]; then
+      local auto_v6
+      auto_v6=$(detect_public_ipv6)
+      if [[ -n "${auto_v6}" ]]; then
+        echo -e "  自动探测到公网 IPv6: ${green}${auto_v6}${plain}"
+        read -rp "  确认使用该公网 IPv6 地址? [Y/n]: " confirm_v6
+        confirm_v6=${confirm_v6:-Y}
+        if [[ "${confirm_v6}" =~ ^[Yy]$ ]]; then
+          PUBLIC_IPV6="${auto_v6}"
+        else
+          PUBLIC_IPV6=""
+          echo -e "  已跳过使用公网 IPv6。"
+        fi
+      else
+        echo -e "  [${yellow}Info${plain}] 未探测到有效的公网 IPv6 地址。"
+        PUBLIC_IPV6=""
+      fi
+      break
+    else
+      if is_valid_ipv6 "${input_v6}"; then
+        PUBLIC_IPV6="${input_v6}"
+        echo -e "  Public IPv6: ${green}${PUBLIC_IPV6}${plain}"
+        break
+      else
+        echo -e "  [${red}Error${plain}] 输入的 IPv6 地址格式无效，请重新输入或留空。"
+      fi
+    fi
+  done
+}
+
 
 prompt_domain() {
   echo
@@ -193,29 +268,42 @@ PORT_LEGACY=${PORT_LEGACY}
 KEY_V4=${KEY_V4}
 KEY_V6=${KEY_V6}
 KEY_LEGACY=${KEY_LEGACY}
+PUBLIC_IPV6=${PUBLIC_IPV6:-}
+PRIVATE_IPV6=${PRIVATE_IPV6:-}
 META
   chmod 600 /etc/xray-meta.conf
   echo "  Saved to /etc/xray-meta.conf"
 }
 
-# generate ss:// URI
-# format: ss://BASE64(method:password)@host:port#name
+format_host_for_ss() {
+  local host="$1"
+  if [[ "$host" == *:* && "$host" != \[*\] ]]; then
+    echo "[${host}]"
+  else
+    echo "${host}"
+  fi
+}
+
 make_ss_uri() {
   local method="$1" pass="$2" host="$3" port="$4" name="$5"
+  local formatted_host
+  formatted_host=$(format_host_for_ss "${host}")
   local userinfo
   userinfo=$(printf '%s:%s' "${method}" "${pass}" | base64 -w0)
-  printf 'ss://%s@%s:%s#%s\n' "${userinfo}" "${host}" "${port}" "${name}"
+  printf 'ss://%s@%s:%s#%s\n' "${userinfo}" "${formatted_host}" "${port}" "${name}"
 }
 
 show_uris() {
   echo
   echo -e "[${green}===== Shadowsocks 快速导入链接 =====${plain}]"
-  local ipv4; ipv4=$(get_ipv4)
-  local ipv6; ipv6=$(get_ipv6)
   echo "  [IPv4-SS2022]"
   make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V4}" "${DOMAIN}" "${PORT_V4}" "MyVPS-IPv4"
-  echo "  [IPv6-SS2022]  (域名不含IPv6，直接用IPv6地址)"
-  make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V6}" "${ipv6}" "${PORT_V6}" "MyVPS-IPv6"
+  if [[ -n "${PUBLIC_IPV6:-}" ]]; then
+    echo "  [IPv6-SS2022]"
+    make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V6}" "${PUBLIC_IPV6}" "${PORT_V6}" "MyVPS-IPv6"
+  else
+    echo -e "  [IPv6-SS2022] ${yellow}(跳过 - 未检测到/未配置公网 IPv6)${plain}"
+  fi
   echo "  [Legacy-AES256]"
   make_ss_uri "aes-256-gcm" "${KEY_LEGACY}" "${DOMAIN}" "${PORT_LEGACY}" "MyVPS-Legacy"
   echo
@@ -273,6 +361,9 @@ main() {
   require_root
   require_apt
 
+  PUBLIC_IPV6="${PUBLIC_IPV6:-}"
+  PRIVATE_IPV6=$(get_private_ipv6)
+
   echo -e "[${green}Step${plain}] Apt init & tools"
   apt_init
 
@@ -281,6 +372,9 @@ main() {
 
   echo -e "[${green}Step${plain}] Domain"
   prompt_domain
+
+  echo -e "[${green}Step${plain}] IPv6 Configuration"
+  prompt_ipv6
 
   echo -e "[${green}Step${plain}] Ports"
   prompt_ports
@@ -308,7 +402,8 @@ main() {
 
   echo -e "\nServer IPs:"
   echo "  IPv4: $(get_ipv4)"
-  echo "  IPv6: $(get_ipv6)"
+  echo "  Private IPv6: ${PRIVATE_IPV6:-None}"
+  echo "  Public IPv6: ${PUBLIC_IPV6:-None}"
   [[ "${DOMAIN}" != "$(get_ipv4)" ]] && echo "  Domain: ${DOMAIN}"
 
   echo -e "\nNote: If your cloud provider has a Security Group/Firewall, open TCP/UDP ${PORT_V4}-${PORT_LEGACY} there too."
