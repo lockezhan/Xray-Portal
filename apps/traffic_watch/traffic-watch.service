@@ -1,0 +1,6 @@
+[Unit]
+Description=Traffic security inspection
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/traffic-watch.sh

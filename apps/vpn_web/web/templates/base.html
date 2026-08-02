@@ -297,7 +297,7 @@
         }
 
         // Wallpaper carousel with dot indicators
-        const wallpapers = {{ wallpapers | tojson | safe }};
+        const wallpapers = {{ (wallpapers or []) | tojson | safe }};
         const container = document.getElementById('slider-container');
         const dotsContainer = document.getElementById('carousel-dots');
         let currentIndex = 0;
@@ -343,7 +343,7 @@
         }
 
         // Version detail modal for categorized downloads
-        const downloadsData = {{ downloads | tojson | safe }};
+        const downloadsData = {{ (downloads or []) | tojson | safe }};
         const modal = document.getElementById('version-modal');
         const modalTitle = document.getElementById('modal-title');
         const modalSubtitle = document.getElementById('modal-subtitle');

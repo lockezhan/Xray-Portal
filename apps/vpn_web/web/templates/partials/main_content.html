@@ -40,14 +40,22 @@
             <h2 class="text-3xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">网络节点配置</h2>
             <p class="text-slate-500 dark:text-slate-400 text-sm mt-1">云端 Clash 配置代理服务已启动，节点可直接导入终端使用。</p>
         </div>
-        <a href="/logout"
-            class="mt-4 sm:mt-0 px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-700 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center">
-            <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-                    d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
-                </path>
-            </svg>锁定断开
-        </a>
+        <div class="mt-4 sm:mt-0 flex space-x-3 items-center">
+            <a href="/traffic"
+                class="px-5 py-2.5 bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500 hover:text-white dark:hover:bg-indigo-600 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
+                </svg>流量监控
+            </a>
+            <a href="/logout"
+                class="px-5 py-2.5 bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-600 text-slate-600 dark:text-slate-300 hover:text-red-600 dark:hover:text-red-400 hover:border-red-200 dark:hover:border-red-700 rounded-xl text-sm font-bold transition-all shadow-sm flex items-center">
+                <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                        d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1">
+                    </path>
+                </svg>锁定断开
+            </a>
+        </div>
     </div>
 
     <div class="space-y-5">

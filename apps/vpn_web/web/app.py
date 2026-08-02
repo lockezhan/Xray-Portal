@@ -1,11 +1,73 @@
 import os
 import sys
+import uuid
+import json
+import time
+import threading
+import subprocess
 import requests
 from flask import Flask, request, render_template, Response, abort, session, redirect, jsonify
 from flask import stream_with_context
 from urllib.parse import quote as url_quote
 import utils
 import config
+
+# 全局任务状态字典 {job_id: {status, url, msg, start_time, end_time}}
+_TG_JOBS: dict = {}
+_TG_JOBS_LOCK = threading.Lock()
+
+def _run_tg_job(job_id: str, cmd: list):
+    """在后台线程中执行 fetch_link.py 并更新任务状态"""
+    with _TG_JOBS_LOCK:
+        _TG_JOBS[job_id]['status'] = 'running'
+    proc = None
+    try:
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        stdout, stderr = proc.communicate(timeout=600)  # 最长等 10 分钟
+        out_text = stdout.decode('utf-8', errors='ignore').strip()
+        err_text = stderr.decode('utf-8', errors='ignore').strip()
+        # 尝试解析 JSON 输出
+        try:
+            result = json.loads(out_text)
+            if result.get('success'):
+                files = result.get('files', [])
+                # 统计已下载及解压的文件
+                total = len(files)
+                unzip_errs = [f.get('unzip_error') for f in files if f.get('unzip_error')]
+                if unzip_errs:
+                    msg = f"✅ 已下载 {total} 个文件，但解压出错：{unzip_errs[0][:120]}"
+                    status = 'warning'
+                else:
+                    msg = f"✅ 下载并解压完成，共 {total} 个文件已存入网盘！"
+                    status = 'done'
+            else:
+                msg = f"❌ 拉取失败：{result.get('error', '未知错误')}"
+                status = 'error'
+        except Exception:
+            if proc.returncode == 0:
+                msg = "✅ 任务完成（无结构化输出）"
+                status = 'done'
+            else:
+                msg = f"❌ 脚本报错：{(err_text or out_text)[:200]}"
+                status = 'error'
+    except subprocess.TimeoutExpired:
+        if proc is not None:
+            proc.kill()
+        msg = "⚠️ 任务超时（>10 分钟），进程已被强制终止"
+        status = 'error'
+    except Exception as e:
+        msg = f"❌ 内部异常：{e}"
+        status = 'error'
+    with _TG_JOBS_LOCK:
+        _TG_JOBS[job_id]['status'] = status
+        _TG_JOBS[job_id]['msg'] = msg
+        _TG_JOBS[job_id]['end_time'] = time.time()
+    # 任务结束后 10 秒自动从列表移除，前端轮询时自然消失
+    def _auto_remove():
+        time.sleep(10)
+        with _TG_JOBS_LOCK:
+            _TG_JOBS.pop(job_id, None)
+    threading.Thread(target=_auto_remove, daemon=True).start()
 
 def load_env():
     # 测试模式下不读取磁盘上的真实 .env 文件，以防污染和数据混淆
@@ -140,6 +202,87 @@ def api_releases():
     releases = utils.get_clash_releases()
     return jsonify(releases)
 
+# ==========================================
+# 📊 流量与安全监控及私有云网盘面板 (需登录)
+# ==========================================
+@app.route('/cloud', methods=['GET'])
+def cloud_page():
+    if not session.get('logged_in'):
+        return redirect('/')
+    return render_template('cloud.html', logged_in=True, wallpapers=utils.get_random_wallpapers())
+
+@app.route('/traffic', methods=['GET'])
+def traffic():
+    if not session.get('logged_in'):
+        return redirect('/')
+    return render_template('traffic.html', logged_in=True, wallpapers=utils.get_random_wallpapers())
+
+@app.route('/api/traffic', methods=['GET'])
+def api_traffic():
+    if not session.get('logged_in'):
+        return abort(401)
+    
+    import subprocess
+    import json
+    
+    # 获取 vnstat json 数据
+    vnstat_data = {}
+    try:
+        res = subprocess.run(["vnstat", "--json"], capture_output=True, text=True, check=True)
+        vnstat_data = json.loads(res.stdout)
+    except Exception as e:
+        vnstat_data = {"error": str(e)}
+
+    # 获取最后一次安全检查日志
+    parsed_log = {}
+    try:
+        with open("/var/log/traffic-watch.log", "r", encoding="utf-8") as f:
+            content = f.read()
+            last_idx = content.rfind("============================================================")
+            if last_idx != -1:
+                log_content = content[last_idx:]
+            else:
+                log_content = content
+            
+            # 简单解析逻辑
+            import re
+            
+            # 基本信息
+            m_time = re.search(r"检查时间：(.*?)\n", log_content)
+            m_tcp = re.search(r"已建立 TCP 连接：(\d+)", log_content)
+            m_syn = re.search(r"等待建立的出站连接：(\d+)", log_content)
+            
+            parsed_log["time"] = m_time.group(1).strip() if m_time else "未知"
+            parsed_log["tcp_est"] = m_tcp.group(1).strip() if m_tcp else "0"
+            parsed_log["tcp_syn"] = m_syn.group(1).strip() if m_syn else "0"
+            
+            # 提取各个板块
+            sections = [
+                ("listen_ports", "对外监听端口"),
+                ("top_ips", "连接最多的目标 IP"),
+                ("syn_sent", "尚未建立成功的出站连接"),
+                ("top_cpu", "CPU 占用最高的进程"),
+                ("top_mem", "内存占用最高的进程"),
+                ("ssh_fail", "最近一小时 SSH 失败记录"),
+                ("ufw_block", "最近一小时 UFW 拦截记录")
+            ]
+            
+            for key, title in sections:
+                pattern = f"----- {title} -----\\n(.*?)(?=\\n----- |\\Z)"
+                m = re.search(pattern, log_content, re.DOTALL)
+                if m:
+                    val = m.group(1).strip()
+                    parsed_log[key] = val if val else "无记录"
+                else:
+                    parsed_log[key] = "无记录"
+    except Exception as e:
+        parsed_log["error"] = f"无法读取或解析日志: {e}"
+
+    return jsonify({
+        "vnstat": vnstat_data,
+        "log": parsed_log
+    })
+
 @app.route('/proxy-download')
 def proxy_download():
     repo_label = request.args.get('repo', '').strip()
@@ -189,6 +332,58 @@ def proxy_download():
     except requests.exceptions.RequestException as e:
         print(f"Proxy download failed: {e}", file=sys.stderr)
         abort(502)
+
+@app.route('/api/tg_download', methods=['POST'])
+def api_tg_download():
+    if not session.get('logged_in'):
+        return abort(401)
+    
+    data = request.get_json(silent=True) or request.form
+    tg_url = data.get('url', '').strip()
+    password = data.get('password', '').strip()
+    
+    if not tg_url or not ('t.me/' in tg_url or 'telegram' in tg_url):
+        return jsonify({"status": "error", "message": "请输入有效的 Telegram 消息链接 (例如 https://t.me/c/xxx/123)"}), 400
+        
+    cmd = ["/usr/local/tg_bot/venv/bin/python3", "/usr/local/tg_bot/fetch_link.py", tg_url, "--unzip"]
+    if password:
+        cmd.extend(["--password", password])
+    
+    job_id = uuid.uuid4().hex[:12]
+    with _TG_JOBS_LOCK:
+        _TG_JOBS[job_id] = {
+            'status': 'pending',
+            'url': tg_url,
+            'msg': '⏳ 任务已排队，正在启动多线程拉取引擎…',
+            'start_time': time.time(),
+            'end_time': None,
+        }
+    thread = threading.Thread(target=_run_tg_job, args=(job_id, cmd), daemon=True)
+    thread.start()
+    return jsonify({
+        "status": "success",
+        "job_id": job_id,
+        "message": "🚀 任务已提交！可在下方实时进度面板中查看状态。"
+    })
+
+@app.route('/api/tg_jobs', methods=['GET'])
+def api_tg_jobs():
+    if not session.get('logged_in'):
+        return abort(401)
+    with _TG_JOBS_LOCK:
+        # 返回最近 10 个，按开始时间倒序
+        jobs = sorted(_TG_JOBS.items(), key=lambda x: x[1]['start_time'], reverse=True)[:10]
+        result = []
+        for jid, jinfo in jobs:
+            elapsed = int(time.time() - jinfo['start_time'])
+            result.append({
+                'id': jid,
+                'status': jinfo['status'],
+                'url': jinfo['url'][-60:],  # 截断 URL
+                'msg': jinfo['msg'],
+                'elapsed': elapsed,
+            })
+    return jsonify(result)
 
 if __name__ == '__main__':
     port = 8080

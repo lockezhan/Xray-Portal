@@ -31,10 +31,11 @@ SESSION_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "telegra
 os.makedirs(CACHE_DIR, exist_ok=True)
 
 def has_media_to_download(message):
+    """只要消息有任意可下载媒体（视频、图片、文档等）就返回 True"""
     if message.video or message.photo: return True
+    if message.document: return True  # 包含压缩包、PDF 等所有文档类型
     if message.media and isinstance(message.media, MessageMediaDocument):
-        doc = message.media.document
-        if doc and doc.mime_type and doc.mime_type.startswith('video/'): return True
+        return bool(message.media.document)
     return False
 
 def is_video(message):
@@ -43,6 +44,15 @@ def is_video(message):
         doc = message.media.document
         if doc and doc.mime_type and doc.mime_type.startswith('video/'): return True
     return False
+
+def get_original_filename(message):
+    """从 document attributes 提取原始文件名，找不到则返回 None"""
+    from telethon.tl.types import DocumentAttributeFilename
+    if message.document:
+        for attr in message.document.attributes:
+            if isinstance(attr, DocumentAttributeFilename):
+                return attr.file_name
+    return None
 
 async def main():
     if len(sys.argv) < 2:
@@ -264,9 +274,15 @@ async def main():
                     await client._return_exported_sender(sender)
 
         for m in messages_to_download:
-            is_pic = m.photo
+            is_pic = m.photo and not m.document
             is_vid = is_video(m) or m.video
-            ext = ".jpg" if is_pic else ".mp4" if is_vid else ".bin"
+            
+            # 优先使用 Telegram 原始文件名（压缩包/文档等），否则按类型推断扩展名
+            original_name = get_original_filename(m)
+            if original_name:
+                ext = os.path.splitext(original_name)[1] or ".bin"
+            else:
+                ext = ".jpg" if is_pic else ".mp4" if is_vid else ".bin"
             
             # 1. 核心修复：基于媒体唯一 ID 进行缓存，彻底解决转发后链接改变但文件相同的问题
             media_id = None
@@ -274,8 +290,13 @@ async def main():
                 media_id = m.document.id
             elif m.photo:
                 media_id = m.photo.id
-                
-            if media_id:
+            
+            # 优先保留原始文件名（含正确扩展名，使解压逻辑可以正确识别压缩包）
+            if original_name:
+                # 避免文件名冲突：加上 media_id 前缀
+                safe_original = re.sub(r'[^\w.\-]', '_', original_name)
+                file_name = f"{media_id}_{safe_original}" if media_id else safe_original
+            elif media_id:
                 file_name = f"userbot_media_{media_id}{ext}"
             else:
                 file_name = f"userbot_{abs(getattr(entity, 'id', 0))}_{m.id}{ext}"
@@ -316,9 +337,9 @@ async def main():
                 else:
                     os.replace(tmp_file, file_path)
             
-            # 统一设置文件权限为 644，确保 Nginx 可读，实现顺利播放/下载
+            # 统一设置文件权限为 666，确保 Nginx 可读及容器非 root 用户可删改
             try:
-                os.chmod(file_path, 0o644)
+                os.chmod(file_path, 0o666)
             except Exception as chmod_err:
                 print(f"[-] 修改 Userbot 下载文件权限失败: {chmod_err}", file=sys.stderr)
 
@@ -328,6 +349,48 @@ async def main():
                 "name": file_name
             })
             
+        # 3. 自动解压处理：当命令行包含 --unzip 且文件为压缩包时自动调 7z 带密码解压
+        if "--unzip" in sys.argv:
+            unzip_pwd = ""
+            if "--password" in sys.argv:
+                pwd_idx = sys.argv.index("--password")
+                if pwd_idx + 1 < len(sys.argv):
+                    unzip_pwd = sys.argv[pwd_idx + 1]
+            extracted_items = []
+            for item in downloaded_files:
+                fpath = item["path"]
+                fname = item["name"]
+                if fname.lower().endswith(('.zip', '.rar', '.7z', '.tar', '.gz', '.bz2', '.xz', '.iso')):
+                    ext_dir = os.path.join(CACHE_DIR, f"extracted_{os.path.splitext(fname)[0]}")
+                    os.makedirs(ext_dir, exist_ok=True)
+                    try: os.chmod(ext_dir, 0o777)
+                    except: pass
+                    try:
+                        cmd = ["7z", "x", f"-p{unzip_pwd}" if unzip_pwd else "-p", fpath, f"-o{ext_dir}", "-y"]
+                        proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                        out, err = await proc.communicate()
+                        if proc.returncode == 0:
+                            for root, dirs, files in os.walk(ext_dir):
+                                for d in dirs:
+                                    try: os.chmod(os.path.join(root, d), 0o777)
+                                    except: pass
+                                for f in files:
+                                    ef_path = os.path.join(root, f)
+                                    try: os.chmod(ef_path, 0o666)
+                                    except: pass
+                                    extracted_items.append({
+                                        "path": ef_path,
+                                        "type": "application/octet-stream",
+                                        "name": f
+                                    })
+                            item["extracted_dir"] = ext_dir
+                        else:
+                            item["unzip_error"] = err.decode('utf-8', errors='ignore') or out.decode('utf-8', errors='ignore')
+                    except Exception as ex:
+                        item["unzip_error"] = str(ex)
+            if extracted_items:
+                downloaded_files.extend(extracted_items)
+
         print(json.dumps({"success": True, "files": downloaded_files}))
         
     except Exception as e:
