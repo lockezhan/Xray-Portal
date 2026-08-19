@@ -6,7 +6,7 @@ import time
 import threading
 import subprocess
 import requests
-from flask import Flask, request, render_template, Response, abort, session, redirect, jsonify
+from flask import Flask, request, render_template, Response, abort, session, redirect, jsonify, send_file
 from flask import stream_with_context
 from urllib.parse import quote as url_quote
 import utils
@@ -216,6 +216,360 @@ def traffic():
     if not session.get('logged_in'):
         return redirect('/')
     return render_template('traffic.html', logged_in=True, wallpapers=utils.get_random_wallpapers())
+
+# ------------------------------------------
+# 🔑 2FA / TOTP 工具及云端同步 API
+# ------------------------------------------
+_2FA_STORAGE_FILE = "/var/lib/2fa_secrets.json"
+
+@app.route('/2fa', methods=['GET'])
+def page_2fa():
+    if not session.get('logged_in'):
+        return redirect('/')
+    return send_file('/var/www/2fa/index.html')
+
+@app.route('/api/2fa/accounts', methods=['GET'])
+def get_2fa_accounts():
+    if not session.get('logged_in'):
+        return abort(401)
+    if not os.path.exists(_2FA_STORAGE_FILE):
+        return jsonify([])
+    try:
+        with open(_2FA_STORAGE_FILE, 'r', encoding='utf-8') as f:
+            data = json.load(f)
+            return jsonify(data)
+    except Exception:
+        return jsonify([])
+
+@app.route('/api/2fa/accounts', methods=['POST'])
+def save_2fa_accounts():
+    if not session.get('logged_in'):
+        return abort(401)
+    data = request.get_json(silent=True)
+    if data is None or not isinstance(data, list):
+        return jsonify({"status": "error", "message": "Invalid payload"}), 400
+    try:
+        os.makedirs(os.path.dirname(_2FA_STORAGE_FILE), exist_ok=True)
+        tmp_file = f"{_2FA_STORAGE_FILE}.tmp"
+        with open(tmp_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp_file, _2FA_STORAGE_FILE)
+        try:
+            os.chmod(_2FA_STORAGE_FILE, 0o600)
+        except Exception:
+            pass
+        return jsonify({"status": "success"})
+    except Exception as e:
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+# ------------------------------------------
+# 📝 Markdown 在线渲染与编辑中心 API & 路由
+# ------------------------------------------
+NOTES_DIR = "/var/lib/markdown_notes"
+
+def init_notes_dir():
+    os.makedirs(NOTES_DIR, exist_ok=True)
+    welcome_file = os.path.join(NOTES_DIR, "欢迎使用 Markdown 云笔记.md")
+    if not os.path.exists(welcome_file):
+        welcome_content = r"""# 📝 欢迎使用 VPS Markdown 云端编辑器与阅读器
+
+这是一个运行在 VPS 云端的私有 Markdown 笔记管理系统，支持**实时双栏对比编辑**、**单栏沉浸阅读**和**云端持久化存储**。
+
+---
+
+## ✨ 核心特性
+
+- **⚡ 实时解析**：高效率渲染 Markdown、代码高亮与表格
+- **🖼️ 截图直接粘贴**：支持 `Ctrl+V` 剪贴板截图直接粘贴或图片拖拽，自动上传 VPS 并插入图片
+- **📖 段落折叠**：阅读模式下点击任意标题 (H1-H4) 可直接折叠/展开后续段落
+- **🔍 文档管理**：支持在线新建、重命名、搜索与一键删除
+
+---
+
+<details>
+<summary>▶️ 点击展开/折叠 Notion 风格高级折叠块示例</summary>
+
+这是一个 Notion 风格的折叠块示例，可以隐藏收纳长段落、代码或参考资料。
+
+- 支持**任意 Markdown** 格式
+- 可以内嵌代码块、列表与图片
+
+</details>
+
+---
+
+## 💻 代码高亮示例
+
+```python
+def hello_vps():
+    print("Hello, Markdown Notes on VPS!")
+    
+if __name__ == "__main__":
+    hello_vps()
+```
+
+---
+
+## 🧮 LaTeX 数学公式渲染示例
+
+- 行内公式：$d_{\text{init}} \approx 2d \text{ or } 3d$
+- 块级公式：
+$$E = mc^2 \quad \text{and} \quad \int_{0}^{\infty} e^{-x^2} dx = \frac{\sqrt{\pi}}{2}$$
+
+---
+
+## 📊 表格渲染示例
+
+| 功能模块 | 存储方式 | 安全级别 | 适用场景 |
+| :--- | :--- | :--- | :--- |
+| **Markdown 笔记** | VPS 磁盘存储 | 🔒 仅管理员鉴权可读 | 随手记、技术文档、待办列表 |
+| **2FA 密钥** | VPS 磁盘 + 本地缓存 | 🛡️ Session 安全守护 | 动态验证码管理 |
+
+---
+
+## ⌨️ 快捷键说明
+* `Ctrl + S` / `Cmd + S`：立即保存当前文档至 VPS 云端
+"""
+        try:
+            with open(welcome_file, 'w', encoding='utf-8') as f:
+                f.write(welcome_content)
+        except Exception:
+            pass
+
+def _sanitize_filename(name):
+    base = os.path.basename(name.strip())
+    if not base.endswith('.md'):
+        base += '.md'
+    return base
+
+@app.route('/notes', methods=['GET'])
+@app.route('/markdown', methods=['GET'])
+def notes_page():
+    if not session.get('logged_in'):
+        return redirect('/')
+    init_notes_dir()
+    return render_template('notes.html', logged_in=True, wallpapers=utils.get_random_wallpapers())
+
+@app.route('/api/notes/list', methods=['GET'])
+def api_notes_list():
+    if not session.get('logged_in'):
+        return abort(401)
+    init_notes_dir()
+    files = []
+    for entry in os.scandir(NOTES_DIR):
+        if entry.is_file() and entry.name.endswith('.md'):
+            stat = entry.stat()
+            files.append({
+                'name': entry.name,
+                'size': stat.st_size,
+                'mtime': int(stat.st_mtime)
+            })
+    files.sort(key=lambda x: x['mtime'], reverse=True)
+    return jsonify(files)
+
+@app.route('/api/notes/read', methods=['GET'])
+def api_notes_read():
+    if not session.get('logged_in'):
+        return abort(401)
+    filename = request.args.get('filename', '')
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
+    safe_name = _sanitize_filename(filename)
+    filepath = os.path.join(NOTES_DIR, safe_name)
+    if not os.path.exists(filepath):
+        return jsonify({'error': 'File not found'}), 404
+    try:
+        with open(filepath, 'r', encoding='utf-8') as f:
+            content = f.read()
+        return jsonify({'name': safe_name, 'content': content})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/notes/save', methods=['POST'])
+def api_notes_save():
+    if not session.get('logged_in'):
+        return abort(401)
+    data = request.get_json(silent=True) or {}
+    filename = data.get('filename', '')
+    content = data.get('content', '')
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
+    safe_name = _sanitize_filename(filename)
+    filepath = os.path.join(NOTES_DIR, safe_name)
+    try:
+        tmp_file = f"{filepath}.tmp"
+        with open(tmp_file, 'w', encoding='utf-8') as f:
+            f.write(content)
+        os.replace(tmp_file, filepath)
+        return jsonify({'status': 'success', 'name': safe_name})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/notes/delete', methods=['POST'])
+def api_notes_delete():
+    if not session.get('logged_in'):
+        return abort(401)
+    data = request.get_json(silent=True) or {}
+    filename = data.get('filename', '')
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
+    safe_name = _sanitize_filename(filename)
+    filepath = os.path.join(NOTES_DIR, safe_name)
+    if os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+            return jsonify({'status': 'success'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    return jsonify({'error': 'File not found'}), 404
+
+@app.route('/api/notes/rename', methods=['POST'])
+def api_notes_rename():
+    if not session.get('logged_in'):
+        return abort(401)
+    data = request.get_json(silent=True) or {}
+    old_name = data.get('old_filename', '')
+    new_name = data.get('new_filename', '')
+    if not old_name or not new_name:
+        return jsonify({'error': 'Old and new filenames required'}), 400
+    safe_old = _sanitize_filename(old_name)
+    safe_new = _sanitize_filename(new_name)
+    old_path = os.path.join(NOTES_DIR, safe_old)
+    new_path = os.path.join(NOTES_DIR, safe_new)
+    if not os.path.exists(old_path):
+        return jsonify({'error': 'Source file not found'}), 404
+    try:
+        os.rename(old_path, new_path)
+        return jsonify({'status': 'success', 'new_name': safe_new})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+# ------------------------------------------
+# 🖼️ Markdown 截图粘贴与图片上传 API
+# ------------------------------------------
+NOTES_IMAGES_DIR = "/var/lib/markdown_notes/images"
+
+@app.route('/api/notes/upload_image', methods=['POST'])
+def api_notes_upload_image():
+    if not session.get('logged_in'):
+        return abort(401)
+    os.makedirs(NOTES_IMAGES_DIR, exist_ok=True)
+    if 'image' not in request.files:
+        return jsonify({'error': 'No image file uploaded'}), 400
+    file = request.files['image']
+    if not file or not file.filename:
+        return jsonify({'error': 'Empty image file'}), 400
+    
+    ext = os.path.splitext(file.filename)[1].lower()
+    if ext not in ['.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp']:
+        ext = '.png'
+    
+    filename = f"img_{time.strftime('%Y%m%d_%H%M%S')}_{uuid.uuid4().hex[:8]}{ext}"
+    filepath = os.path.join(NOTES_IMAGES_DIR, filename)
+    try:
+        file.save(filepath)
+        try:
+            os.chmod(filepath, 0o666)
+        except Exception:
+            pass
+        return jsonify({
+            'status': 'success',
+            'filename': filename,
+            'url': f'/api/notes/images/{filename}'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/notes/images/<filename>', methods=['GET'])
+def api_notes_serve_image(filename):
+    if not session.get('logged_in'):
+        return abort(401)
+    safe_name = os.path.basename(filename.strip())
+    filepath = os.path.join(NOTES_IMAGES_DIR, safe_name)
+    if not os.path.exists(filepath):
+        return abort(404)
+    return send_file(filepath)
+
+@app.route('/api/notes/images/list', methods=['GET'])
+def api_notes_images_list():
+    if not session.get('logged_in'):
+        return abort(401)
+    os.makedirs(NOTES_IMAGES_DIR, exist_ok=True)
+    images = []
+    try:
+        for fname in os.listdir(NOTES_IMAGES_DIR):
+            fpath = os.path.join(NOTES_IMAGES_DIR, fname)
+            if os.path.isfile(fpath) and fname.lower().endswith(('.png', '.jpg', '.jpeg', '.gif', '.webp', '.svg', '.bmp')):
+                stat = os.stat(fpath)
+                images.append({
+                    'name': fname,
+                    'url': f'/api/notes/images/{fname}',
+                    'size': stat.st_size,
+                    'mtime': stat.st_mtime
+                })
+        images.sort(key=lambda x: x['mtime'], reverse=True)
+        return jsonify(images)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/notes/images/delete', methods=['POST'])
+def api_notes_images_delete():
+    if not session.get('logged_in'):
+        return abort(401)
+    data = request.get_json(silent=True) or {}
+    filename = data.get('filename', '')
+    if not filename:
+        return jsonify({'error': 'Filename required'}), 400
+    safe_name = os.path.basename(filename.strip())
+    filepath = os.path.join(NOTES_IMAGES_DIR, safe_name)
+    if os.path.exists(filepath):
+        try:
+            os.remove(filepath)
+            return jsonify({'status': 'success'})
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
+    return jsonify({'error': 'Image file not found'}), 404
+
+@app.route('/api/notes/images/clean_orphans', methods=['POST'])
+def api_notes_images_clean_orphans():
+    if not session.get('logged_in'):
+        return abort(401)
+    os.makedirs(NOTES_IMAGES_DIR, exist_ok=True)
+    os.makedirs(NOTES_DIR, exist_ok=True)
+    
+    referenced_images = set()
+    try:
+        all_imgs = set(os.listdir(NOTES_IMAGES_DIR))
+        for nfile in os.listdir(NOTES_DIR):
+            if nfile.endswith('.md'):
+                npath = os.path.join(NOTES_DIR, nfile)
+                try:
+                    with open(npath, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        for img in all_imgs:
+                            if img in content:
+                                referenced_images.add(img)
+                except Exception:
+                    pass
+        
+        deleted_count = 0
+        deleted_size = 0
+        for img in all_imgs:
+            fpath = os.path.join(NOTES_IMAGES_DIR, img)
+            if os.path.isfile(fpath) and img not in referenced_images:
+                try:
+                    deleted_size += os.path.getsize(fpath)
+                    os.remove(fpath)
+                    deleted_count += 1
+                except Exception:
+                    pass
+        return jsonify({
+            'status': 'success',
+            'deleted_count': deleted_count,
+            'deleted_size_kb': round(deleted_size / 1024, 1)
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/traffic', methods=['GET'])
 def api_traffic():
