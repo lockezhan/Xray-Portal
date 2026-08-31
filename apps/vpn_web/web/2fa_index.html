@@ -3,22 +3,18 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>极简 2FA / TOTP 密钥管理与验证码解析器</title>
+    <title>2FA 双因子安全认证 · 赛博工作台</title>
+    <!-- Tailwind CSS CDN -->
+    <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700&family=PingFang+SC:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@500;700;800&family=PingFang+SC:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <!-- OTPAuth 纯前端离线生成库 -->
+    <script src="https://cdn.jsdelivr.net/npm/otpauth@9.2.2/dist/otpauth.umd.min.js"></script>
+
     <style>
         :root {
-            --bg-color: #0f172a;
-            --card-bg: rgba(30, 41, 59, 0.7);
-            --card-border: rgba(255, 255, 255, 0.12);
-            --primary: #38bdf8;
-            --primary-hover: #0284c7;
-            --accent: #818cf8;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --success: #34d399;
-            --danger: #f87171;
+            --ease-spring: cubic-bezier(0.175, 0.885, 0.32, 1.275);
         }
 
         * {
@@ -29,688 +25,608 @@
         }
 
         body {
-            background: radial-gradient(circle at top, #1e293b 0%, #0f172a 100%);
-            color: var(--text-main);
+            background: radial-gradient(circle at 50% 10%, #1e1b4b 0%, #0b0f19 60%, #030712 100%);
+            color: #f8fafc;
             min-height: 100vh;
-            padding: 20px 16px 40px;
+            overflow-x: hidden;
             display: flex;
             flex-direction: column;
             align-items: center;
         }
 
-        .container {
-            width: 100%;
-            max-width: 680px;
-        }
-
-        header {
-            text-align: center;
-            margin-bottom: 24px;
-        }
-
-        header h1 {
-            font-size: 24px;
-            font-weight: 700;
-            background: linear-gradient(135deg, #38bdf8, #818cf8);
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            margin-bottom: 6px;
-        }
-
-        header p {
-            color: var(--text-muted);
-            font-size: 14px;
-        }
-
-        /* 核心即时解析区 */
-        .main-card {
-            background: var(--card-bg);
-            backdrop-filter: blur(16px);
-            -webkit-backdrop-filter: blur(16px);
-            border: 1px solid var(--card-border);
-            border-radius: 16px;
-            padding: 24px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3);
-            margin-bottom: 24px;
-        }
-
-        .form-row {
-            display: flex;
-            gap: 12px;
-            margin-bottom: 16px;
-        }
-
-        @media (max-width: 480px) {
-            .form-row {
-                flex-direction: column;
-            }
-        }
-
-        .input-group {
-            flex: 1;
-        }
-
-        .input-group label {
-            display: block;
-            font-size: 13px;
-            color: var(--text-muted);
-            margin-bottom: 6px;
-            font-weight: 500;
-        }
-
-        input[type="text"] {
-            width: 100%;
-            background: rgba(15, 23, 42, 0.6);
-            border: 1px solid rgba(255, 255, 255, 0.15);
-            border-radius: 10px;
-            padding: 12px 14px;
-            color: #fff;
-            font-size: 14px;
-            font-family: 'JetBrains Mono', monospace;
-            outline: none;
-            transition: all 0.2s ease;
-        }
-
-        input[type="text"]:focus {
-            border-color: var(--primary);
-            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
-        }
-
-        /* 验证码展示盒 */
-        .code-display-box {
-            background: rgba(15, 23, 42, 0.85);
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            border-radius: 12px;
-            padding: 20px;
-            text-align: center;
+        /* === 🌟 00Kubi (cowardly-eagle-56) 赛博 3D 悬浮卡片体系 === */
+        .cyber-container {
             position: relative;
-            margin-top: 12px;
-            overflow: hidden;
-        }
-
-        .progress-bar-bg {
-            position: absolute;
-            bottom: 0;
-            left: 0;
-            height: 4px;
-            background: rgba(255, 255, 255, 0.1);
             width: 100%;
+            max-width: 520px;
+            min-height: 380px;
+            transition: 300ms ease;
         }
 
-        .progress-bar-fill {
+        .canvas {
+            perspective: 800px;
+            position: relative;
+            width: 100%;
             height: 100%;
-            background: linear-gradient(90deg, var(--primary), var(--accent));
+        }
+
+        .cyber-card {
+            position: relative;
             width: 100%;
-            transition: width 1s linear;
-        }
-
-        .totp-code {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 44px;
-            font-weight: 700;
-            letter-spacing: 6px;
-            color: #38bdf8;
-            margin-bottom: 6px;
-            user-select: all;
-        }
-
-        .timer-info {
-            font-size: 12px;
-            color: var(--text-muted);
-        }
-
-        .action-btns {
+            height: 100%;
+            z-index: 0;
             display: flex;
-            gap: 10px;
-            margin-top: 16px;
+            flex-direction: column;
+            justify-content: space-between;
+            align-items: stretch;
+            border-radius: 2rem;
+            transition: 500ms cubic-bezier(0.16, 1, 0.3, 1);
+            background: linear-gradient(135deg, rgba(20, 24, 38, 0.88) 0%, rgba(10, 15, 29, 0.95) 100%);
+            border: 1.5px solid rgba(92, 103, 255, 0.35);
+            overflow: hidden;
+            box-shadow:
+                0 0 40px rgba(0, 0, 0, 0.6),
+                0 0 25px -5px rgba(92, 103, 255, 0.25),
+                inset 0 0 25px rgba(92, 103, 255, 0.12);
+            padding: 2.2rem;
+            backdrop-filter: blur(20px);
         }
 
-        .btn {
-            flex: 1;
-            padding: 12px;
-            border: none;
-            border-radius: 10px;
-            font-size: 14px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            display: flex;
-            justify-content: center;
+        .cyber-card:hover {
+            border-color: rgba(92, 103, 255, 0.8);
+            box-shadow:
+                0 0 50px rgba(92, 103, 255, 0.35),
+                0 0 30px rgba(0, 255, 170, 0.2),
+                inset 0 0 30px rgba(92, 103, 255, 0.2);
+            transform: translateY(-4px);
+        }
+
+        /* 3D 镜面倾斜扫光 */
+        .card-glare {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(
+                125deg,
+                rgba(255, 255, 255, 0) 0%,
+                rgba(255, 255, 255, 0.04) 45%,
+                rgba(255, 255, 255, 0.12) 50%,
+                rgba(255, 255, 255, 0.04) 55%,
+                rgba(255, 255, 255, 0) 100%
+            );
+            opacity: 0;
+            transition: opacity 300ms;
+            pointer-events: none;
+        }
+
+        .cyber-card:hover .card-glare {
+            opacity: 1;
+        }
+
+        /* 赛博动态横向光线 */
+        .cyber-lines span {
+            position: absolute;
+            background: linear-gradient(90deg, transparent, rgba(92, 103, 255, 0.4), transparent);
+            pointer-events: none;
+        }
+
+        .cyber-lines span:nth-child(1) {
+            top: 20%; left: 0; width: 100%; height: 1px;
+            transform: scaleX(0); transform-origin: left;
+            animation: lineGrow 3.5s linear infinite;
+        }
+        .cyber-lines span:nth-child(2) {
+            top: 45%; right: 0; width: 100%; height: 1px;
+            transform: scaleX(0); transform-origin: right;
+            animation: lineGrow 3.5s linear infinite 1s;
+        }
+        .cyber-lines span:nth-child(3) {
+            top: 70%; left: 0; width: 100%; height: 1px;
+            transform: scaleX(0); transform-origin: left;
+            animation: lineGrow 3.5s linear infinite 2s;
+        }
+        .cyber-lines span:nth-child(4) {
+            top: 90%; right: 0; width: 100%; height: 1px;
+            transform: scaleX(0); transform-origin: right;
+            animation: lineGrow 3.5s linear infinite 1.5s;
+        }
+
+        @keyframes lineGrow {
+            0% { transform: scaleX(0); opacity: 0; }
+            50% { transform: scaleX(1); opacity: 0.8; }
+            100% { transform: scaleX(0); opacity: 0; }
+        }
+
+        /* 垂直激光扫描线 */
+        .scan-line {
+            position: absolute;
+            inset: 0;
+            background: linear-gradient(to bottom, transparent, rgba(92, 103, 255, 0.15), transparent);
+            transform: translateY(-100%);
+            animation: scanMove 2.8s linear infinite;
+            pointer-events: none;
+        }
+
+        @keyframes scanMove {
+            0% { transform: translateY(-100%); }
+            100% { transform: translateY(100%); }
+        }
+
+        /* 四角高科技准心边框 */
+        .corner-elements span {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(92, 103, 255, 0.4);
+            transition: all 0.3s ease;
+            pointer-events: none;
+        }
+        .corner-elements span:nth-child(1) { top: 12px; left: 12px; border-right: 0; border-bottom: 0; border-top-left-radius: 6px; }
+        .corner-elements span:nth-child(2) { top: 12px; right: 12px; border-left: 0; border-bottom: 0; border-top-right-radius: 6px; }
+        .corner-elements span:nth-child(3) { bottom: 12px; left: 12px; border-right: 0; border-top: 0; border-bottom-left-radius: 6px; }
+        .corner-elements span:nth-child(4) { bottom: 12px; right: 12px; border-left: 0; border-top: 0; border-bottom-right-radius: 6px; }
+
+        .cyber-card:hover .corner-elements span {
+            border-color: rgba(0, 255, 170, 0.85);
+            box-shadow: 0 0 12px rgba(0, 255, 170, 0.5);
+        }
+
+        /* 内部发光光晕 */
+        .glowing-elements {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+        .glow-1 {
+            position: absolute;
+            top: -20px; left: 20%;
+            width: 120px; height: 120px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(0, 255, 170, 0.25) 0%, transparent 70%);
+            filter: blur(20px);
+        }
+        .glow-2 {
+            position: absolute;
+            bottom: -20px; right: 20%;
+            width: 140px; height: 140px;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(92, 103, 255, 0.3) 0%, transparent 70%);
+            filter: blur(25px);
+        }
+
+        /* === 🌟 mymiamo (yellow-rattlesnake-26) 风格 iOS 胶囊发光按钮 === */
+        .btn-mymiamo {
+            position: relative;
+            display: inline-flex;
             align-items: center;
-            gap: 6px;
+            justify-content: center;
+            border-radius: 999rem;
+            padding: 0.75rem 1.6rem;
+            font-weight: 700;
+            text-decoration: none;
+            cursor: pointer;
+            -webkit-tap-highlight-color: transparent;
+            background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
+            color: #ffffff;
+            border: 1px solid rgba(255, 255, 255, 0.35);
+            box-shadow:
+                inset 2px 2px 5px -2px rgba(255, 255, 255, 0.55),
+                inset -2px -1px 5px 0 rgba(255, 255, 255, 0.45),
+                inset 0 -2px 0 rgba(255, 255, 255, 0.25),
+                0 10px 25px -4px rgba(79, 70, 229, 0.35);
+            transition:
+                background 0.22s var(--ease-spring),
+                transform 0.22s var(--ease-spring),
+                box-shadow 0.25s ease-in-out;
         }
 
-        .btn-primary {
-            background: linear-gradient(135deg, var(--primary), var(--primary-hover));
-            color: #0f172a;
+        .btn-mymiamo:hover {
+            background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+            transform: translateY(-2px) scale(1.02);
+            box-shadow:
+                inset 2px 2px 6px -1px rgba(255, 255, 255, 0.8),
+                inset -2px -1px 6px 1px rgba(255, 255, 255, 0.6),
+                inset 0 -2px 0 rgba(255, 255, 255, 0.4),
+                0 16px 32px -6px rgba(99, 102, 241, 0.5);
         }
 
-        .btn-primary:hover {
-            opacity: 0.9;
-            transform: translateY(-1px);
+        .btn-mymiamo:active {
+            transform: scale(0.96);
         }
 
         .btn-secondary {
             background: rgba(255, 255, 255, 0.08);
-            color: var(--text-main);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-
-        .btn-secondary:hover {
-            background: rgba(255, 255, 255, 0.15);
-        }
-
-        /* 列表区域 */
-        .section-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-        }
-
-        .section-title {
-            font-size: 16px;
+            color: #e2e8f0;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 999rem;
+            padding: 0.75rem 1.4rem;
             font-weight: 600;
-        }
-
-        .search-box {
-            max-width: 200px;
-            padding: 8px 12px;
-            font-size: 13px;
-        }
-
-        .account-list {
-            display: flex;
-            flex-direction: column;
-            gap: 14px;
-        }
-
-        .account-card {
-            background: var(--card-bg);
-            border: 1px solid var(--card-border);
-            border-radius: 14px;
-            padding: 18px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
             transition: all 0.2s ease;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        .btn-secondary:hover {
+            background: rgba(255, 255, 255, 0.16);
+            transform: translateY(-1px);
         }
 
-        .account-card:hover {
-            border-color: rgba(56, 189, 248, 0.4);
-        }
-
-        .card-header-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .tag-badge {
-            display: inline-flex;
-            align-items: center;
-            gap: 4px;
-            background: rgba(56, 189, 248, 0.15);
-            color: var(--primary);
-            border: 1px solid rgba(56, 189, 248, 0.3);
-            padding: 4px 10px;
-            border-radius: 20px;
-            font-size: 13px;
-            font-weight: 600;
-        }
-
-        .secret-field-box {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            background: rgba(15, 23, 42, 0.5);
-            padding: 8px 12px;
-            border-radius: 8px;
+        /* 验证码霓虹发光文字 */
+        .totp-code-neon {
             font-family: 'JetBrains Mono', monospace;
-            font-size: 13px;
-            color: var(--text-muted);
-            word-break: break-all;
-        }
-
-        .secret-text {
-            flex: 1;
-        }
-
-        .secret-text.masked {
-            letter-spacing: 2px;
-        }
-
-        .card-body-row {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(15, 23, 42, 0.7);
-            padding: 12px 16px;
-            border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .live-code-text {
-            font-family: 'JetBrains Mono', monospace;
-            font-size: 28px;
-            font-weight: 700;
-            color: var(--primary);
-            letter-spacing: 3px;
+            font-size: 3.2rem;
+            font-weight: 800;
+            letter-spacing: 8px;
+            background: linear-gradient(45deg, #00ffaa, #00d2ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            filter: drop-shadow(0 0 20px rgba(0, 255, 170, 0.4));
             user-select: all;
-        }
-
-        .card-actions {
-            display: flex;
-            gap: 6px;
-        }
-
-        .btn-small {
-            padding: 6px 12px;
-            font-size: 12px;
-            border-radius: 6px;
-            border: none;
             cursor: pointer;
-            font-weight: 600;
-            transition: background 0.2s ease;
+            transition: transform 0.2s ease;
+        }
+        .totp-code-neon:hover {
+            transform: scale(1.04);
         }
 
-        .btn-copy-code {
-            background: rgba(56, 189, 248, 0.2);
-            color: var(--primary);
-        }
-
-        .btn-copy-code:hover {
-            background: rgba(56, 189, 248, 0.35);
-        }
-
-        .btn-copy-secret {
-            background: rgba(255, 255, 255, 0.1);
-            color: var(--text-main);
-        }
-
-        .btn-copy-secret:hover {
-            background: rgba(255, 255, 255, 0.2);
-        }
-
-        .btn-del {
-            background: rgba(248, 113, 113, 0.15);
-            color: var(--danger);
-        }
-
-        .btn-del:hover {
-            background: rgba(248, 113, 113, 0.3);
-        }
-
-        /* Toast 提示浮窗 */
-        .toast {
+        /* Toast 提示 */
+        #toast {
             position: fixed;
-            bottom: 24px;
-            left: 50%;
-            transform: translateX(-50%) translateY(100px);
-            background: #10b981;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 9999;
+            padding: 0.85rem 1.4rem;
+            border-radius: 999rem;
+            font-size: 0.875rem;
+            font-weight: 700;
             color: #fff;
-            padding: 10px 20px;
-            border-radius: 30px;
-            font-size: 14px;
-            font-weight: 600;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3);
-            transition: transform 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-            z-index: 1000;
+            background: linear-gradient(135deg, rgba(79, 70, 229, 0.95), rgba(168, 85, 247, 0.95));
+            box-shadow: 0 12px 30px rgba(0,0,0,0.35);
+            backdrop-filter: blur(16px);
+            opacity: 0;
+            transform: translateY(12px);
+            transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            pointer-events: none;
         }
-
-        .toast.show {
-            transform: translateX(-50%) translateY(0);
+        #toast.show {
+            opacity: 1;
+            transform: translateY(0);
         }
     </style>
 </head>
-<body>
 
-<div class="container">
-    <header>
-        <h1>⚡ 2FA 密钥保管与动态验证码解析器</h1>
-        <p>安全保存 2FA 原始密钥 · 实时计算 6 位验证码 · ☁️ VPS 多设备云端同步</p>
-    </header>
+<body class="p-4 sm:p-6 md:p-10">
 
-    <!-- 顶部即时解析与添加卡片 -->
-    <div class="main-card">
-        <div class="form-row">
-            <div class="input-group" style="flex: 1.2;">
-                <label for="secretInput">🔑 2FA 原始密钥 (Base32)</label>
-                <input type="text" id="secretInput" placeholder="粘贴密钥，例如: JBSWY3DPEHPK3PXP" autocomplete="off" spellcheck="false">
-            </div>
-            <div class="input-group">
-                <label for="nameInput">🏷️ 标记/名称 (便于记忆)</label>
-                <input type="text" id="nameInput" placeholder="例如: ChatGPT / 谷歌">
-            </div>
+    <!-- Toast 容器 -->
+    <div id="toast">已复制到剪贴板！</div>
+
+    <!-- 顶部导航面包屑 -->
+    <div class="w-full max-w-4xl mx-auto mb-6 flex items-center justify-between">
+        <div class="flex items-center gap-3">
+            <a href="/" class="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-bold transition-all flex items-center gap-1.5">
+                🏠 <span>首页</span>
+            </a>
+            <span class="text-slate-600">/</span>
+            <span class="text-sm font-extrabold text-white flex items-center gap-1.5">
+                🔑 <span>2FA 双因子认证</span>
+            </span>
         </div>
+        <span class="px-3 py-1 rounded-full text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5">
+            <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            纯前端本地离线运算 · 云端安全加密同步
+        </span>
+    </div>
 
-        <!-- 验证码展示区 -->
-        <div class="code-display-box" id="codeDisplayBox">
-            <div class="totp-code" id="totpCode">------</div>
-            <div class="timer-info">
-                <span>实时刷新倒计时: <strong id="timerNum">30</strong>s</span>
-            </div>
-            <div class="progress-bar-bg">
-                <div class="progress-bar-fill" id="progressBar"></div>
-            </div>
-        </div>
+    <!-- 核心区域：00Kubi 赛博 3D 验证卡片 -->
+    <div class="cyber-container my-4">
+        <div class="canvas">
+            <div class="cyber-card">
+                <!-- 镜面反光层 -->
+                <div class="card-glare"></div>
 
-        <div class="action-btns">
-            <button class="btn btn-primary" id="copyBtn">
-                📋 复制当前验证码
-            </button>
-            <button class="btn btn-secondary" id="saveBtn">
-                💾 永久保存密钥与标记
-            </button>
+                <!-- 赛博横向生长光线 -->
+                <div class="cyber-lines">
+                    <span></span><span></span><span></span><span></span>
+                </div>
+
+                <!-- 四角科技准心 -->
+                <div class="corner-elements">
+                    <span></span><span></span><span></span><span></span>
+                </div>
+
+                <!-- 垂直激光扫描线 -->
+                <div class="scan-line"></div>
+
+                <!-- 内部光晕 -->
+                <div class="glowing-elements">
+                    <div class="glow-1"></div>
+                    <div class="glow-2"></div>
+                </div>
+
+                <!-- 卡片内部核心内容 -->
+                <div class="relative z-10 flex flex-col items-center justify-between h-full">
+                    <!-- 顶部标题 -->
+                    <div class="w-full flex items-center justify-between border-b border-white/10 pb-3">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <span class="w-2.5 h-2.5 rounded-full bg-cyan-400 animate-ping shrink-0"></span>
+                            <h3 class="text-xs uppercase tracking-widest font-extrabold text-cyan-300 truncate" id="current-account-name">DEFAULT ACCOUNT</h3>
+                        </div>
+                        <span class="text-[11px] font-mono text-slate-400 shrink-0" id="period-indicator">30s 周期</span>
+                    </div>
+
+                    <!-- 中央：大号 TOTP 验证码 -->
+                    <div class="my-6 text-center" onclick="copyCurrentCode()">
+                        <div class="text-[11px] font-mono tracking-widest text-slate-400 mb-1">CURRENT OTP TOKEN (点击复制)</div>
+                        <div class="totp-code-neon" id="totp-code-display">------</div>
+                        <div class="text-xs text-slate-400 mt-2 font-mono flex items-center justify-center gap-1.5">
+                            <span>剩余有效时间:</span>
+                            <span class="text-cyan-400 font-bold text-sm" id="time-remaining">30</span>
+                            <span>秒</span>
+                        </div>
+                    </div>
+
+                    <!-- 底部：倒计时动态进度条 -->
+                    <div class="w-full">
+                        <div class="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden mb-4">
+                            <div id="progress-bar" class="h-full bg-gradient-to-r from-emerald-400 via-cyan-400 to-indigo-500 rounded-full transition-all duration-1000 ease-linear" style="width: 100%"></div>
+                        </div>
+
+                        <div class="flex gap-2.5 w-full">
+                            <button onclick="copyCurrentCode()" class="btn-mymiamo flex-1 !py-2.5 text-xs">
+                                📋 复制动态码
+                            </button>
+                            <button onclick="document.getElementById('secret-input').focus()" class="btn-secondary !py-2.5 text-xs">
+                                ✏️ 切换密钥
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </div>
     </div>
 
-    <!-- 已保存的密钥与账号列表 -->
-    <div class="section-header">
-        <div class="section-title">
-            <span>🗂️ 已保存的 2FA 密钥列表</span>
-        </div>
-        <input type="text" id="searchFilter" class="search-box" placeholder="🔍 搜索标记或密钥...">
-    </div>
-
-    <div class="account-list" id="accountList">
-        <!-- 动态生成卡片 -->
-    </div>
-</div>
-
-<div class="toast" id="toast">复制成功</div>
-
-<script>
-// Base32 解码算法
-function base32decode(base32) {
-    const base32chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
-    let bits = "";
-    let hex = "";
-    let cleanStr = base32.replace(/=+$/, '').replace(/\s+/g, '').toUpperCase();
-    for (let i = 0; i < cleanStr.length; i++) {
-        let val = base32chars.indexOf(cleanStr.charAt(i));
-        if (val === -1) continue;
-        bits += val.toString(2).padStart(5, '0');
-    }
-    for (let i = 0; i + 8 <= bits.length; i += 8) {
-        let chunk = bits.substr(i, 8);
-        hex += parseInt(chunk, 2).toString(16).padStart(2, '0');
-    }
-    let bytes = new Uint8Array(hex.length / 2);
-    for (let c = 0; c < hex.length; c += 2) {
-        bytes[c / 2] = parseInt(hex.substr(c, 2), 16);
-    }
-    return bytes;
-}
-
-// 核心 Web Crypto API TOTP 计算
-async function generateTOTP(secretBase32) {
-    if (!secretBase32) return null;
-    try {
-        const keyBytes = base32decode(secretBase32);
-        if (keyBytes.length === 0) return null;
-
-        const epoch = Math.floor(Date.now() / 1000);
-        const timeStep = 30;
-        const counter = Math.floor(epoch / timeStep);
-
-        const buffer = new ArrayBuffer(8);
-        const view = new DataView(buffer);
-        view.setUint32(4, counter, false);
-
-        const cryptoKey = await window.crypto.subtle.importKey(
-            'raw',
-            keyBytes,
-            { name: 'HMAC', hash: 'SHA-1' },
-            false,
-            ['sign']
-        );
-
-        const signature = await window.crypto.subtle.sign('HMAC', cryptoKey, buffer);
-        const sigBytes = new Uint8Array(signature);
-
-        const offset = sigBytes[sigBytes.length - 1] & 0xf;
-        const binary =
-            ((sigBytes[offset] & 0x7f) << 24) |
-            ((sigBytes[offset + 1] & 0xff) << 16) |
-            ((sigBytes[offset + 2] & 0xff) << 8) |
-            (sigBytes[offset + 3] & 0xff);
-
-        return (binary % 1000000).toString().padStart(6, '0');
-    } catch (e) {
-        return null;
-    }
-}
-
-// DOM 元素绑定
-const secretInput = document.getElementById('secretInput');
-const nameInput = document.getElementById('nameInput');
-const totpCode = document.getElementById('totpCode');
-const timerNum = document.getElementById('timerNum');
-const progressBar = document.getElementById('progressBar');
-const copyBtn = document.getElementById('copyBtn');
-const saveBtn = document.getElementById('saveBtn');
-const accountList = document.getElementById('accountList');
-const searchFilter = document.getElementById('searchFilter');
-const toast = document.getElementById('toast');
-
-let currentCode = '';
-
-function showToast(msg) {
-    toast.innerText = msg;
-    toast.classList.add('show');
-    setTimeout(() => toast.classList.remove('show'), 2200);
-}
-
-// 刷新顶部即时验证码
-async function updateMainTOTP() {
-    const secret = secretInput.value.trim();
-    if (secret) {
-        const code = await generateTOTP(secret);
-        if (code) {
-            currentCode = code;
-            totpCode.innerText = code;
-        } else {
-            totpCode.innerText = '无效密钥';
-            currentCode = '';
-        }
-    } else {
-        totpCode.innerText = '------';
-        currentCode = '';
-    }
-}
-
-// 全局 30 秒刷新倒计时
-function updateTimer() {
-    const epoch = Math.floor(Date.now() / 1000);
-    const remain = 30 - (epoch % 30);
-    timerNum.innerText = remain;
-    const pct = (remain / 30) * 100;
-    progressBar.style.width = pct + '%';
-
-    if (remain === 30 || remain === 0) {
-        updateMainTOTP();
-        renderAccounts();
-    }
-}
-
-setInterval(updateTimer, 1000);
-updateTimer();
-
-secretInput.addEventListener('input', updateMainTOTP);
-searchFilter.addEventListener('input', renderAccounts);
-
-// 复制顶部验证码
-copyBtn.addEventListener('click', () => {
-    if (currentCode && currentCode !== '------' && currentCode !== '无效密钥') {
-        navigator.clipboard.writeText(currentCode);
-        showToast('✅ 验证码已复制: ' + currentCode);
-    } else {
-        showToast('⚠️ 请先输入有效的 2FA 密钥');
-    }
-});
-
-// ☁️ 云端与本地同步存储管理
-let accountsData = [];
-
-async function loadAccounts() {
-    try {
-        const resp = await fetch('/api/2fa/accounts');
-        if (resp.ok) {
-            let cloudAccounts = await resp.json();
-            const localAccounts = JSON.parse(localStorage.getItem('2fa_accounts') || '[]');
+    <!-- 下方：密钥配置与多账号管理区 -->
+    <div class="w-full max-w-xl mx-auto mt-6 bg-slate-900/70 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl">
+        <h4 class="text-sm font-bold text-white mb-3 flex items-center gap-2">
+            <span>⚙️ 密钥输入与解析</span>
+            <span class="text-[11px] text-slate-400 font-normal">支持 Base32 密钥或 otpauth:// 协议链接</span>
+        </h4>
+        
+        <div class="space-y-3">
+            <div>
+                <input type="text" id="secret-input" oninput="onSecretChange()" placeholder="例如: JBSWY3DPEHPK3PXP 或 otpauth://totp/GitHub:user?secret=..." 
+                    class="w-full px-4 py-3 bg-slate-950/80 border border-slate-700/80 focus:border-cyan-400 rounded-2xl text-xs font-mono text-cyan-300 focus:outline-none transition-all shadow-inner">
+            </div>
             
-            // 自动迁移：如果云端为空，但本地浏览器有离线数据，自动备份同步至云端
-            if ((!cloudAccounts || cloudAccounts.length === 0) && localAccounts.length > 0) {
-                cloudAccounts = localAccounts;
-                await syncToCloud(cloudAccounts);
-            } else {
-                localStorage.setItem('2fa_accounts', JSON.stringify(cloudAccounts));
-            }
-            accountsData = cloudAccounts;
-            return accountsData;
-        }
-    } catch(e) {
-        console.error('无法连接云端 API，回落读取本地缓存:', e);
-    }
-    accountsData = JSON.parse(localStorage.getItem('2fa_accounts') || '[]');
-    return accountsData;
-}
-
-function getSavedAccounts() {
-    return accountsData;
-}
-
-async function saveAccounts(accs) {
-    accountsData = accs;
-    localStorage.setItem('2fa_accounts', JSON.stringify(accs));
-    await syncToCloud(accs);
-}
-
-async function syncToCloud(accs) {
-    try {
-        await fetch('/api/2fa/accounts', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(accs)
-        });
-    } catch(e) {
-        console.error('云端同步失败:', e);
-    }
-}
-
-// 保存新密钥
-saveBtn.addEventListener('click', async () => {
-    const secret = secretInput.value.trim();
-    const name = nameInput.value.trim() || '未命名 2FA 密钥';
-    if (!secret) {
-        showToast('⚠️ 请先输入 2FA 密钥');
-        return;
-    }
-    const accs = getSavedAccounts();
-    accs.push({ id: Date.now(), name, secret, showSecret: false });
-    await saveAccounts(accs);
-    showToast('☁️ 密钥与标记已成功同步至云端！');
-    nameInput.value = '';
-    renderAccounts();
-});
-
-// 渲染列表
-async function renderAccounts() {
-    const accs = getSavedAccounts();
-    const filter = searchFilter.value.trim().toLowerCase();
-    const filtered = accs.filter(a => a.name.toLowerCase().includes(filter) || a.secret.toLowerCase().includes(filter));
-
-    if (filtered.length === 0) {
-        accountList.innerHTML = '<div style="text-align: center; color: var(--text-muted); padding: 30px; font-size: 13px; background: var(--card-bg); border-radius: 12px; border: 1px dashed var(--card-border);">暂无包含该搜索条件的 2FA 密钥记录</div>';
-        return;
-    }
-
-    let html = '';
-    for (const acc of filtered) {
-        const code = await generateTOTP(acc.secret) || '密钥错误';
-        const isShown = acc.showSecret;
-        const displaySecret = isShown ? escapeHtml(acc.secret) : maskSecret(acc.secret);
-
-        html += `
-            <div class="account-card">
-                <div class="card-header-row">
-                    <span class="tag-badge">🏷️ ${escapeHtml(acc.name)}</span>
-                    <div style="display: flex; gap: 6px;">
-                        <button class="btn-small btn-copy-secret" onclick="copyRawSecret('${escapeHtml(acc.secret)}')" title="复制原始密钥">🔑 复制原始密钥</button>
-                        <button class="btn-small btn-del" onclick="deleteAccount(${acc.id})" title="删除">🗑️</button>
-                    </div>
-                </div>
-
-                <div class="secret-field-box">
-                    <span>密钥:</span>
-                    <span class="secret-text ${isShown ? '' : 'masked'}" id="sec-${acc.id}">${displaySecret}</span>
-                    <button class="btn-small btn-copy-secret" onclick="toggleShowSecret(${acc.id})" style="padding: 2px 6px;">${isShown ? '🙈 隐藏' : '👁️ 显示'}</button>
-                </div>
-
-                <div class="card-body-row">
-                    <div>
-                        <span style="font-size: 12px; color: var(--text-muted); display: block;">当前 6 位验证码</span>
-                        <span class="live-code-text" onclick="copyCode('${code}')" title="点击复制">${code}</span>
-                    </div>
-                    <button class="btn-small btn-copy-code" onclick="copyCode('${code}')">📋 复制验证码</button>
-                </div>
+            <div class="flex gap-2 justify-between items-center">
+                <input type="text" id="account-name-input" placeholder="账户备注 (如 GitHub / Google / Azure)" 
+                    class="flex-1 px-4 py-2.5 bg-slate-950/80 border border-slate-700/80 focus:border-cyan-400 rounded-xl text-xs text-white focus:outline-none">
+                
+                <button onclick="saveCurrentAccount()" class="btn-mymiamo !px-5 !py-2.5 !text-xs shrink-0">
+                    💾 保存至云端
+                </button>
             </div>
-        `;
-    }
-    accountList.innerHTML = html;
-}
+        </div>
 
-function maskSecret(str) {
-    if (str.length <= 8) return '••••••••';
-    return str.substr(0, 4) + ' •••••••• ' + str.substr(-4);
-}
+        <!-- 存储的账户列表 -->
+        <div class="mt-6 pt-5 border-t border-white/10">
+            <div class="flex justify-between items-center mb-3">
+                <span class="text-xs font-bold text-slate-300">📁 已保存的 2FA 账户</span>
+                <span class="text-[11px] text-slate-500 font-mono" id="saved-count">0 个账户</span>
+            </div>
+            <div id="accounts-list" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                <!-- 动态生成 -->
+            </div>
+        </div>
+    </div>
 
-window.toggleShowSecret = async (id) => {
-    let accs = getSavedAccounts();
-    const target = accs.find(a => a.id === id);
-    if (target) {
-        target.showSecret = !target.showSecret;
-        await saveAccounts(accs);
-        renderAccounts();
-    }
-};
+    <script>
+    let currentSecret = localStorage.getItem('last_2fa_secret') || "JBSWY3DPEHPK3PXP";
+    let currentAccountName = localStorage.getItem('last_2fa_name') || "Demo Account";
+    let savedAccounts = JSON.parse(localStorage.getItem('2fa_accounts') || '[]');
 
-window.copyRawSecret = (secret) => {
-    navigator.clipboard.writeText(secret);
-    showToast('🔑 原始 2FA 密钥已成功复制！');
-};
-
-window.copyCode = (code) => {
-    if (code && code !== '密钥错误') {
-        navigator.clipboard.writeText(code);
-        showToast('✅ 动态验证码已复制: ' + code);
-    }
-};
-
-window.deleteAccount = async (id) => {
-    if (confirm('确定要删除该密钥记录吗？')) {
-        let accs = getSavedAccounts();
-        accs = accs.filter(a => a.id !== id);
-        await saveAccounts(accs);
-        renderAccounts();
-        showToast('已删除记录并同步云端');
-    }
-};
-
-function escapeHtml(str) {
-    return str.replace(/[&<>"']/g, function(m) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
+    document.addEventListener('DOMContentLoaded', async () => {
+        document.getElementById('secret-input').value = currentSecret;
+        document.getElementById('account-name-input').value = currentAccountName;
+        
+        // 尝试从服务端同步云端 2FA 账户
+        await syncFromCloud();
+        renderSavedAccounts();
+        updateTOTP();
+        setInterval(updateTOTP, 1000);
     });
-}
 
-// 页面加载完成后自动拉取云端数据并初始化渲染
-(async function init() {
-    await loadAccounts();
-    renderAccounts();
-})();
-</script>
+    async function syncFromCloud() {
+        try {
+            const resp = await fetch('/api/2fa/accounts');
+            if (resp.ok) {
+                const cloudData = await resp.json();
+                if (Array.isArray(cloudData) && cloudData.length > 0) {
+                    savedAccounts = cloudData;
+                    localStorage.setItem('2fa_accounts', JSON.stringify(savedAccounts));
+                    if (!currentSecret && savedAccounts.length > 0) {
+                        currentAccountName = savedAccounts[0].name;
+                        currentSecret = savedAccounts[0].secret;
+                        document.getElementById('secret-input').value = currentSecret;
+                        document.getElementById('account-name-input').value = currentAccountName;
+                    }
+                }
+            }
+        } catch(e) {}
+    }
 
+    async function pushToCloud() {
+        try {
+            await fetch('/api/2fa/accounts', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(savedAccounts)
+            });
+        } catch(e) {}
+    }
+
+    function cleanSecret(raw) {
+        if (!raw) return "";
+        raw = raw.trim();
+        if (raw.startsWith('otpauth://')) {
+            try {
+                const parsed = OTPAuth.URI.parse(raw);
+                if (parsed && parsed.secret) {
+                    if (parsed.label) {
+                        currentAccountName = decodeURIComponent(parsed.label);
+                        document.getElementById('account-name-input').value = currentAccountName;
+                    }
+                    return parsed.secret.base32;
+                }
+            } catch(e) {}
+        }
+        return raw.replace(/[\s-]/g, '').toUpperCase();
+    }
+
+    function onSecretChange() {
+        const raw = document.getElementById('secret-input').value;
+        const cleaned = cleanSecret(raw);
+        if (cleaned) {
+            currentSecret = cleaned;
+            localStorage.setItem('last_2fa_secret', currentSecret);
+            updateTOTP(true);
+        }
+    }
+
+    function updateTOTP(immediate = false) {
+        const epoch = Math.floor(Date.now() / 1000);
+        const remaining = 30 - (epoch % 30);
+        
+        document.getElementById('time-remaining').textContent = remaining;
+        document.getElementById('progress-bar').style.width = `${(remaining / 30) * 100}%`;
+        document.getElementById('current-account-name').textContent = currentAccountName || "TOTP ACCOUNT";
+
+        try {
+            if (!currentSecret) {
+                document.getElementById('totp-code-display').textContent = "------";
+                return;
+            }
+            const totp = new OTPAuth.TOTP({
+                issuer: 'Xray-Portal',
+                label: currentAccountName,
+                algorithm: 'SHA1',
+                digits: 6,
+                period: 30,
+                secret: OTPAuth.Secret.fromBase32(currentSecret)
+            });
+            const token = totp.generate();
+            document.getElementById('totp-code-display').textContent = `${token.slice(0, 3)} ${token.slice(3)}`;
+        } catch (e) {
+            document.getElementById('totp-code-display').textContent = "INVALID";
+        }
+    }
+
+    function copyCurrentCode() {
+        const rawCode = document.getElementById('totp-code-display').textContent.replace(/\s+/g, '');
+        if (!rawCode || rawCode === '------' || rawCode === 'INVALID') return;
+        navigator.clipboard.writeText(rawCode).then(() => {
+            showToast(`已复制动态验证码: ${rawCode}`);
+        });
+    }
+
+    function showToast(msg) {
+        const t = document.getElementById('toast');
+        t.textContent = msg;
+        t.classList.add('show');
+        setTimeout(() => {
+            t.classList.remove('show');
+        }, 2200);
+    }
+
+    async function saveCurrentAccount() {
+        const secret = cleanSecret(document.getElementById('secret-input').value);
+        const name = document.getElementById('account-name-input').value.trim() || "未命名账户";
+        if (!secret) {
+            showToast("请输入有效的 Base32 密钥！");
+            return;
+        }
+
+        const idx = savedAccounts.findIndex(a => a.name === name);
+        if (idx !== -1) {
+            savedAccounts[idx].secret = secret;
+        } else {
+            savedAccounts.push({ name, secret });
+        }
+        localStorage.setItem('2fa_accounts', JSON.stringify(savedAccounts));
+        currentAccountName = name;
+        currentSecret = secret;
+        localStorage.setItem('last_2fa_name', name);
+        localStorage.setItem('last_2fa_secret', secret);
+        renderSavedAccounts();
+        await pushToCloud();
+        showToast("已安全保存并同步至云端！");
+    }
+
+    function renderSavedAccounts() {
+        const container = document.getElementById('accounts-list');
+        document.getElementById('saved-count').textContent = `${savedAccounts.length} 个账户`;
+
+        if (savedAccounts.length === 0) {
+            container.innerHTML = '<div class="text-center py-4 text-xs text-slate-500">暂无保存的账户，在上方填入后点击“保存至云端”</div>';
+            return;
+        }
+
+        container.innerHTML = "";
+        savedAccounts.forEach((acc, i) => {
+            let code = "------";
+            try {
+                const totp = new OTPAuth.TOTP({
+                    algorithm: 'SHA1',
+                    digits: 6,
+                    period: 30,
+                    secret: OTPAuth.Secret.fromBase32(acc.secret)
+                });
+                code = totp.generate();
+            } catch(e) {}
+
+            const div = document.createElement('div');
+            div.className = "flex items-center justify-between p-3 rounded-2xl bg-slate-950/60 border border-white/5 hover:border-cyan-500/40 transition-all";
+            div.innerHTML = `
+                <div class="cursor-pointer min-w-0 flex-1 mr-2" onclick="selectAccount(${i})">
+                    <div class="text-xs font-bold text-slate-200 truncate">${acc.name}</div>
+                    <div class="text-cyan-400 font-mono font-bold text-sm tracking-wider mt-0.5">${code.slice(0,3)} ${code.slice(3)}</div>
+                </div>
+                <div class="flex items-center gap-1.5 shrink-0">
+                    <button onclick="copyCodeDirect('${code}')" class="px-3 py-1.5 bg-white/10 hover:bg-cyan-500/20 text-cyan-300 rounded-full text-xs font-mono font-bold transition-all cursor-pointer">
+                        复制
+                    </button>
+                    <button onclick="deleteAccount(${i})" class="px-2.5 py-1.5 hover:bg-rose-500/20 text-rose-400 rounded-full text-xs transition-all cursor-pointer">
+                        ✕
+                    </button>
+                </div>`;
+            container.appendChild(div);
+        });
+    }
+
+    function selectAccount(index) {
+        const acc = savedAccounts[index];
+        if (!acc) return;
+        currentAccountName = acc.name;
+        currentSecret = acc.secret;
+        document.getElementById('secret-input').value = acc.secret;
+        document.getElementById('account-name-input').value = acc.name;
+        localStorage.setItem('last_2fa_name', acc.name);
+        localStorage.setItem('last_2fa_secret', acc.secret);
+        updateTOTP();
+        showToast(`已切换至: ${acc.name}`);
+    }
+
+    function copyCodeDirect(code) {
+        const raw = code.replace(/\s+/g, '');
+        navigator.clipboard.writeText(raw).then(() => {
+            showToast(`已复制动态验证码: ${raw}`);
+        });
+    }
+
+    async function deleteAccount(index) {
+        if (!confirm("确定要删除此 2FA 账户吗？")) return;
+        savedAccounts.splice(index, 1);
+        localStorage.setItem('2fa_accounts', JSON.stringify(savedAccounts));
+        renderSavedAccounts();
+        await pushToCloud();
+        showToast("已删除该账户");
+    }
+    </script>
 </body>
 </html>
