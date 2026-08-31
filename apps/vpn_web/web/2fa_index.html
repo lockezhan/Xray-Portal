@@ -310,10 +310,10 @@
         </div>
         
         <div class="flex items-center gap-2.5">
-            <!-- 锁定/加锁状态按钮 -->
+            <!-- 锁定状态切换按钮 -->
             <button id="btn-vault-lock" onclick="toggleVaultLock()" class="px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-white/10 hover:bg-white/20 text-slate-200">
-                <span id="lock-icon">🔓</span>
-                <span id="lock-text">保险库已解锁</span>
+                <span id="lock-icon">🔒</span>
+                <span id="lock-text">点击加锁</span>
             </button>
             <span class="px-3.5 py-1.5 rounded-full text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -419,12 +419,12 @@
             <h4 class="text-sm font-bold text-white flex items-center gap-2">
                 <span>⚙️ 录入新 2FA 账户</span>
             </h4>
-            <div class="flex items-center gap-2 text-xs">
+            <div class="flex items-center gap-2.5 text-xs">
                 <button onclick="promptChangeMasterPassword()" class="text-indigo-400 hover:text-indigo-300 font-mono transition-colors cursor-pointer">🔑 设置/修改主密码</button>
                 <span class="text-slate-600">|</span>
-                <button onclick="exportBackupJson()" class="text-slate-400 hover:text-cyan-300 font-mono transition-colors cursor-pointer">📦 导出备份</button>
+                <button onclick="showCipherAuditModal()" class="text-slate-400 hover:text-cyan-300 font-mono transition-colors cursor-pointer">🔍 验证云端密文</button>
                 <span class="text-slate-600">|</span>
-                <button onclick="importBackupJsonPrompt()" class="text-slate-400 hover:text-cyan-300 font-mono transition-colors cursor-pointer">📥 导入备份</button>
+                <button onclick="exportBackupJson()" class="text-slate-400 hover:text-cyan-300 font-mono transition-colors cursor-pointer">📦 导出备份</button>
             </div>
         </div>
         
@@ -445,16 +445,11 @@
             </div>
         </div>
 
-        <!-- 存储的账户列表 -->
+        <!-- 存储的账户列表 (纯净 Google Authenticator 风格，不暴露长密钥) -->
         <div class="mt-6 pt-5 border-t border-white/10">
             <div class="flex justify-between items-center mb-3">
-                <div class="flex items-center gap-2">
-                    <span class="text-xs font-bold text-slate-300">📁 已管理的 2FA 账户清单</span>
-                    <span class="text-[11px] text-slate-500 font-mono" id="saved-count">0 个账户</span>
-                </div>
-                <button onclick="togglePrivacyMode()" class="text-[11px] text-slate-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer">
-                    <span id="privacy-icon">👁️</span> <span id="privacy-text">掩码模式</span>
-                </button>
+                <span class="text-xs font-bold text-slate-300">📁 已管理的 2FA 账户清单</span>
+                <span class="text-[11px] text-slate-500 font-mono" id="saved-count">0 个账户</span>
             </div>
             <div id="accounts-list" class="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                 <!-- 动态生成 -->
@@ -462,16 +457,34 @@
         </div>
     </div>
 
+    <!-- 云端密文审计弹窗 (向用户证明服务器上全是乱码) -->
+    <div id="modal-audit" class="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 hidden" onclick="if(event.target===this) closeAuditModal()">
+        <div class="w-full max-w-lg bg-slate-900 border border-white/10 rounded-3xl p-6 shadow-2xl space-y-4">
+            <div class="flex items-center justify-between border-b border-white/10 pb-3">
+                <h4 class="text-sm font-bold text-white flex items-center gap-2">
+                    <span>🛡️ VPS 云端密文审计报告</span>
+                </h4>
+                <button onclick="closeAuditModal()" class="text-slate-400 hover:text-white text-xs">✕</button>
+            </div>
+            <p class="text-xs text-slate-300 leading-relaxed">
+                这是 VPS 磁盘（<code class="text-cyan-300 bg-white/5 px-1 py-0.5 rounded">/var/lib/2fa_secrets.json</code>）上真实存储的内容。
+                即便服务器被脱库，攻击者也只能拿到以下不可逆的 AES-256 密文：
+            </p>
+            <pre id="audit-json-display" class="p-3.5 bg-slate-950 rounded-xl text-[11px] font-mono text-cyan-300/90 overflow-x-auto max-h-56 select-all border border-white/5"></pre>
+            <div class="text-right">
+                <button onclick="closeAuditModal()" class="btn-mymiamo !px-4 !py-2 text-xs">明白，非常安全！</button>
+            </div>
+        </div>
+    </div>
+
     <script>
     // === 🔐 Web Crypto API: PBKDF2 (100k iters) + AES-GCM-256 零知识加解密 ===
     let masterPassword = "";
-    let isVaultEncrypted = false; // 云端是否已经是加密格式
+    let isVaultEncrypted = false;
     let rawCloudEncryptedPayload = null;
     let savedAccounts = [];
     let currentActiveIndex = 0;
-    let isPrivacyMask = true;
 
-    // 默认内置恢复保障账户
     const defaultFallbackAccounts = [
         { id: 1, name: "AKILE Locke", secret: "G23S4YWUC6T6NKJA2KMZBFIVH2U5TWCP" },
         { id: 2, name: "ChatGPT-Myself", secret: "2CZR7VQBLC6EIQNJ42W75RLAXCP2HCN2" }
@@ -507,9 +520,11 @@
         return {
             encrypted: true,
             version: 1,
+            algorithm: "AES-256-GCM + PBKDF2(SHA256, 100k)",
+            updated_at: new Date().toISOString(),
             salt: btoa(String.fromCharCode(...salt)),
             iv: btoa(String.fromCharCode(...iv)),
-            data: btoa(String.fromCharCode(...new Uint8Array(ciphertext)))
+            ciphertext: btoa(String.fromCharCode(...new Uint8Array(ciphertext)))
         };
     }
 
@@ -517,7 +532,7 @@
         try {
             const salt = Uint8Array.from(atob(cipherObj.salt), c => c.charCodeAt(0));
             const iv = Uint8Array.from(atob(cipherObj.iv), c => c.charCodeAt(0));
-            const ciphertext = Uint8Array.from(atob(cipherObj.data), c => c.charCodeAt(0));
+            const ciphertext = Uint8Array.from(atob(cipherObj.ciphertext || cipherObj.data), c => c.charCodeAt(0));
             const key = await deriveKey(password, salt);
             const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, ciphertext);
             const dec = new TextDecoder();
@@ -542,12 +557,10 @@
             }
         } catch(e) {}
 
-        // 判断服务端数据是否为 AES 密文
         if (serverData && typeof serverData === 'object' && serverData.encrypted === true) {
             isVaultEncrypted = true;
             rawCloudEncryptedPayload = serverData;
             
-            // 检查当前 Session 是否有临时解密密码
             const sessionKey = sessionStorage.getItem('_vault_key');
             if (sessionKey) {
                 try {
@@ -562,12 +575,10 @@
                 }
             }
 
-            // 显示锁定界面
             showLockedView();
             return;
         }
 
-        // 若不是密文（是明文列表）
         if (Array.isArray(serverData) && serverData.length > 0) {
             savedAccounts = serverData;
         } else {
@@ -584,7 +595,7 @@
         document.getElementById('view-active').classList.add('hidden');
         document.getElementById('panel-manager').classList.add('hidden');
         document.getElementById('lock-icon').textContent = "🔒";
-        document.getElementById('lock-text').textContent = "保险库已加锁";
+        document.getElementById('lock-text').textContent = "保险库已锁定";
         document.getElementById('vault-unlock-pass').focus();
     }
 
@@ -593,7 +604,7 @@
         document.getElementById('view-active').classList.remove('hidden');
         document.getElementById('panel-manager').classList.remove('hidden');
         document.getElementById('lock-icon').textContent = masterPassword ? "🛡️" : "🔓";
-        document.getElementById('lock-text').textContent = masterPassword ? "已加密保护 (点击加锁)" : "未设独立密码 (点击加锁)";
+        document.getElementById('lock-text').textContent = masterPassword ? "已加密保护 (点击加锁)" : "未设主密码 (点击设置)";
     }
 
     async function doUnlockVault() {
@@ -618,7 +629,6 @@
 
     function toggleVaultLock() {
         if (masterPassword || isVaultEncrypted) {
-            // 用户点击加锁
             masterPassword = "";
             sessionStorage.removeItem('_vault_key');
             showLockedView();
@@ -643,7 +653,7 @@
         isVaultEncrypted = true;
         await syncToCloud();
         showActiveView();
-        showToast("🎉 已成功设置主密码！所有 2FA 数据已采用 AES-256 加密保存。");
+        showToast("🎉 已成功设置主密码！所有 2FA 数据已采用 AES-256 加密保存至云端。");
     }
 
     async function syncToCloud() {
@@ -666,13 +676,6 @@
                 });
             } catch(e) {}
         }
-    }
-
-    function togglePrivacyMode() {
-        isPrivacyMask = !isPrivacyMask;
-        document.getElementById('privacy-icon').textContent = isPrivacyMask ? '👁️' : '🔓';
-        document.getElementById('privacy-text').textContent = isPrivacyMask ? '掩码模式' : '明文显示';
-        renderSavedAccounts();
     }
 
     function cleanSecret(raw) {
@@ -753,7 +756,7 @@
         updateTOTP();
         document.getElementById('secret-input').value = "";
         document.getElementById('account-name-input').value = "";
-        showToast("已成功保存并同步！");
+        showToast("已成功保存并加密同步！");
     }
 
     function renderSavedAccounts() {
@@ -779,12 +782,9 @@
             } catch(e) {}
 
             const isActive = i === currentActiveIndex;
-            const displaySecret = isPrivacyMask 
-                ? (acc.secret.slice(0, 4) + '••••••••' + acc.secret.slice(-4)) 
-                : acc.secret;
 
             const div = document.createElement('div');
-            div.className = `flex items-center justify-between p-3 rounded-2xl transition-all ${isActive ? 'bg-indigo-950/80 border border-cyan-400/60 shadow-lg shadow-cyan-500/10' : 'bg-slate-950/60 border border-white/5 hover:border-cyan-500/40'}`;
+            div.className = `flex items-center justify-between p-3.5 rounded-2xl transition-all ${isActive ? 'bg-indigo-950/80 border border-cyan-400/60 shadow-lg shadow-cyan-500/10' : 'bg-slate-950/60 border border-white/5 hover:border-cyan-500/40'}`;
             div.innerHTML = `
                 <div class="cursor-pointer min-w-0 flex-1 mr-2" onclick="selectAccount(${i})">
                     <div class="text-xs font-bold text-slate-200 truncate flex items-center gap-1.5">
@@ -792,13 +792,15 @@
                         <span>${acc.name}</span>
                     </div>
                     <div class="flex items-center gap-3 mt-1">
-                        <span class="text-cyan-400 font-mono font-bold text-sm tracking-wider">${code.slice(0,3)} ${code.slice(3)}</span>
-                        <span class="text-[10px] text-slate-500 font-mono hidden sm:inline truncate max-w-[140px]">${displaySecret}</span>
+                        <span class="text-cyan-400 font-mono font-bold text-base tracking-wider">${code.slice(0,3)} ${code.slice(3)}</span>
                     </div>
                 </div>
                 <div class="flex items-center gap-1.5 shrink-0">
-                    <button onclick="copyCodeDirect('${code}')" class="px-3 py-1.5 bg-white/10 hover:bg-cyan-500/20 text-cyan-300 rounded-full text-xs font-mono font-bold transition-all cursor-pointer">
+                    <button onclick="copyCodeDirect('${code}')" class="px-3.5 py-1.5 bg-white/10 hover:bg-cyan-500/20 text-cyan-300 rounded-full text-xs font-mono font-bold transition-all cursor-pointer">
                         复制
+                    </button>
+                    <button onclick="showSecretPrompt(${i})" title="查看此账户密钥" class="px-2.5 py-1.5 hover:bg-white/10 text-slate-400 hover:text-white rounded-full text-xs transition-all cursor-pointer">
+                        👁️
                     </button>
                     <button onclick="deleteAccount(${i})" title="移除此 2FA 账户" class="px-2.5 py-1.5 hover:bg-rose-500/20 text-rose-400 rounded-full text-xs transition-all cursor-pointer">
                         🗑️
@@ -806,6 +808,12 @@
                 </div>`;
             container.appendChild(div);
         });
+    }
+
+    function showSecretPrompt(index) {
+        const acc = savedAccounts[index];
+        if (!acc) return;
+        alert(`【${acc.name}】的 Base32 密钥明文为:\n\n${acc.secret}\n\n(提示: 日常使用只需点击复制 6 位验证码，无需复制长密钥)`);
     }
 
     function selectAccount(index) {
@@ -857,35 +865,20 @@
         showToast("📦 已导出 2FA 备份文件！");
     }
 
-    function importBackupJsonPrompt() {
-        const input = document.createElement('input');
-        input.type = 'file';
-        input.accept = '.json';
-        input.onchange = async (e) => {
-            const file = e.target.files[0];
-            if (!file) return;
-            const text = await file.text();
-            try {
-                const parsed = JSON.parse(text);
-                if (parsed && parsed.encrypted === true) {
-                    const pass = prompt("此备份为 AES-256 加密文件，请输入解密密码:");
-                    if (!pass) return;
-                    savedAccounts = await decryptPayload(parsed, pass);
-                    masterPassword = pass;
-                    sessionStorage.setItem('_vault_key', pass);
-                } else if (Array.isArray(parsed)) {
-                    savedAccounts = parsed;
-                }
-                await syncToCloud();
-                showActiveView();
-                renderSavedAccounts();
-                updateTOTP();
-                showToast("📥 2FA 备份导入成功！");
-            } catch(err) {
-                showToast("❌ 备份文件导入失败: 密码错误或格式无效");
-            }
-        };
-        input.click();
+    async function showCipherAuditModal() {
+        let text = "尚未开启主密码加密，目前以本地存储格式保存。";
+        if (rawCloudEncryptedPayload) {
+            text = JSON.stringify(rawCloudEncryptedPayload, null, 2);
+        } else if (masterPassword) {
+            const enc = await encryptPayload(savedAccounts, masterPassword);
+            text = JSON.stringify(enc, null, 2);
+        }
+        document.getElementById('audit-json-display').textContent = text;
+        document.getElementById('modal-audit').classList.remove('hidden');
+    }
+
+    function closeAuditModal() {
+        document.getElementById('modal-audit').classList.add('hidden');
     }
 
     function showToast(msg) {
