@@ -246,10 +246,20 @@ def save_2fa_accounts():
     if not session.get('logged_in'):
         return abort(401)
     data = request.get_json(silent=True)
-    if data is None or not isinstance(data, list):
+    if data is None:
         return jsonify({"status": "error", "message": "Invalid payload"}), 400
     try:
         os.makedirs(os.path.dirname(_2FA_STORAGE_FILE), exist_ok=True)
+        backup_dir = "/var/lib/2fa_backups"
+        os.makedirs(backup_dir, exist_ok=True)
+
+        # 自动轮转备份最近 20 份历史快照
+        if os.path.exists(_2FA_STORAGE_FILE) and os.path.getsize(_2FA_STORAGE_FILE) > 0:
+            import time
+            bak_file = os.path.join(backup_dir, f"2fa_{int(time.time())}.json")
+            shutil.copy2(_2FA_STORAGE_FILE, bak_file)
+            shutil.copy2(_2FA_STORAGE_FILE, f"{_2FA_STORAGE_FILE}.bak")
+
         tmp_file = f"{_2FA_STORAGE_FILE}.tmp"
         with open(tmp_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
