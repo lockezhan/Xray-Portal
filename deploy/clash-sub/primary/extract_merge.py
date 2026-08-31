@@ -1,9 +1,13 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-节点提取与合并脚本
-从Primary/Secondary原始 Clash YAML 中提取 proxies，重命名后合并到基础模板
-支持非对称故障转移、硬性阻断链式代理以及降级容灾模式
+节点提取与主从多端融合脚本
+从 Primary (主节点) 与 Secondary (副节点) 原始 Clash YAML 中提取 proxies，
+自动探测并附加地理位置国旗 Emoji，构建安全分流规则体系：
+- SENSITIVE-PRIMARY: 敏感 AI 服务 (OpenAI / Claude / Gemini / Google API / Perplexity 等) 强制走主节点
+- GENERAL-PROXY: 境外普通流量 (亚太低延迟优先 + 主节点容灾 fallback)
+- MANUAL: 手动选择组
+- 中国大陆流量直连 (GEOSITE/GEOIP, CN, DIRECT)
 """
 
 import sys
@@ -13,6 +17,8 @@ import copy
 import logging
 import tempfile
 import shutil
+import urllib.request
+import json
 from typing import List, Dict, Optional
 
 logging.basicConfig(
@@ -28,6 +34,72 @@ logger = logging.getLogger(__name__)
 EXCLUDED_TYPES = {'direct', 'reject', 'dns', 'selector', 'urltest', 'fallback', 'loadbalance'}
 REQUIRED_FIELDS = {'type', 'server', 'port'}
 CHAINED_PROXY_FIELDS = {'dialer-proxy', 'detour', 'underlying-proxy'}
+
+COUNTRY_CN_MAP = {
+    'US': '美国',
+    'KR': '韩国',
+    'JP': '日本',
+    'SG': '新加坡',
+    'HK': '香港',
+    'TW': '台湾',
+    'NL': '荷兰',
+    'DE': '德国',
+    'GB': '英国',
+    'UK': '英国',
+    'FR': '法国',
+    'CA': '加拿大',
+    'AU': '澳大利亚',
+    'RU': '俄罗斯',
+    'IN': '印度',
+    'TH': '泰国',
+    'MY': '马来西亚',
+    'VN': '越南',
+    'PH': '菲律宾',
+    'ID': '印尼',
+    'BR': '巴西',
+    'ZA': '南非',
+    'CH': '瑞士',
+    'SE': '瑞典',
+    'NO': '挪威',
+    'FI': '芬兰',
+    'IS': '冰岛',
+    'IT': '意大利',
+    'ES': '西班牙',
+    'TR': '土耳其',
+    'AE': '阿联酋',
+    'IE': '爱尔兰',
+    'PL': '波兰',
+    'UA': '乌克兰',
+    'CN': '中国',
+    'MO': '澳门',
+}
+
+_GEO_CACHE = {}
+
+def get_flag_and_name_for_ip(ip: str) -> tuple:
+    """根据 IP 探测国家国旗 Emoji 与中文名称"""
+    if not ip or ip in ('127.0.0.1', 'localhost', '1.2.3.4'):
+        return "🌐", "节点"
+    if ip in _GEO_CACHE:
+        return _GEO_CACHE[ip]
+
+    try:
+        url = f"http://ip-api.com/json/{ip}?fields=status,country,countryCode"
+        req = urllib.request.Request(url, headers={"User-Agent": "curl/7.88.1"})
+        with urllib.request.urlopen(req, timeout=2.5) as resp:
+            data = json.loads(resp.read().decode('utf-8'))
+            if data.get('status') == 'success':
+                code = data.get('countryCode', '').upper()
+                if len(code) == 2:
+                    flag = "".join(chr(127397 + ord(c)) for c in code)
+                    name = COUNTRY_CN_MAP.get(code, data.get('country', code))
+                    _GEO_CACHE[ip] = (flag, name)
+                    return flag, name
+    except Exception:
+        pass
+
+    _GEO_CACHE[ip] = ("🌐", "节点")
+    return "🌐", "节点"
 
 
 def load_yaml_safe(path: str) -> Optional[dict]:
@@ -71,7 +143,6 @@ def extract_proxies(data: dict, source_name: str) -> List[dict]:
         if ptype in EXCLUDED_TYPES:
             logger.info("跳过非远程节点: {} (type={})".format(p.get('name', '?'), ptype))
             continue
-        # 必须有 server 和 port 字段
         if 'server' not in p or 'port' not in p:
             logger.warning("节点缺少 server/port，跳过: {}".format(p.get('name', '?')))
             continue
@@ -82,7 +153,6 @@ def extract_proxies(data: dict, source_name: str) -> List[dict]:
             logger.error("[CRITICAL] 检测到节点 '{}' 含有禁用字段 {}, 本系统禁止任何链式代理！".format(
                 p.get('name', '未知'), found_chained
             ))
-            # 强行中止构建，确保漏洞不扩散
             sys.exit(1)
 
         valid.append(copy.deepcopy(p))
@@ -91,44 +161,66 @@ def extract_proxies(data: dict, source_name: str) -> List[dict]:
     return valid
 
 
-def rename_proxies(proxies: List[dict], prefix: str) -> List[dict]:
+def format_proxies_with_geo(proxies: List[dict], default_role_label: str) -> List[dict]:
     """
-    对节点统一重命名：
-    - 只有1个节点时：直接命名为 prefix
-    - 多个节点时：prefix-1, prefix-2, ...
+    为节点添加国家国旗与友好名称：
+    - 若节点原始名称已经包含 Emoji 国旗（如 🇰🇷 韩国 · IPv4），则优先沿用
+    - 若节点原始名称为机械前缀（如 MyVPS-IPv4 / PRIMARY-NODE-IPv4），则通过 server IP 自动识别
     """
     if not proxies:
         return []
-    renamed = []
-    if len(proxies) == 1:
-        p = copy.deepcopy(proxies[0])
-        p['name'] = prefix
-        renamed.append(p)
-    else:
-        for i, proxy in enumerate(proxies, 1):
-            p = copy.deepcopy(proxy)
-            p['name'] = "{}-{}".format(prefix, i)
-            renamed.append(p)
-    names = [p['name'] for p in renamed]
-    logger.info("节点重命名完成: {}".format(names))
-    return renamed
+    
+    formatted = []
+    seen_names = set()
+
+    for i, proxy in enumerate(proxies, 1):
+        p = copy.deepcopy(proxy)
+        orig_name = str(p.get('name', '')).strip()
+        server = str(p.get('server', '')).strip()
+        
+        # 判断原始名字是否已包含国旗 Emoji（Unicode > 0x1F000）
+        has_flag = any(ord(char) > 0x1F000 for char in orig_name)
+        
+        if has_flag:
+            new_name = orig_name
+        else:
+            flag, country_name = get_flag_and_name_for_ip(server)
+            net_type = "IPv6" if ":" in server else "IPv4"
+            if "legacy" in orig_name.lower():
+                net_type = "Legacy"
+            new_name = f"{flag} {country_name} · {net_type}"
+        
+        # 确保名称全局唯一
+        final_name = new_name
+        cnt = 2
+        while final_name in seen_names:
+            final_name = f"{new_name} #{cnt}"
+            cnt += 1
+
+        seen_names.add(final_name)
+        p['name'] = final_name
+        formatted.append(p)
+
+    names = [p['name'] for p in formatted]
+    logger.info("节点国旗与名称规整完成: {}".format(names))
+    return formatted
 
 
 def build_proxy_groups(primary_names: List[str], secondary_names: List[str]) -> List[dict]:
     """
-    构建非对称故障转移代理组：
-    - GENERAL-PROXY: 境外普通流量代理组，fallback 自动容灾模式（美在前，荷在后）
-    - SENSITIVE-SECONDARY: 仅能通过Secondary节点出站的敏感组，Secondary失效时强制 REJECT
+    构建主从代理组体系：
+    - SENSITIVE-PRIMARY: 敏感 AI 服务专用组 (OpenAI / Claude / Gemini / Google API / Perplexity)，强制走主节点
+    - GENERAL-PROXY: 境外普通流量代理组，fallback 自动容灾模式（香港副节点低延迟优先，主节点备用）
     - MANUAL: 手动选择组
     """
     groups = []
 
-    # 1. GENERAL-PROXY 境外普通组 (Primary优先，Secondary备用)
-    gp_proxies = primary_names + secondary_names
+    # 1. GENERAL-PROXY 境外普通组 (副节点在前，主节点备用容灾)
+    # 若有副节点（如香港），优先走亚太低延迟副节点，主节点作为 fallback 容灾
+    gp_proxies = (secondary_names + primary_names) if secondary_names else primary_names
     if not gp_proxies:
         gp_proxies = ['DIRECT']
 
-    # 从环境变量读取健康检查参数
     url = os.environ.get("PROXY_HEALTHCHECK_URL", "https://www.gstatic.com/generate_204")
     try:
         interval = int(os.environ.get("PROXY_HEALTHCHECK_INTERVAL", "300"))
@@ -151,63 +243,78 @@ def build_proxy_groups(primary_names: List[str], secondary_names: List[str]) -> 
         'max-failed-times': 2
     })
 
-    # 2. SENSITIVE-SECONDARY 敏感 AI 组 (只走Secondary，绝不回落Primary或直连)
-    if secondary_names:
+    # 2. SENSITIVE-PRIMARY 敏感 AI 业务组 (强制走主节点，绝不走香港副节点或直连)
+    if primary_names:
         groups.append({
-            'name': 'SENSITIVE-SECONDARY',
+            'name': 'SENSITIVE-PRIMARY',
             'type': 'select',
-            'proxies': secondary_names
+            'proxies': primary_names
         })
     else:
-        logger.warning("Secondary节点完全缺失，为了防止泄露，SENSITIVE-SECONDARY 代理组已退化至内置安全策略: REJECT")
+        logger.warning("主节点缺失，SENSITIVE-PRIMARY 退化至: REJECT")
         groups.append({
-            'name': 'SENSITIVE-SECONDARY',
+            'name': 'SENSITIVE-PRIMARY',
             'type': 'select',
             'proxies': ['REJECT']
         })
 
     # 3. MANUAL 手动选择组
-    manual_proxies = ['GENERAL-PROXY']
-    if secondary_names:
-        manual_proxies.append('SENSITIVE-SECONDARY')
+    manual_proxies = ['GENERAL-PROXY', 'SENSITIVE-PRIMARY']
+    manual_proxies.extend(secondary_names)
+    manual_proxies.extend(primary_names)
     manual_proxies.append('DIRECT')
+
+    # 去重
+    seen = set()
+    dedup_manual = []
+    for item in manual_proxies:
+        if item not in seen:
+            seen.add(item)
+            dedup_manual.append(item)
 
     groups.append({
         'name': 'MANUAL',
         'type': 'select',
-        'proxies': manual_proxies
+        'proxies': dedup_manual
     })
 
     return groups
 
 
 def build_rules() -> List[str]:
-    """生成分流规则（敏感规则在 MATCH 之前）"""
+    """生成分流规则（敏感 AI 域名优先走 SENSITIVE-PRIMARY）"""
     rules = []
 
-    # OpenAI / ChatGPT
-    for domain in ['chatgpt.com', 'openai.com', 'oaistatic.com', 'oaiusercontent.com',
-                   'oaistatsig.com', 'openaimerge.com']:
-        rules.append('DOMAIN-SUFFIX,{},SENSITIVE-SECONDARY'.format(domain))
+    # 1. OpenAI / ChatGPT
+    for domain in [
+        'chatgpt.com',
+        'openai.com',
+        'oaistatic.com',
+        'oaiusercontent.com',
+        'oaistatsig.com',
+        'openaimerge.com'
+    ]:
+        rules.append(f'DOMAIN-SUFFIX,{domain},SENSITIVE-PRIMARY')
 
-    # Claude
-    for domain in ['claude.ai', 'claude.com', 'anthropic.com']:
-        rules.append('DOMAIN-SUFFIX,{},SENSITIVE-SECONDARY'.format(domain))
+    # 2. Claude / Anthropic
+    rules.append('DOMAIN,claude.ai,SENSITIVE-PRIMARY')
+    rules.append('DOMAIN-SUFFIX,claude.com,SENSITIVE-PRIMARY')
+    rules.append('DOMAIN-SUFFIX,anthropic.com,SENSITIVE-PRIMARY')
 
-    # Perplexity
-    rules.append('DOMAIN-SUFFIX,perplexity.ai,SENSITIVE-SECONDARY')
+    # 3. Perplexity
+    rules.append('DOMAIN-SUFFIX,perplexity.ai,SENSITIVE-PRIMARY')
 
-    # Gemini / AI Studio
-    rules.append('DOMAIN,gemini.google.com,SENSITIVE-SECONDARY')
-    rules.append('DOMAIN,aistudio.google.com,SENSITIVE-SECONDARY')
-    rules.append('DOMAIN,generativelanguage.googleapis.com,SENSITIVE-SECONDARY')
-    rules.append('DOMAIN-SUFFIX,ai.google.dev,SENSITIVE-SECONDARY')
+    # 4. Google API & Gemini & AI Studio
+    rules.append('DOMAIN-SUFFIX,googleapis.com,SENSITIVE-PRIMARY')
+    rules.append('DOMAIN,gemini.google.com,SENSITIVE-PRIMARY')
+    rules.append('DOMAIN,aistudio.google.com,SENSITIVE-PRIMARY')
+    rules.append('DOMAIN-SUFFIX,ai.google.dev,SENSITIVE-PRIMARY')
 
-    # 中国大陆直连 (CN 流量)
+    # 5. 中国大陆直连 (CN 流量)
     rules.append('GEOSITE,CN,DIRECT')
     rules.append('GEOIP,CN,DIRECT,no-resolve')
 
-    # 其余境外普通流量走 Fallback 优先级代理组
+    # 6. 其余境外普通流量走 GENERAL-PROXY 优先级组
     rules.append('MATCH,GENERAL-PROXY')
 
     return rules
@@ -230,30 +337,19 @@ def build_base_config() -> dict:
         'dns': {
             'enable': True,
             'ipv6': True,
-            # respect-rules=True：境外域名的 DNS 查询走代理，防止 DNS 泄露
             'respect-rules': True,
-            # 使用 redir-host 而非 fake-ip：
-            # fake-ip 会将所有 DNS 查询强制走 DoH（HTTPS），
-            # 每次解析都需要额外建立 TLS 握手，延迟从 30ms 飙升到 200-400ms。
-            # redir-host 允许使用传统 UDP DNS，国内直接 30ms 内返回，
-            # 境外通过 fallback 走代理解析，整体延迟降低约 30-50%。
             'enhanced-mode': 'redir-host',
-            # 当 respect-rules 为 True 时，必须指定 proxy-server-nameserver，
-            # 否则 Mihomo 内核启动校验会报错 "if 'respect-rules' is turned on, 'proxy-server-nameserver' cannot be empty"
             'proxy-server-nameserver': [
                 '223.5.5.5',
                 '119.29.29.29',
             ],
-            # 国内 nameserver：纯 UDP 明文 DNS，延迟极低（约 20-50ms）
             'nameserver': [
-                '223.5.5.5',    # 阿里 DNS
-                '119.29.29.29', # DNSPod
+                '223.5.5.5',
+                '119.29.29.29',
             ],
-            # 境外 fallback：仅用于非 CN 域名的解析，走代理转发
-            # 保留 DoH 是为了防境外 DNS 污染，但仅在 fallback 触发时才使用
             'fallback': [
-                '8.8.8.8',         # Google DNS UDP（通过代理）
-                '1.1.1.1',         # Cloudflare DNS UDP（通过代理）
+                '8.8.8.8',
+                '1.1.1.1',
             ],
             'fallback-filter': {
                 'geoip': True,
@@ -272,13 +368,11 @@ def validate_config(config: dict) -> bool:
     groups = config.get('proxy-groups', [])
     group_names = {g['name'] for g in groups}
 
-    # 1. 检查节点名与代理组名是否产生重名交集
     overlap = proxy_names.intersection(group_names)
     if overlap:
-        logger.error("检测到节点名与代理组名发生冲突（交集）: {}".format(overlap))
+        logger.error("检测到节点名与代理组名发生冲突: {}".format(overlap))
         return False
 
-    # 2. 检查节点字段是否包含链式代理
     for p in proxies:
         name = p.get('name', '')
         for field in CHAINED_PROXY_FIELDS:
@@ -287,27 +381,9 @@ def validate_config(config: dict) -> bool:
                 logger.error("节点 '{}' 含有非法的链式依赖字段: {} = {}".format(name, field, val))
                 return False
 
-        # 交叉校验：Primary节点不得含有Secondary节点名作为其任何字段的值，反之亦然
-        for key, val in p.items():
-            if isinstance(val, str):
-                if name.startswith('SECONDARY-NODE') and 'PRIMARY-NODE' in val:
-                    logger.error("Secondary节点 '{}' 引用了Primary节点: {} = {}".format(name, key, val))
-                    return False
-                if name.startswith('PRIMARY-NODE') and 'SECONDARY-NODE' in val:
-                    logger.error("Primary节点 '{}' 引用了Secondary节点: {} = {}".format(name, key, val))
-                    return False
-
-    # 3. 检查代理组引用的节点是否存在，且执行敏感组白名单过滤
     for group in groups:
         gname = group['name']
         group_proxies = group.get('proxies', [])
-
-        # 敏感组 SENSITIVE-SECONDARY 绝不允许包含Primary节点、GENERAL-PROXY 或 DIRECT/REJECT (REJECT 策略除外)
-        if gname == 'SENSITIVE-SECONDARY':
-            for ref in group_proxies:
-                if ref == 'DIRECT' or ref == 'GENERAL-PROXY' or ref.startswith('PRIMARY-NODE'):
-                    logger.error("SENSITIVE-SECONDARY 代理组包含非法出站目的地: {}".format(ref))
-                    return False
 
         for ref in group_proxies:
             if ref in ('DIRECT', 'REJECT'):
@@ -316,7 +392,6 @@ def validate_config(config: dict) -> bool:
                 logger.error("代理组 '{}' 引用了不存在的节点/组: {}".format(gname, ref))
                 return False
 
-    # 3. 检查规则引用的代理组是否全都合法存在
     for rule in config.get('rules', []):
         parts = rule.split(',')
         if len(parts) >= 3:
@@ -339,39 +414,36 @@ def merge_and_generate(
     secondary_source: str,
     output_path: str
 ) -> bool:
-    """主合并入口（支持Primary缺失、单Secondary紧急模式构建）"""
+    """主合并入口（支持国家国旗 Emoji 渲染与精准分流）"""
     logger.info("=== 开始节点提取与合并 ===")
 
-    # 加载Primary配置
     primary_proxies_raw = []
     if os.path.isfile(primary_source):
         primary_data = load_yaml_safe(primary_source)
         if primary_data is None:
-            logger.error("Primary配置存在但解析失败，可能是损坏的文件！中止构建。")
+            logger.error("Primary配置存在但解析失败！中止构建。")
             return False
         primary_proxies_raw = extract_proxies(primary_data, 'PRIMARY')
     else:
         logger.warning("Primary配置不存在，将采用空Primary节点集进行构建。")
 
-    # 加载Secondary配置
     secondary_proxies_raw = []
     if os.path.isfile(secondary_source):
         secondary_data = load_yaml_safe(secondary_source)
         if secondary_data is None:
-            logger.error("Secondary配置存在但解析失败，可能是损坏的文件！中止构建。")
+            logger.error("Secondary配置存在但解析失败！中止构建。")
             return False
         secondary_proxies_raw = extract_proxies(secondary_data, 'SECONDARY')
     else:
         logger.warning("Secondary配置不存在，将采用空Secondary节点集进行构建。")
 
-    # 双端缺失则中止构建
     if not primary_proxies_raw and not secondary_proxies_raw:
         logger.error("Primary与Secondary配置源中均无任何有效的远程节点！中止构建。")
         return False
 
-    # 重命名节点
-    primary_proxies = rename_proxies(primary_proxies_raw, 'PRIMARY-NODE')
-    secondary_proxies = rename_proxies(secondary_proxies_raw, 'SECONDARY-NODE')
+    # 格式化节点国旗与名称
+    primary_proxies = format_proxies_with_geo(primary_proxies_raw, '主节点')
+    secondary_proxies = format_proxies_with_geo(secondary_proxies_raw, '副节点')
 
     primary_names = [p['name'] for p in primary_proxies]
     secondary_names = [p['name'] for p in secondary_proxies]
@@ -379,18 +451,15 @@ def merge_and_generate(
     logger.info("Primary可用节点: {}".format(primary_names))
     logger.info("Secondary可用节点: {}".format(secondary_names))
 
-    # 合成最终配置
     config = build_base_config()
     config['proxies'] = primary_proxies + secondary_proxies
     config['proxy-groups'] = build_proxy_groups(primary_names, secondary_names)
     config['rules'] = build_rules()
 
-    # 逻辑规则检测
     if not validate_config(config):
         logger.error("配置逻辑规则校验未通过！中止生成。")
         return False
 
-    # 写入临时文件（原子替换）
     output_dir = os.path.dirname(os.path.abspath(output_path))
     os.makedirs(output_dir, exist_ok=True)
 
@@ -400,9 +469,9 @@ def merge_and_generate(
     )
     try:
         with os.fdopen(tmp_fd, 'w', encoding='utf-8') as f:
-            f.write("# 由 rebuild-clash-subscription 自动生成\n")
+            f.write("# 由 Xray Portal 自动融合生成 (主从架构 + 敏感AI规则隔离)\n")
             f.write("# 生成时间: {}\n".format(__import__('datetime').datetime.now().isoformat()))
-            f.write("# 请勿手动修改此文件，修改将被下次构建覆盖\n\n")
+            f.write("# 包含主节点 (SENSITIVE-PRIMARY) 与附属节点 (GENERAL-PROXY)\n\n")
             yaml.dump(
                 config,
                 f,

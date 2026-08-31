@@ -1,17 +1,41 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh" class="scroll-smooth">
 
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>杨柳烟锁古今愁</title>
+    <title>杨柳烟锁古今愁 · 云端工作台</title>
+    <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
-        // Configure Tailwind to use class-based dark mode
-        tailwind.config = { darkMode: 'class' };
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f5f7ff',
+                            100: '#ebf0fe',
+                            200: '#ced9fd',
+                            300: '#a7bbfc',
+                            400: '#7a96fa',
+                            500: '#4f6ef7',
+                            600: '#344ff0',
+                            700: '#2639d6',
+                            800: '#2230ae',
+                            900: '#212c8a',
+                        }
+                    },
+                    fontFamily: {
+                        sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', '"PingFang SC"', '"Microsoft YaHei"', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'Consolas', 'Monaco', 'monospace']
+                    }
+                }
+            }
+        };
     </script>
     <script>
-        // Apply dark mode before page renders to avoid flash
+        // Apply theme before render to avoid FOUC
         (function () {
             const stored = localStorage.getItem('theme');
             if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
@@ -19,101 +43,330 @@
             }
         })();
     </script>
+
     <style>
-        @keyframes blob {
+        /* === 极光流体环境光晕 === */
+        @keyframes meshMove {
             0% { transform: translate(0px, 0px) scale(1); }
-            33% { transform: translate(30px, -50px) scale(1.1); }
-            66% { transform: translate(-20px, 20px) scale(0.9); }
+            33% { transform: translate(45px, -55px) scale(1.14) rotate(9deg); }
+            66% { transform: translate(-35px, 35px) scale(0.92) rotate(-7deg); }
             100% { transform: translate(0px, 0px) scale(1); }
         }
 
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(18px); }
-            to   { opacity: 1; transform: translateY(0); }
+        @keyframes shimmerSweep {
+            0% { transform: translateX(-100%); }
+            100% { transform: translateX(200%); }
         }
 
-        @keyframes toastIn {
-            from { opacity: 0; transform: translateY(12px) scale(0.95); }
-            to   { opacity: 1; transform: translateY(0) scale(1); }
+        @keyframes pageFadeIn {
+            from { opacity: 0; transform: translateY(12px); }
+            to { opacity: 1; transform: translateY(0); }
         }
 
-        @keyframes toastOut {
+        @keyframes toastSlideIn {
+            from { opacity: 0; transform: translateY(16px) scale(0.92); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        @keyframes toastSlideOut {
             from { opacity: 1; transform: translateY(0) scale(1); }
-            to   { opacity: 0; transform: translateY(8px) scale(0.95); }
+            to { opacity: 0; transform: translateY(10px) scale(0.94); }
         }
 
-        .animate-blob { animation: blob 7s infinite; }
-        .animation-delay-2000 { animation-delay: 2s; }
-        .animation-delay-4000 { animation-delay: 4s; }
-
-        .fade-in-up { animation: fadeInUp 0.5s ease both; }
-        .fade-delay-1 { animation-delay: 0.08s; }
-        .fade-delay-2 { animation-delay: 0.16s; }
-
-        .bg-slide {
-            position: absolute;
-            top: 0; left: 0; right: 0; bottom: 0;
-            background-size: cover;
-            background-position: center;
-            opacity: 0;
-            transition: opacity 1.5s ease-in-out;
-            transform: scale(1.05);
+        @keyframes navGlowShift {
+            0% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+            100% { background-position: 0% 50%; }
         }
 
-        .bg-slide.active {
-            opacity: 1;
-            transform: scale(1);
-            transition: opacity 1.5s ease-in-out, transform 10s linear;
+        .animate-mesh-1 { animation: meshMove 14s ease-in-out infinite alternate; }
+        .animate-mesh-2 { animation: meshMove 18s ease-in-out infinite alternate-reverse; }
+        .animate-mesh-3 { animation: meshMove 16s ease-in-out 2s infinite alternate; }
+
+        .page-enter {
+            animation: pageFadeIn 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
         }
 
+        /* === 🍎 Apple Liquid Glass / VisionOS 液态毛玻璃 === */
+        .liquid-glass {
+            position: relative;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.42) 100%);
+            backdrop-filter: blur(32px) saturate(210%) contrast(105%) brightness(104%);
+            -webkit-backdrop-filter: blur(32px) saturate(210%) contrast(105%) brightness(104%);
+            border: 1px solid rgba(255, 255, 255, 0.65);
+            border-top: 1px solid rgba(255, 255, 255, 0.95);
+            border-left: 1px solid rgba(255, 255, 255, 0.85);
+            box-shadow: 
+                0 20px 40px -15px rgba(0, 0, 0, 0.05),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.8),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.02);
+            border-radius: 2.2rem;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+
+        .dark .liquid-glass {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.72) 0%, rgba(15, 23, 42, 0.78) 100%);
+            backdrop-filter: blur(34px) saturate(220%) contrast(110%);
+            -webkit-backdrop-filter: blur(34px) saturate(220%) contrast(110%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.22);
+            border-left: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 
+                0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.25),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        /* 兼容原有 glass-panel 类 */
         .glass-panel {
-            background-color: rgba(255, 255, 255, 0.65);
-            backdrop-filter: blur(20px);
-            -webkit-backdrop-filter: blur(20px);
-            border: 1px solid rgba(255, 255, 255, 0.8);
-            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.05);
+            position: relative;
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.72) 0%, rgba(255, 255, 255, 0.42) 100%);
+            backdrop-filter: blur(32px) saturate(210%) contrast(105%) brightness(104%);
+            -webkit-backdrop-filter: blur(32px) saturate(210%) contrast(105%) brightness(104%);
+            border: 1px solid rgba(255, 255, 255, 0.65);
+            border-top: 1px solid rgba(255, 255, 255, 0.95);
+            border-left: 1px solid rgba(255, 255, 255, 0.85);
+            box-shadow: 
+                0 20px 40px -15px rgba(0, 0, 0, 0.05),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.8),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.02);
+            border-radius: 2.2rem;
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
         }
 
-        /* Dark mode glass panel */
         .dark .glass-panel {
-            background-color: rgba(30, 41, 59, 0.75);
-            border-color: rgba(255, 255, 255, 0.08);
-            box-shadow: 0 10px 40px -10px rgba(0, 0, 0, 0.3);
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.72) 0%, rgba(15, 23, 42, 0.78) 100%);
+            backdrop-filter: blur(34px) saturate(220%) contrast(110%);
+            -webkit-backdrop-filter: blur(34px) saturate(220%) contrast(110%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.22);
+            border-left: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: 
+                0 25px 50px -12px rgba(0, 0, 0, 0.5),
+                inset 0 1px 1px 0 rgba(255, 255, 255, 0.25),
+                inset 0 -1px 2px 0 rgba(0, 0, 0, 0.4);
+        }
+
+        /* 苹果液态微交互 Hover 升起 */
+        .liquid-hover {
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .liquid-hover:hover {
+            transform: translateY(-4px) scale(1.004);
+            box-shadow: 
+                0 30px 60px -15px rgba(79, 70, 229, 0.15),
+                0 0 25px -3px rgba(99, 102, 241, 0.12),
+                inset 0 1px 2px 0 rgba(255, 255, 255, 0.95);
+            border-color: rgba(99, 102, 241, 0.35);
+            border-top-color: rgba(255, 255, 255, 1);
+        }
+        .dark .liquid-hover:hover {
+            transform: translateY(-4px) scale(1.004);
+            box-shadow: 
+                0 35px 70px -15px rgba(0, 0, 0, 0.7),
+                0 0 30px -2px rgba(99, 102, 241, 0.25),
+                inset 0 1px 2px 0 rgba(255, 255, 255, 0.4);
+            border-color: rgba(129, 140, 248, 0.4);
+            border-top-color: rgba(255, 255, 255, 0.35);
+        }
+
+        .glass-card-hover {
+            transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .glass-card-hover:hover {
+            transform: translateY(-4px) scale(1.004);
+            box-shadow: 
+                0 30px 60px -15px rgba(79, 70, 229, 0.15),
+                0 0 25px -3px rgba(99, 102, 241, 0.12),
+                inset 0 1px 2px 0 rgba(255, 255, 255, 0.95);
+            border-color: rgba(99, 102, 241, 0.35);
+            border-top-color: rgba(255, 255, 255, 1);
+        }
+        .dark .glass-card-hover:hover {
+            transform: translateY(-4px) scale(1.004);
+            box-shadow: 
+                0 35px 70px -15px rgba(0, 0, 0, 0.7),
+                0 0 30px -2px rgba(99, 102, 241, 0.25),
+                inset 0 1px 2px 0 rgba(255, 255, 255, 0.4);
+            border-color: rgba(129, 140, 248, 0.4);
+            border-top-color: rgba(255, 255, 255, 0.35);
+        }
+
+        /* 内部高亮子卡片 */
+        .liquid-sub-card {
+            background: rgba(255, 255, 255, 0.55);
+            backdrop-filter: blur(16px);
+            -webkit-backdrop-filter: blur(16px);
+            border: 1px solid rgba(255, 255, 255, 0.75);
+            border-top: 1px solid rgba(255, 255, 255, 0.95);
+            border-radius: 1.25rem;
+            box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.8), 0 4px 12px rgba(0,0,0,0.02);
+        }
+        .dark .liquid-sub-card {
+            background: rgba(0, 0, 0, 0.28);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-top: 1px solid rgba(255, 255, 255, 0.16);
+            box-shadow: inset 0 1px 1px 0 rgba(255, 255, 255, 0.08), 0 4px 12px rgba(0,0,0,0.2);
+        }
+
+        /* 顶部悬浮毛玻璃导航条 */
+        .floating-navbar {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.85) 0%, rgba(255, 255, 255, 0.6) 100%);
+            backdrop-filter: blur(28px) saturate(210%);
+            -webkit-backdrop-filter: blur(28px) saturate(210%);
+            border: 1px solid rgba(255, 255, 255, 0.85);
+            border-top: 1px solid rgba(255, 255, 255, 1);
+            box-shadow: 0 12px 35px -8px rgba(0, 0, 0, 0.06), inset 0 1px 1px 0 rgba(255, 255, 255, 0.9);
+        }
+        .dark .floating-navbar {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.85) 0%, rgba(15, 23, 42, 0.88) 100%);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-top: 1px solid rgba(255, 255, 255, 0.25);
+            box-shadow: 0 12px 40px -10px rgba(0, 0, 0, 0.6), inset 0 1px 1px 0 rgba(255, 255, 255, 0.2);
+        }
+
+        .nav-link-pill {
+            position: relative;
+            transition: all 0.25s ease;
+        }
+        .nav-link-pill.active {
+            color: #4f46e5;
+            background: rgba(99, 102, 241, 0.12);
+            font-weight: 700;
+        }
+        .dark .nav-link-pill.active {
+            color: #a5b4fc;
+            background: rgba(99, 102, 241, 0.22);
+        }
+
+        #nano-progress {
+            position: fixed;
+            top: 0;
+            left: 0;
+            height: 2.5px;
+            width: 0%;
+            background: linear-gradient(90deg, #6366f1, #38bdf8, #ec4899, #6366f1);
+            background-size: 200% 100%;
+            animation: navGlowShift 2s linear infinite;
+            z-index: 10000;
+            transition: width 0.3s ease, opacity 0.3s ease;
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .btn-shimmer {
+            position: relative;
+            overflow: hidden;
+        }
+        .btn-shimmer::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 60%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.35), transparent);
+            transform: skewX(-20deg);
+        }
+        .btn-shimmer:hover::after {
+            animation: shimmerSweep 1s ease-in-out infinite;
+        }
+
+        .ripple-btn {
+            position: relative;
+            overflow: hidden;
+        }
+        .ripple-btn::after {
+            content: "";
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            pointer-events: none;
+            background-image: radial-gradient(circle, #fff 10%, transparent 10.01%);
+            background-repeat: no-repeat;
+            background-position: 50%;
+            transform: scale(10, 10);
+            opacity: 0;
+            transition: transform .5s, opacity 1s;
+        }
+        .ripple-btn:active::after {
+            transform: scale(0, 0);
+            opacity: .3;
+            transition: 0s;
+        }
+
+        /* === Grid 丝滑折叠动画 === */
+        .nav-category-body {
+            display: grid;
+            grid-template-rows: 0fr;
+            opacity: 0;
+            transition: grid-template-rows 0.32s cubic-bezier(0.16, 1, 0.3, 1), opacity 0.25s ease;
+        }
+        .nav-category-body > div {
+            overflow: hidden;
+        }
+        .nav-category-body.open {
+            grid-template-rows: 1fr;
+            opacity: 1;
+        }
+        .nav-category-chevron {
+            transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+        }
+        .nav-category-chevron.open {
+            transform: rotate(180deg);
         }
 
         /* Toast styles */
         #toast-container {
             position: fixed;
-            bottom: 1.5rem;
-            right: 1.5rem;
+            bottom: 2rem;
+            right: 2rem;
             z-index: 9999;
             display: flex;
             flex-direction: column;
-            gap: 0.5rem;
+            gap: 0.6rem;
             pointer-events: none;
         }
 
         .toast {
             display: flex;
             align-items: center;
-            gap: 0.6rem;
-            padding: 0.75rem 1.1rem;
-            border-radius: 1rem;
+            gap: 0.75rem;
+            padding: 0.85rem 1.25rem;
+            border-radius: 1.25rem;
             font-size: 0.875rem;
             font-weight: 600;
             color: #fff;
             pointer-events: auto;
-            animation: toastIn 0.28s ease both;
-            box-shadow: 0 8px 24px -4px rgba(0,0,0,0.18);
-            min-width: 220px;
-            max-width: 320px;
+            animation: toastSlideIn 0.32s cubic-bezier(0.16, 1, 0.3, 1) both;
+            box-shadow: 0 12px 30px -4px rgba(0,0,0,0.22);
+            min-width: 240px;
+            max-width: 380px;
+            backdrop-filter: blur(16px);
         }
 
-        .toast.success { background: linear-gradient(135deg, #6366f1, #a855f7); }
-        .toast.error   { background: linear-gradient(135deg, #ef4444, #f97316); }
-        .toast.leaving { animation: toastOut 0.28s ease both; }
+        .toast.success { background: linear-gradient(135deg, rgba(79, 70, 229, 0.92), rgba(168, 85, 247, 0.92)); }
+        .toast.error   { background: linear-gradient(135deg, rgba(239, 68, 68, 0.92), rgba(249, 115, 22, 0.92)); }
+        .toast.leaving { animation: toastSlideOut 0.25s ease both; }
 
-        /* Carousel dot indicators */
+        /* 壁纸轮播 */
+        .bg-slide {
+            position: absolute;
+            inset: 0;
+            background-size: cover;
+            background-position: center;
+            opacity: 0;
+            transition: opacity 1.2s ease-in-out, transform 8s linear;
+            transform: scale(1.06);
+        }
+
+        .bg-slide.active {
+            opacity: 1;
+            transform: scale(1);
+        }
+
         .carousel-dot {
             width: 6px; height: 6px;
             border-radius: 9999px;
@@ -125,80 +378,286 @@
         }
         .carousel-dot.active {
             background: #fff;
-            width: 18px;
+            width: 20px;
         }
 
-        /* Dark mode overrides for text/bg */
-        .dark body { color: #e2e8f0; }
-        .dark .dark-text { color: #cbd5e1; }
-        .dark .nav-item:hover { background: rgba(255,255,255,0.07) !important; }
-        .dark .inbound-card { background: rgba(255,255,255,0.05) !important; border-color: rgba(255,255,255,0.08) !important; }
-        .dark .link-row { background: rgba(255,255,255,0.04) !important; border-color: rgba(255,255,255,0.1) !important; }
-        .dark .link-row:hover { background: rgba(255,255,255,0.1) !important; border-color: #818cf8 !important; }
-        .dark .bg-blob-1 { background-color: rgba(139,92,246,0.25); }
-        .dark .bg-blob-2 { background-color: rgba(59,130,246,0.25); }
-        .dark .bg-blob-3 { background-color: rgba(236,72,153,0.25); }
+        /* 模态框动画 */
+        @keyframes modalBackdropIn { from { opacity: 0; } to { opacity: 1; } }
+        @keyframes modalBackdropOut { from { opacity: 1; } to { opacity: 0; } }
+        @keyframes modalPopIn {
+            from { opacity: 0; transform: scale(0.94) translateY(12px); }
+            to { opacity: 1; transform: scale(1) translateY(0); }
+        }
+        @keyframes modalPopOut {
+            from { opacity: 1; transform: scale(1) translateY(0); }
+            to { opacity: 0; transform: scale(0.96) translateY(8px); }
+        }
+        #version-modal { animation: modalBackdropIn 0.2s ease both; }
+        #version-modal.modal-closing { animation: modalBackdropOut 0.2s ease both; }
+        #version-modal .modal-card { animation: modalPopIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) both; }
+        #version-modal.modal-closing .modal-card { animation: modalPopOut 0.2s ease both; }
 
-        /* Mobile modal scroll smoothing */
-        .modal-scroll { -webkit-overflow-scrolling: touch; }
-
-        /* Version-detail modal animations */
-        @keyframes backdropFadeIn {
-            from { opacity: 0; }
-            to   { opacity: 1; }
-        }
-        @keyframes backdropFadeOut {
-            from { opacity: 1; }
-            to   { opacity: 0; }
-        }
-        @keyframes modalCardIn {
-            from { opacity: 0; transform: translateY(14px) scale(0.96); }
-            to   { opacity: 1; transform: translateY(0)    scale(1);    }
-        }
-        @keyframes modalCardOut {
-            from { opacity: 1; transform: translateY(0)   scale(1);    }
-            to   { opacity: 0; transform: translateY(8px) scale(0.97); }
-        }
-
-        #version-modal                 { animation: backdropFadeIn  0.22s ease both; }
-        #version-modal.modal-closing   { animation: backdropFadeOut 0.2s  ease both; }
-        #version-modal .modal-card     { animation: modalCardIn  0.28s cubic-bezier(0.34, 1.3, 0.64, 1) both; }
-        #version-modal.modal-closing .modal-card { animation: modalCardOut 0.2s ease both; }
-
-        /* Constrain the modal card height within the viewport */
-        .modal-card-inner { max-height: min(88vh, 540px); }
-
-        /* Collapsible nav category styles */
-        .nav-category-body {
-            overflow: hidden;
-            transition: max-height 0.35s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s ease;
-            max-height: 0;
-            opacity: 0;
-        }
-        .nav-category-body.open {
-            max-height: 1000px;
-            opacity: 1;
-        }
-        .nav-category-chevron {
-            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        }
-        .nav-category-chevron.open {
-            transform: rotate(180deg);
-        }
+        ::-webkit-scrollbar { width: 6px; height: 6px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: rgba(148, 163, 184, 0.3); border-radius: 999px; }
+        ::-webkit-scrollbar-thumb:hover { background: rgba(99, 102, 241, 0.6); }
+        .dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); }
+        .dark ::-webkit-scrollbar-thumb:hover { background: rgba(129, 140, 248, 0.5); }
     </style>
 </head>
 
-<body
-    class="text-slate-800 dark:text-slate-200 font-sans antialiased min-h-screen relative overflow-x-hidden selection:bg-indigo-200 selection:text-indigo-900 dark:bg-slate-900 transition-colors duration-300">
+<body class="text-slate-800 dark:text-slate-100 font-sans antialiased min-h-screen relative overflow-x-hidden selection:bg-indigo-500 selection:text-white dark:bg-[#0b0f19] transition-colors duration-500">
+
+    <!-- 顶部极光流光加载进度条 -->
+    <div id="nano-progress"></div>
+
+    <!-- 背景色散光斑 (Ambient Mesh) -->
+    <div class="fixed inset-0 w-full h-full -z-10 pointer-events-none overflow-hidden">
+        <div class="absolute -top-[20%] -left-[10%] w-[650px] h-[650px] rounded-full bg-gradient-to-br from-indigo-400/20 via-purple-300/15 to-transparent dark:from-indigo-600/18 dark:via-purple-800/12 filter blur-[100px] animate-mesh-1"></div>
+        <div class="absolute top-[20%] -right-[10%] w-[600px] h-[600px] rounded-full bg-gradient-to-bl from-sky-300/25 via-blue-400/15 to-transparent dark:from-sky-600/12 dark:via-indigo-900/18 filter blur-[110px] animate-mesh-2"></div>
+        <div class="absolute -bottom-[15%] left-[25%] w-[750px] h-[650px] rounded-full bg-gradient-to-tr from-pink-300/18 via-purple-400/15 to-transparent dark:from-pink-900/12 dark:via-purple-900/12 filter blur-[120px] animate-mesh-3"></div>
+    </div>
+
+    <!-- 全局统一悬浮毛玻璃导航胶囊 (Floating Navbar) -->
+    <header class="sticky top-4 z-50 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mb-4">
+        <nav class="floating-navbar rounded-2xl sm:rounded-full px-4 sm:px-6 py-2.5 flex items-center justify-between transition-all duration-300">
+            <!-- 品牌与在线状态 -->
+            <div class="flex items-center gap-3">
+                <a href="/" class="flex items-center gap-2.5 group">
+                    <span class="w-8 h-8 rounded-xl bg-gradient-to-tr from-indigo-500 via-indigo-600 to-purple-600 text-white flex items-center justify-center shadow-md group-hover:scale-105 group-hover:shadow-indigo-500/30 transition-all">
+                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                        </svg>
+                    </span>
+                    <div class="hidden sm:block">
+                        <div class="text-sm font-extrabold tracking-tight bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-800 dark:from-white dark:via-indigo-200 dark:to-slate-200 bg-clip-text text-transparent">
+                            杨柳烟锁古今愁
+                        </div>
+                    </div>
+                </a>
+                <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-50 text-emerald-600 border border-emerald-200/60 dark:bg-emerald-500/10 dark:text-emerald-400 dark:border-emerald-500/20 shadow-sm">
+                    <span class="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    <span class="hidden md:inline">Online</span>
+                </span>
+            </div>
+
+            <!-- 核心导航 Tab 切换 (桌面端) -->
+            <div class="hidden md:flex items-center gap-1 p-1 bg-slate-100/60 dark:bg-white/5 rounded-full border border-slate-200/40 dark:border-white/5">
+                <a href="/" class="nav-link-pill px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1.5" data-route="/">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"/>
+                    </svg>
+                    节点订阅
+                </a>
+                <a href="/notes" class="nav-link-pill px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1.5" data-route="/notes">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/>
+                    </svg>
+                    云笔记
+                </a>
+                <a href="/cloud" class="nav-link-pill px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1.5" data-route="/cloud">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"/>
+                    </svg>
+                    私有云盘
+                </a>
+                <a href="/traffic" class="nav-link-pill px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1.5" data-route="/traffic">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"/>
+                    </svg>
+                    流量大盘
+                </a>
+                <a href="/2fa" target="_blank" class="nav-link-pill px-3.5 py-1.5 rounded-full text-xs font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 dark:hover:text-indigo-400 flex items-center gap-1.5">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 7a2 2 0 012 2m4 0a6 6 0 01-7.743 5.743L11 17H9v2H7v2H4a1 1 0 01-1-1v-2.586a1 1 0 01.293-.707l5.964-5.964A6 6 0 1121 9z"/>
+                    </svg>
+                    2FA 工具
+                </a>
+            </div>
+
+            <!-- 右侧小部件（时钟 / 昼夜主题 / 移动端汉堡） -->
+            <div class="flex items-center gap-2">
+                <!-- 极简胶囊时钟 -->
+                <div class="hidden xl:flex items-center gap-1.5 px-3 py-1 bg-slate-100/70 dark:bg-white/5 rounded-full border border-slate-200/50 dark:border-white/5 text-[11px] font-mono text-slate-600 dark:text-slate-300 tabular-nums">
+                    <span id="nav-clock">--:--:--</span>
+                </div>
+
+                <!-- 昼夜切换按钮 -->
+                <button id="theme-toggle-btn" aria-label="切换深浅主题" class="w-9 h-9 rounded-full flex items-center justify-center bg-slate-100/80 dark:bg-white/10 text-slate-600 dark:text-amber-300 hover:scale-105 active:scale-95 transition-all shadow-sm border border-slate-200/60 dark:border-white/10 cursor-pointer">
+                    <svg id="nav-sun" class="w-4 h-4 hidden transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                    </svg>
+                    <svg id="nav-moon" class="w-4 h-4 transition-transform duration-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+                    </svg>
+                </button>
+
+                <!-- 移动端汉堡折叠按钮 -->
+                <button id="mobile-menu-btn" aria-label="打开移动菜单" class="md:hidden w-9 h-9 rounded-full flex items-center justify-center bg-slate-100/80 dark:bg-white/10 text-slate-700 dark:text-slate-200 hover:bg-slate-200 dark:hover:bg-white/20 transition-all border border-slate-200/60 dark:border-white/10 cursor-pointer">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16m-7 6h7"/>
+                    </svg>
+                </button>
+            </div>
+        </nav>
+
+        <!-- 移动端折叠抽屉菜单 -->
+        <div id="mobile-menu" class="hidden md:hidden mt-2 p-3 floating-navbar rounded-2xl space-y-1 transition-all duration-300 page-enter">
+            <a href="/" class="block px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-white/10 hover:text-indigo-600 transition-colors" data-route="/">🏠 节点订阅</a>
+            <a href="/notes" class="block px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-white/10 hover:text-indigo-600 transition-colors" data-route="/notes">📝 Markdown 云笔记</a>
+            <a href="/cloud" class="block px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-white/10 hover:text-indigo-600 transition-colors" data-route="/cloud">☁️ 私有云盘与离线拉取</a>
+            <a href="/traffic" class="block px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-white/10 hover:text-indigo-600 transition-colors" data-route="/traffic">📊 流量与安全大盘</a>
+            <a href="/2fa" target="_blank" class="block px-4 py-2.5 rounded-xl text-xs font-bold text-slate-700 dark:text-slate-200 hover:bg-indigo-50 dark:hover:bg-white/10 hover:text-indigo-600 transition-colors">🔑 2FA 双因子认证</a>
+        </div>
+    </header>
 
     {% include 'partials/toast.html' %}
     {% include 'partials/version_modal.html' %}
-    {% include 'partials/background_blobs.html' %}
 
-    {% block content %}{% endblock %}
+    <main class="page-enter">
+        {% block content %}{% endblock %}
+    </main>
 
     <script>
-        // Collapsible nav category toggle
+        (function highlightActiveRoute() {
+            const currentPath = window.location.pathname;
+            document.querySelectorAll('[data-route]').forEach(el => {
+                const route = el.getAttribute('data-route');
+                if ((route === '/' && currentPath === '/') || (route !== '/' && currentPath.startsWith(route))) {
+                    el.classList.add('active');
+                } else {
+                    el.classList.remove('active');
+                }
+            });
+        })();
+
+        (function initPageTransition() {
+            const progress = document.getElementById('nano-progress');
+            document.querySelectorAll('a[href^="/"]').forEach(link => {
+                const target = link.getAttribute('href');
+                if (target.startsWith('/api') || target.startsWith('/logout') || link.getAttribute('target') === '_blank') return;
+                link.addEventListener('click', (e) => {
+                    if (e.metaKey || e.ctrlKey || e.shiftKey) return;
+                    if (target === window.location.pathname) return;
+                    if (progress) {
+                        progress.style.opacity = '1';
+                        progress.style.width = '70%';
+                    }
+                });
+            });
+            window.addEventListener('beforeunload', () => {
+                if (progress) progress.style.width = '100%';
+            });
+        })();
+
+        const mobileMenuBtn = document.getElementById('mobile-menu-btn');
+        const mobileMenu = document.getElementById('mobile-menu');
+        if (mobileMenuBtn && mobileMenu) {
+            mobileMenuBtn.addEventListener('click', () => {
+                mobileMenu.classList.toggle('hidden');
+            });
+        }
+
+        const themeBtn = document.getElementById('theme-toggle-btn');
+        const navSun = document.getElementById('nav-sun');
+        const navMoon = document.getElementById('nav-moon');
+
+        function updateThemeIcons(isDark) {
+            if (isDark) {
+                document.documentElement.classList.add('dark');
+                navSun?.classList.remove('hidden');
+                navMoon?.classList.add('hidden');
+            } else {
+                document.documentElement.classList.remove('dark');
+                navSun?.classList.add('hidden');
+                navMoon?.classList.remove('hidden');
+            }
+        }
+        updateThemeIcons(document.documentElement.classList.contains('dark'));
+
+        if (themeBtn) {
+            themeBtn.addEventListener('click', () => {
+                const isDark = document.documentElement.classList.contains('dark');
+                localStorage.setItem('theme', isDark ? 'light' : 'dark');
+                updateThemeIcons(!isDark);
+            });
+        }
+
+        function updateNavClock() {
+            const now = new Date();
+            const hh = String(now.getHours()).padStart(2, '0');
+            const mm = String(now.getMinutes()).padStart(2, '0');
+            const ss = String(now.getSeconds()).padStart(2, '0');
+            const navClockEl = document.getElementById('nav-clock');
+            if (navClockEl) navClockEl.textContent = `${hh}:${mm}:${ss}`;
+
+            const clockTime = document.getElementById('clock-time');
+            if (clockTime) clockTime.textContent = `${hh}:${mm}:${ss}`;
+
+            const days = ['日', '一', '二', '三', '四', '五', '六'];
+            const dateEl = document.getElementById('clock-date');
+            if (dateEl) {
+                dateEl.textContent = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 星期${days[now.getDay()]}`;
+            }
+        }
+        updateNavClock();
+        setInterval(updateNavClock, 1000);
+
+        function showToast(message, type = 'success') {
+            const container = document.getElementById('toast-container');
+            if (!container) return;
+            const toast = document.createElement('div');
+            toast.className = `toast ${type}`;
+
+            const iconSvg = type === 'success'
+                ? `<svg class="w-5 h-5 shrink-0 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`
+                : `<svg class="w-5 h-5 shrink-0 text-rose-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>`;
+
+            toast.innerHTML = iconSvg + `<span class="flex-1">${message}</span>`;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.classList.add('leaving');
+                toast.addEventListener('animationend', () => toast.remove(), { once: true });
+            }, 3200);
+        }
+
+        function copyToClipboard(text, btnElement = null) {
+            const copyText = typeof text === 'object' ? JSON.stringify(text, null, 2) : text;
+            const originalHtml = btnElement ? btnElement.innerHTML : null;
+
+            const handleSuccess = () => {
+                showToast('已复制订阅链接！请前往 Clash / Flclash / Shadowrocket 导入。');
+                if (btnElement) {
+                    btnElement.innerHTML = `<svg class="w-4 h-4 mr-1.5 text-emerald-300 animate-bounce" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>已复制成功`;
+                    setTimeout(() => {
+                        if (originalHtml) btnElement.innerHTML = originalHtml;
+                    }, 2500);
+                }
+            };
+
+            if (navigator.clipboard && window.isSecureContext) {
+                navigator.clipboard.writeText(copyText).then(handleSuccess).catch(() => fallbackCopy(copyText, handleSuccess));
+            } else {
+                fallbackCopy(copyText, handleSuccess);
+            }
+        }
+
+        function fallbackCopy(text, onSuccess) {
+            const textArea = document.createElement('textarea');
+            textArea.style.cssText = 'position:fixed;top:-9999px;left:-9999px;opacity:0';
+            textArea.value = text;
+            document.body.appendChild(textArea);
+            textArea.select();
+            try {
+                document.execCommand('copy');
+                onSuccess();
+            } catch (err) {
+                showToast('复制失败，请手动长按复制。', 'error');
+            }
+            textArea.remove();
+        }
+
         function toggleNavCategory(id) {
             const body = document.getElementById(id);
             const chevron = document.getElementById(id + '-chevron');
@@ -208,141 +667,43 @@
             if (chevron) chevron.classList.toggle('open', !isOpen);
         }
 
-        // Toast notification system
-        function showToast(message, type = 'success') {
-            const container = document.getElementById('toast-container');
-            const toast = document.createElement('div');
-            toast.className = `toast ${type}`;
-
-            const iconSvg = type === 'success'
-                ? `<svg style="width:18px;height:18px;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"></path></svg>`
-                : `<svg style="width:18px;height:18px;flex-shrink:0" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"></path></svg>`;
-
-            toast.innerHTML = iconSvg + `<span>${message}</span>`;
-            container.appendChild(toast);
-
-            setTimeout(() => {
-                toast.classList.add('leaving');
-                toast.addEventListener('animationend', () => toast.remove(), { once: true });
-            }, 3000);
-        }
-
-        // Clipboard copy helper
-        function copyToClipboard(text) {
-            const copyText = typeof text === 'object' ? JSON.stringify(text, null, 2) : text;
-            if (navigator.clipboard && window.isSecureContext) {
-                navigator.clipboard.writeText(copyText)
-                    .then(() => showToast('已成功复制订阅链接！请前往 Clash / ClashMetaForAndroid 导入。'))
-                    .catch(() => showToast('复制失败，请手动复制。', 'error'));
-            } else {
-                const textArea = document.createElement('textarea');
-                textArea.style.cssText = 'position:fixed;top:-9999px;left:-9999px';
-                textArea.value = copyText;
-                document.body.appendChild(textArea);
-                textArea.select();
-                try {
-                    document.execCommand('copy');
-                    showToast('已成功复制订阅链接！请前往 Clash / ClashMetaForAndroid 导入。');
-                } catch (err) {
-                    showToast('复制失败，请手动复制。', 'error');
-                }
-                textArea.remove();
-            }
-        }
-
-        // Real-time clock
-        function updateClock() {
-            const now = new Date();
-            const hh = String(now.getHours()).padStart(2, '0');
-            const mm = String(now.getMinutes()).padStart(2, '0');
-            const ss = String(now.getSeconds()).padStart(2, '0');
-            const timeEl = document.getElementById('clock-time');
-            if (timeEl) timeEl.textContent = `${hh}:${mm}:${ss}`;
-
-            const days = ['日', '一', '二', '三', '四', '五', '六'];
-            const dateEl = document.getElementById('clock-date');
-            if (dateEl) {
-                dateEl.textContent = `${now.getFullYear()} 年 ${now.getMonth() + 1} 月 ${now.getDate()} 日 星期${days[now.getDay()]}`;
-            }
-        }
-        updateClock();
-        setInterval(updateClock, 1000);
-
-        // Dark mode toggle
-        const themeToggle = document.getElementById('theme-toggle');
-        const iconSun = document.getElementById('icon-sun');
-        const iconMoon = document.getElementById('icon-moon');
-
-        function applyTheme(isDark) {
-            if (isDark) {
-                document.documentElement.classList.add('dark');
-                iconSun?.classList.remove('hidden');
-                iconMoon?.classList.add('hidden');
-            } else {
-                document.documentElement.classList.remove('dark');
-                iconSun?.classList.add('hidden');
-                iconMoon?.classList.remove('hidden');
-            }
-        }
-
-        // Sync icon with current state on page load
-        applyTheme(document.documentElement.classList.contains('dark'));
-
-        if (themeToggle) {
-            themeToggle.addEventListener('click', () => {
-                const isDark = document.documentElement.classList.contains('dark');
-                localStorage.setItem('theme', isDark ? 'light' : 'dark');
-                applyTheme(!isDark);
-            });
-        }
-
-        // Wallpaper carousel with dot indicators
         const wallpapers = {{ (wallpapers or []) | tojson | safe }};
-        const container = document.getElementById('slider-container');
+        const sliderContainer = document.getElementById('slider-container');
         const dotsContainer = document.getElementById('carousel-dots');
-        let currentIndex = 0;
+        let currentSlideIdx = 0;
 
-        const imagePool = (wallpapers && wallpapers.length > 0) ? wallpapers : [];
+        if (wallpapers && wallpapers.length > 0 && sliderContainer && dotsContainer) {
+            wallpapers.forEach((url, idx) => {
+                const slide = document.createElement('div');
+                slide.className = 'bg-slide' + (idx === 0 ? ' active' : '');
+                slide.style.backgroundImage = `url('${url}')`;
+                sliderContainer.appendChild(slide);
 
-        if (imagePool && imagePool.length > 0 && container && dotsContainer) {
-            imagePool.forEach((url, index) => {
-                const div = document.createElement('div');
-                div.className = 'bg-slide';
-
-                const preload = new Image();
-                preload.onload = () => { div.style.backgroundImage = `url('${url}')`; };
-                preload.src = url;
-
-                if (index === 0) div.classList.add('active');
-                container.appendChild(div);
-
-                // Create dot indicator
                 const dot = document.createElement('button');
-                dot.className = 'carousel-dot' + (index === 0 ? ' active' : '');
-                dot.setAttribute('aria-label', `切换到第 ${index + 1} 张壁纸`);
-                dot.addEventListener('click', () => goToSlide(index));
+                dot.className = 'carousel-dot' + (idx === 0 ? ' active' : '');
+                dot.setAttribute('aria-label', `切换至壁纸 ${idx + 1}`);
+                dot.addEventListener('click', () => switchSlide(idx));
                 dotsContainer.appendChild(dot);
             });
 
-            const slides = document.querySelectorAll('.bg-slide');
-            const dots = document.querySelectorAll('.carousel-dot');
+            const allSlides = document.querySelectorAll('.bg-slide');
+            const allDots = document.querySelectorAll('.carousel-dot');
 
-            function goToSlide(index) {
-                slides[currentIndex].classList.remove('active');
-                dots[currentIndex].classList.remove('active');
-                currentIndex = index;
-                slides[currentIndex].classList.add('active');
-                dots[currentIndex].classList.add('active');
+            function switchSlide(idx) {
+                allSlides[currentSlideIdx].classList.remove('active');
+                allDots[currentSlideIdx].classList.remove('active');
+                currentSlideIdx = idx;
+                allSlides[currentSlideIdx].classList.add('active');
+                allDots[currentSlideIdx].classList.add('active');
             }
 
-            if (slides.length > 1) {
+            if (allSlides.length > 1) {
                 setInterval(() => {
-                    goToSlide((currentIndex + 1) % slides.length);
-                }, 8000);
+                    switchSlide((currentSlideIdx + 1) % allSlides.length);
+                }, 8500);
             }
         }
 
-        // Version detail modal for categorized downloads
         const downloadsData = {{ (downloads or []) | tojson | safe }};
         const modal = document.getElementById('version-modal');
         const modalTitle = document.getElementById('modal-title');
@@ -363,42 +724,40 @@
             } else {
                 repo.assets.forEach(asset => {
                     const row = document.createElement('a');
-                    row.className = 'flex items-center justify-between p-3 pl-4 rounded-xl bg-slate-50/60 dark:bg-white/5 border border-slate-100 dark:border-white/10 hover:border-emerald-300 dark:hover:border-emerald-600 hover:bg-white dark:hover:bg-white/10 transition-all';
+                    row.className = 'liquid-sub-card flex items-center justify-between p-3.5 pl-4 hover:border-indigo-400 dark:hover:border-indigo-500 hover:scale-[1.01] transition-all shadow-sm';
                     row.href = `/proxy-download?repo=${encodeURIComponent(repo.label)}&filename=${encodeURIComponent(asset.name)}`;
                     row.innerHTML = `
                         <div class="flex items-center min-w-0 mr-2">
-                            <svg class="w-4 h-4 mr-2 text-slate-400 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path>
-                            </svg>
+                            <span class="w-8 h-8 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mr-3 shrink-0">
+                                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+                                </svg>
+                            </span>
                             <div class="truncate">
-                                <div class="text-sm font-semibold text-slate-700 dark:text-slate-200 truncate">${asset.name}</div>
-                                <div class="text-[11px] text-slate-400 dark:text-slate-500">${asset.size || ''}</div>
+                                <div class="text-sm font-semibold text-slate-800 dark:text-slate-100 truncate">${asset.name}</div>
+                                <div class="text-[11px] text-slate-400 dark:text-slate-500 font-mono mt-0.5">${asset.size || ''}</div>
                             </div>
                         </div>
-                        <div class="flex items-center gap-2 text-emerald-500">
-                            <span class="text-xs">免费直连下载</span>
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        <div class="flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-500/10 px-3 py-1.5 rounded-xl shrink-0">
+                            <span>免费下载</span>
+                            <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
                             </svg>
                         </div>`;
                     modalBody.appendChild(row);
                 });
             }
 
-            modal.classList.remove('modal-closing');
-            void modal.offsetWidth; // trigger layout recalculation
-            modal.classList.remove('hidden');
+            modal.classList.remove('modal-closing', 'hidden');
         }
 
         function closeVersionModal() {
-            if (!modal) return;
-            if (modal.classList.contains('modal-closing')) return;
+            if (!modal || modal.classList.contains('hidden')) return;
             modal.classList.add('modal-closing');
-            modal.addEventListener('animationend', (e) => {
-                if (e.target !== modal) return;
+            setTimeout(() => {
                 modal.classList.add('hidden');
                 modal.classList.remove('modal-closing');
-            }, { once: true });
+            }, 200);
         }
 
         window.openVersionModal = openVersionModal;

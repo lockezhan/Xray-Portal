@@ -2,11 +2,13 @@
 #=================================================================#
 #   System Required:  Ubuntu 20.04+ / Debian 11+                  #
 #   Description: One-click deploy Xray multi-port Shadowsocks     #
-#                with IPv4/IPv6 split + BBR + UFW                 #
+#                with IPv4/IPv6 split + BBR + UFW + Country Geo   #
 #   Author: Gemini (adapted for Xray-core SS-2022 multi inbounds) #
 #=================================================================#
 
 set -euo pipefail
+
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Colors
 red='\033[0;31m'
@@ -98,63 +100,51 @@ prompt_ipv6() {
   while true; do
     read -rp "Public IPv6 address (leave empty to auto-detect): " input_v6
     if [[ -z "${input_v6}" ]]; then
-      local auto_v6
-      auto_v6=$(detect_public_ipv6)
-      if [[ -n "${auto_v6}" ]]; then
-        echo -e "  自动探测到公网 IPv6: ${green}${auto_v6}${plain}"
-        read -rp "  确认使用该公网 IPv6 地址? [Y/n]: " confirm_v6
-        confirm_v6=${confirm_v6:-Y}
-        if [[ "${confirm_v6}" =~ ^[Yy]$ ]]; then
-          PUBLIC_IPV6="${auto_v6}"
-        else
-          PUBLIC_IPV6=""
-          echo -e "  已跳过使用公网 IPv6。"
-        fi
+      input_v6=$(detect_public_ipv6)
+      if [[ -n "${input_v6}" ]]; then
+        echo -e "  Auto-detected public IPv6: ${green}${input_v6}${plain}"
+        PUBLIC_IPV6="${input_v6}"
       else
-        echo -e "  [${yellow}Info${plain}] 未探测到有效的公网 IPv6 地址。"
+        echo -e "  ${yellow}未检测到公网 IPv6 地址，将跳过 IPv6 出站/入站专属配置。${plain}"
         PUBLIC_IPV6=""
       fi
       break
+    elif is_valid_ipv6 "${input_v6}"; then
+      PUBLIC_IPV6="${input_v6}"
+      echo -e "  Using specified IPv6: ${green}${PUBLIC_IPV6}${plain}"
+      break
     else
-      if is_valid_ipv6 "${input_v6}"; then
-        PUBLIC_IPV6="${input_v6}"
-        echo -e "  Public IPv6: ${green}${PUBLIC_IPV6}${plain}"
-        break
-      else
-        echo -e "  [${red}Error${plain}] 输入的 IPv6 地址格式无效，请重新输入或留空。"
-      fi
+      echo -e "  [${red}Error${plain}] Invalid IPv6 address format. Please try again or press Enter to auto-detect."
     fi
   done
 }
 
-
 prompt_domain() {
-  echo
-  echo -e "[${green}Step${plain}] 可选：使用 Cloudflare 域名替代裸 IP（请在 CF 中将该子域名设为 A 记录 → 灰云/仅DNS）"
-  read -rp "输入已解析到本 VPS 的子域名（如 vpn.example.com），留空则使用 IPv4: " DOMAIN
-  if [[ -n "${DOMAIN}" ]]; then
-    echo -e "  域名: ${green}${DOMAIN}${plain}（将用于 Clash 配置与 ss:// URI）"
-  else
-    DOMAIN="$(get_ipv4)"
-    echo -e "  未输入域名，将使用 IPv4: ${yellow}${DOMAIN}${plain}"
-  fi
+  local default_ip
+  default_ip=$(get_ipv4)
+  read -rp "Domain or IP for client connection [default ${default_ip}]: " DOMAIN
+  DOMAIN=${DOMAIN:-$default_ip}
 }
 
 prompt_ports() {
-  read -rp "Enter IPv4 SS-2022 port [default 20001]: " PORT_V4
-  PORT_V4=${PORT_V4:-20001}
-  read -rp "Enter IPv6 SS-2022 port [default 20002]: " PORT_V6
-  PORT_V6=${PORT_V6:-20002}
-  read -rp "Enter legacy AES-256-GCM port [default 20003]: " PORT_LEGACY
-  PORT_LEGACY=${PORT_LEGACY:-20003}
+  echo "Default ports: IPv4=20001, IPv6=20002, Legacy=20003."
+  read -rp "Use default ports? (Y/n): " choice
+  choice=${choice:-Y}
+  if [[ "$choice" =~ ^[Yy]$ ]]; then
+    PORT_V4=20001
+    PORT_V6=20002
+    PORT_LEGACY=20003
+  else
+    read -rp "Enter Port for IPv4 SS-2022 [1-65535]: " PORT_V4
+    read -rp "Enter Port for IPv6 SS-2022 [1-65535]: " PORT_V6
+    read -rp "Enter Port for Legacy AES-256 [1-65535]: " PORT_LEGACY
+  fi
 
   echo -e "Ports selected:\n  IPv4:   ${PORT_V4}\n  IPv6:   ${PORT_V6}\n  Legacy: ${PORT_LEGACY}"
 }
 
 is_base64_16() {
-  # Base64 for 16 bytes typically ~24 chars with trailing ==, but accept general base64.
   local s="$1"
-  # rudimentary check: consists of base64 chars and optional padding
   [[ "$s" =~ ^[A-Za-z0-9+/]+={0,2}$ ]] && return 0 || return 1
 }
 
@@ -176,7 +166,6 @@ prompt_keys() {
     echo -e "[${yellow}Warning${plain}] IPv6 key does not look like base64; proceeding anyway."
   fi
 
-  # Legacy password can be any string
   read -rp "Legacy AES-256-GCM password [default TraditionalPassword123]: " KEY_LEGACY
   KEY_LEGACY=${KEY_LEGACY:-TraditionalPassword123}
 }
@@ -185,17 +174,15 @@ apt_init() {
   echo -e "[${green}Step${plain}] Update & install base tools"
   export DEBIAN_FRONTEND=noninteractive
   apt update && apt -y upgrade
-  apt install -y curl nano ufw openssl jq
+  apt install -y curl nano ufw openssl jq python3
   timedatectl set-timezone UTC || true
 }
 
 install_xray() {
   echo -e "[${green}Step${plain}] Install Xray-core via official script"
-  # 强制删除已有的 xray 二进制文件，避免官方安装脚本因为检测到同版本号而跳过 systemd 服务的覆盖安装
   rm -f /usr/local/bin/xray /usr/bin/xray 2>/dev/null || true
   bash <(curl -L https://github.com/XTLS/Xray-install/raw/main/install-release.sh)
   
-  # 修复 systemd "Special user nobody configured, this is not safe!" 警告
   if [[ -f /etc/systemd/system/xray.service ]]; then
     sed -i 's/User=nobody/User=root/g' /etc/systemd/system/xray.service
   fi
@@ -204,7 +191,6 @@ install_xray() {
 write_xray_config() {
   echo -e "[${green}Step${plain}] Write Xray config JSON"
   mkdir -p /usr/local/etc/xray /var/log/xray
-  # Create config without comments; Xray uses strict JSON.
   cat >/usr/local/etc/xray/config.json <<JSON
 {
   "log": {
@@ -263,16 +249,44 @@ write_xray_config() {
 }
 JSON
 
-  # 修复并确保配置与日志目录对于 root 用户权限正确
   chown -R root:root /usr/local/etc/xray/
   chmod 644 /usr/local/etc/xray/config.json
   chown -R root:root /var/log/xray/
 }
 
-write_meta_conf() {
-  echo -e "[${green}Step${plain}] Write /etc/xray-meta.conf"
+detect_and_save_geo_meta() {
+  local detect_py="${_SCRIPT_DIR}/lib/detect_geo.py"
+  PROXY_COUNTRY_CODE="UN"
+  PROXY_COUNTRY_NAME="未知地区"
+  PROXY_COUNTRY_FLAG="🌐"
+  PROXY_CITY=""
+
+  if [[ -f "${detect_py}" ]]; then
+    eval "$(python3 "${detect_py}" "${DOMAIN}" env 2>/dev/null || true)"
+    echo -e "  [地理定位] ${green}${PROXY_COUNTRY_FLAG} ${PROXY_COUNTRY_NAME}${plain} (${PROXY_COUNTRY_CODE}${PROXY_CITY:+ - ${PROXY_CITY}})"
+  fi
+
+  mkdir -p /etc/xray-portal
+  cat >/etc/xray-portal/proxy-meta.conf <<META
+PROXY_DOMAIN=${DOMAIN}
+PROXY_COUNTRY_CODE=${PROXY_COUNTRY_CODE}
+PROXY_COUNTRY_NAME=${PROXY_COUNTRY_NAME}
+PROXY_COUNTRY_FLAG=${PROXY_COUNTRY_FLAG}
+PROXY_CITY=${PROXY_CITY}
+PROXY_PORT_V4=${PORT_V4}
+PROXY_PORT_V6=${PORT_V6}
+PROXY_PORT_LEGACY=${PORT_LEGACY}
+PROXY_ENABLE_IPV6=true
+PROXY_ENABLE_LEGACY=false
+META
+  chmod 644 /etc/xray-portal/proxy-meta.conf
+
+  # 保存兼容旧版 /etc/xray-meta.conf
   cat >/etc/xray-meta.conf <<META
 DOMAIN=${DOMAIN}
+COUNTRY_CODE=${PROXY_COUNTRY_CODE}
+COUNTRY_NAME=${PROXY_COUNTRY_NAME}
+COUNTRY_FLAG=${PROXY_COUNTRY_FLAG}
 PORT_V4=${PORT_V4}
 PORT_V6=${PORT_V6}
 PORT_LEGACY=${PORT_LEGACY}
@@ -283,7 +297,7 @@ PUBLIC_IPV6=${PUBLIC_IPV6:-}
 PRIVATE_IPV6=${PRIVATE_IPV6:-}
 META
   chmod 600 /etc/xray-meta.conf
-  echo "  Saved to /etc/xray-meta.conf"
+  echo "  Saved to /etc/xray-portal/proxy-meta.conf"
 }
 
 format_host_for_ss() {
@@ -305,18 +319,20 @@ make_ss_uri() {
 }
 
 show_uris() {
+  local flag="${PROXY_COUNTRY_FLAG:-🌐}"
+  local cname="${PROXY_COUNTRY_NAME:-节点}"
   echo
-  echo -e "[${green}===== Shadowsocks 快速导入链接 =====${plain}]"
-  echo "  [IPv4-SS2022]"
-  make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V4}" "${DOMAIN}" "${PORT_V4}" "MyVPS-IPv4"
+  echo -e "[${green}===== Shadowsocks 快速导入链接 (${flag} ${cname}) =====${plain}]"
+  echo "  [${flag} ${cname} · IPv4]"
+  make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V4}" "${DOMAIN}" "${PORT_V4}" "${flag} ${cname} - IPv4"
   if [[ -n "${PUBLIC_IPV6:-}" ]]; then
-    echo "  [IPv6-SS2022]"
-    make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V6}" "${PUBLIC_IPV6}" "${PORT_V6}" "MyVPS-IPv6"
+    echo "  [${flag} ${cname} · IPv6]"
+    make_ss_uri "2022-blake3-aes-128-gcm" "${KEY_V6}" "${PUBLIC_IPV6}" "${PORT_V6}" "${flag} ${cname} - IPv6"
   else
-    echo -e "  [IPv6-SS2022] ${yellow}(跳过 - 未检测到/未配置公网 IPv6)${plain}"
+    echo -e "  [${flag} ${cname} · IPv6] ${yellow}(跳过 - 未检测到/未配置公网 IPv6)${plain}"
   fi
-  echo "  [Legacy-AES256]"
-  make_ss_uri "aes-256-gcm" "${KEY_LEGACY}" "${DOMAIN}" "${PORT_LEGACY}" "MyVPS-Legacy"
+  echo "  [${flag} ${cname} · Legacy]"
+  make_ss_uri "aes-256-gcm" "${KEY_LEGACY}" "${DOMAIN}" "${PORT_LEGACY}" "${flag} ${cname} - Legacy"
   echo
   echo -e "  ${yellow}提示${plain}: 复制上方 ss:// 链接可直接导入 v2rayN / Shadowrocket / Clash"
   echo -e "  如需 Clash 订阅 URL，安装完成后运行: sudo ./serve_clash.sh"
@@ -333,7 +349,6 @@ restart_xray() {
 
 enable_bbr() {
   echo -e "[${green}Step${plain}] Enable TCP BBR"
-  # Avoid duplicate lines
   sed -i '/net.core.default_qdisc=fq/d' /etc/sysctl.conf || true
   sed -i '/net.ipv4.tcp_congestion_control=bbr/d' /etc/sysctl.conf || true
   echo "net.core.default_qdisc=fq" >> /etc/sysctl.conf
@@ -364,7 +379,7 @@ maybe_generate_clash() {
   local choice
   read -rp "Generate Clash Verge config now? [y/N]: " choice
   if [[ "${choice:-N}" =~ ^[Yy]$ ]]; then
-    /usr/local/bin/gen_clash_config.sh || bash ./gen_clash_config.sh || echo -e "[${yellow}Skip${plain}] gen_clash_config.sh not found; you can run it later."
+    "${_SCRIPT_DIR}/gen_clash_config.sh" || /usr/local/bin/gen_clash_config.sh || echo -e "[${yellow}Skip${plain}] gen_clash_config.sh not found; you can run it later."
   fi
 }
 
@@ -396,8 +411,8 @@ main() {
   echo -e "[${green}Step${plain}] Write config"
   write_xray_config
 
-  echo -e "[${green}Step${plain}] Save meta"
-  write_meta_conf
+  echo -e "[${green}Step${plain}] Save meta & Geolocation"
+  detect_and_save_geo_meta
 
   echo -e "[${green}Step${plain}] Restart Xray"
   restart_xray
@@ -416,6 +431,7 @@ main() {
   echo "  Private IPv6: ${PRIVATE_IPV6:-None}"
   echo "  Public IPv6: ${PUBLIC_IPV6:-None}"
   [[ "${DOMAIN}" != "$(get_ipv4)" ]] && echo "  Domain: ${DOMAIN}"
+  echo "  Location: ${PROXY_COUNTRY_FLAG} ${PROXY_COUNTRY_NAME} (${PROXY_COUNTRY_CODE})"
 
   echo -e "\nNote: If your cloud provider has a Security Group/Firewall, open TCP/UDP ${PORT_V4}-${PORT_LEGACY} there too."
 

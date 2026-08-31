@@ -3,7 +3,8 @@
 # 生成 Clash YAML 原始配置（从 Xray 运行配置读取，非交互）
 # apps/vpn_web/proxy/gen_clash_config.sh
 #
-# 安全设计：
+# 安全与特性设计：
+#   - 自动获取机器地理位置与国旗 Emoji（如 🇰🇷 韩国 · IPv4 / 🇺🇸 美国 · IPv4）
 #   - 密钥从 /etc/xray-portal/proxy.env 读取（不从命令行或 stdin）
 #   - 不打印任何密钥到 stdout/stderr
 #   - 优先读取 proxy.env，回退到 Xray config.json
@@ -12,6 +13,7 @@
 
 set -euo pipefail
 
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG="${CONFIG:-/usr/local/etc/xray/config.json}"
 PROXY_ENV="${PROXY_ENV:-/etc/xray-portal/proxy.env}"
 PROXY_META="${PROXY_META:-/etc/xray-portal/proxy-meta.conf}"
@@ -91,11 +93,12 @@ IPV4=$(ip -4 addr | awk '/inet /{print $2}' | cut -d/ -f1 \
 [[ -z "${IPV4}" ]] && IPV4=$(curl -fsSL --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo "1.2.3.4")
 IPV6=$(detect_public_ipv6)
 
-
 # =============================================================================
-# 读取域名（优先从 proxy-meta.conf）
+# 读取域名与地理位置元数据（优先从 proxy-meta.conf）
 # =============================================================================
 DOMAIN="${IPV4}"  # 默认回退 IPv4
+GEO_FLAG=""
+GEO_NAME=""
 
 if [[ -f "${PROXY_META}" ]]; then
     # 安全逐行读取（不 source）
@@ -104,7 +107,7 @@ if [[ -f "${PROXY_META}" ]]; then
         [[ -z "${line// }" ]] && continue
         if [[ "${line}" =~ ^([A-Za-z_][A-Za-z0-9_]*)=(.*)$ ]]; then
             k="${BASH_REMATCH[1]}"
-            v="${BASH_REMATCH[2]}"
+            v="${BASH_REMATCH[2]//\"/}"
             case "${k}" in
                 PROXY_DOMAIN)
                     [[ -n "${v}" && "${v}" != "unknown" ]] && DOMAIN="${v}"
@@ -112,6 +115,8 @@ if [[ -f "${PROXY_META}" ]]; then
                 PROXY_PUBLIC_IPV6|PUBLIC_IPV6)
                     [[ -n "${v}" && "${v}" != "unknown" ]] && is_valid_ipv6 "${v}" && IPV6="${v}"
                     ;;
+                PROXY_COUNTRY_FLAG) GEO_FLAG="${v}" ;;
+                PROXY_COUNTRY_NAME) GEO_NAME="${v}" ;;
                 PROXY_PORT_V4)   PROXY_PORT_V4="${v}" ;;
                 PROXY_PORT_V6)   PROXY_PORT_V6="${v}" ;;
                 PROXY_PORT_LEGACY) PROXY_PORT_LEGACY="${v}" ;;
@@ -120,10 +125,25 @@ if [[ -f "${PROXY_META}" ]]; then
             esac
         fi
     done < "${PROXY_META}"
-    echo -e "[${green}Info${plain}] 读取代理元数据: DOMAIN=${DOMAIN}"
-else
-    echo -e "[${yellow}Warn${plain}] ${PROXY_META} 不存在，尝试从 Xray config.json 读取"
 fi
+
+# 若元数据中未包含地理位置，尝试通过 detect_geo.py 实时探测
+if [[ -z "${GEO_FLAG}" || -z "${GEO_NAME}" ]]; then
+    DETECT_GEO_PY="${_SCRIPT_DIR}/lib/detect_geo.py"
+    if [[ -f "${DETECT_GEO_PY}" ]]; then
+        eval "$(python3 "${DETECT_GEO_PY}" "${IPV4}" env 2>/dev/null || true)"
+        GEO_FLAG="${PROXY_COUNTRY_FLAG:-🌐}"
+        GEO_NAME="${PROXY_COUNTRY_NAME:-节点}"
+    else
+        GEO_FLAG="🌐"
+        GEO_NAME="节点"
+    fi
+fi
+
+# 格式化节点前缀，例如: "🇰🇷 韩国" 或 "🇺🇸 美国"
+NODE_LABEL="${GEO_FLAG} ${GEO_NAME}"
+
+echo -e "[${green}Info${plain}] 读取代理元数据: DOMAIN=${DOMAIN} | 位置=${NODE_LABEL}"
 
 # =============================================================================
 # 从 Xray config.json 读取端口和加密方法（不读取密钥）
@@ -157,10 +177,8 @@ if [[ -f "${PROXY_ENV}" ]]; then
             esac
         fi
     done < "${PROXY_ENV}"
-    echo -e "[${green}Info${plain}] 从 ${PROXY_ENV} 读取密钥（不打印）"
 else
-    # 回退：从 Xray config.json 读取（生产不建议，仅兼容旧版）
-    echo -e "[${yellow}Warn${plain}] ${PROXY_ENV} 不存在，从 config.json 读取密钥（建议升级到带 proxy.env 的部署方式）"
+    # 回退：从 Xray config.json 读取
     PASS_V4=$(jq -r '.inbounds[] | select(.tag=="ss-ipv4") | .settings.password' "${CONFIG}" 2>/dev/null || echo "")
     PASS_V6=$(jq -r '.inbounds[] | select(.tag=="ss-ipv6") | .settings.password' "${CONFIG}" 2>/dev/null || echo "")
     PASS_LEGACY=$(jq -r '.inbounds[] | select(.tag=="ss-legacy") | .settings.password' "${CONFIG}" 2>/dev/null || echo "")
@@ -176,12 +194,12 @@ fi
 # =============================================================================
 mkdir -p "${SUBSCRIBE_DIR}"
 
-ROLE_PREFIX="${DEPLOY_ROLE:-primary}"
-ROLE_PREFIX_UPPER=$(echo "${ROLE_PREFIX}" | tr '[:lower:]' '[:upper:]')
+NAME_V4="${NODE_LABEL} · IPv4"
+NAME_V6="${NODE_LABEL} · IPv6"
+NAME_LEGACY="${NODE_LABEL} · Legacy"
 
 # 构建代理节点列表（条件包含 IPv6/Legacy）
-# 注意：IPv4 节点强制使用裸 IPv4 地址（非域名），避免客户端 DNS 解析时 IPv6 优先导致双栈冲突
-PROXIES_YAML="  - name: \"${ROLE_PREFIX_UPPER}-NODE-IPv4\"
+PROXIES_YAML="  - name: \"${NAME_V4}\"
     type: ss
     server: ${IPV4}
     port: ${PORT_V4}
@@ -192,7 +210,7 @@ PROXIES_YAML="  - name: \"${ROLE_PREFIX_UPPER}-NODE-IPv4\"
 if [[ "${PROXY_ENABLE_IPV6:-true}" == "true" && -n "${PASS_V6}" && -n "${IPV6}" ]]; then
     PROXIES_YAML+="
 
-  - name: \"${ROLE_PREFIX_UPPER}-NODE-IPv6\"
+  - name: \"${NAME_V6}\"
     type: ss
     server: \"${IPV6}\"
     port: ${PORT_V6}
@@ -202,10 +220,9 @@ if [[ "${PROXY_ENABLE_IPV6:-true}" == "true" && -n "${PASS_V6}" && -n "${IPV6}" 
 fi
 
 if [[ "${PROXY_ENABLE_LEGACY:-false}" == "true" && -n "${PASS_LEGACY}" ]]; then
-    # Legacy 节点同样使用裸 IPv4，避免双栈冲突
     PROXIES_YAML+="
 
-  - name: \"${ROLE_PREFIX_UPPER}-NODE-Legacy\"
+  - name: \"${NAME_LEGACY}\"
     type: ss
     server: ${IPV4}
     port: ${PORT_LEGACY}
@@ -220,6 +237,7 @@ TMP_OUT=$(mktemp "${SUBSCRIBE_DIR}/.clash.yaml.XXXXXX")
 cat > "${TMP_OUT}" <<YAML
 # Xray Portal 自动生成 - 请勿手动修改
 # 生成时间: $(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# 节点位置: ${NODE_LABEL}
 port: 7890
 socks-port: 7891
 allow-lan: false
@@ -233,9 +251,9 @@ proxy-groups:
   - name: "Proxy"
     type: select
     proxies:
-      - "${ROLE_PREFIX_UPPER}-NODE-IPv4"
-$([ "${PROXY_ENABLE_IPV6:-true}" == "true" ] && [ -n "${IPV6:-}" ] && echo "      - \"${ROLE_PREFIX_UPPER}-NODE-IPv6\"" || true)
-$([ "${PROXY_ENABLE_LEGACY:-false}" == "true" ] && echo "      - \"${ROLE_PREFIX_UPPER}-NODE-Legacy\"" || true)
+      - "${NAME_V4}"
+$([ "${PROXY_ENABLE_IPV6:-true}" == "true" ] && [ -n "${IPV6:-}" ] && echo "      - \"${NAME_V6}\"" || true)
+$([ "${PROXY_ENABLE_LEGACY:-false}" == "true" ] && echo "      - \"${NAME_LEGACY}\"" || true)
       - DIRECT
 
 rules:
@@ -248,5 +266,4 @@ chmod 644 "${TMP_OUT}"
 mv -f "${TMP_OUT}" "${SUBSCRIBE_FILE}"
 
 echo -e "[${green}Info${plain}] Clash 订阅源已生成: ${SUBSCRIBE_FILE}"
-echo -e "[${green}Info${plain}] 代理域名: ${DOMAIN} | IPv4 端口: ${PORT_V4}"
-# 注意：不打印任何密钥
+echo -e "[${green}Info${plain}] 节点标识: ${NODE_LABEL} (IPv4/IPv6)"

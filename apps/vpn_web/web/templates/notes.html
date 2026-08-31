@@ -1,224 +1,278 @@
-{% extends 'base.html' %}
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Markdown 云笔记 · 杨柳烟锁古今愁</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        brand: {
+                            50: '#f5f7ff',
+                            100: '#ebf0fe',
+                            500: '#4f6ef7',
+                            600: '#344ff0',
+                        }
+                    }
+                }
+            }
+        };
+    </script>
+    <script>
+        // Apply theme before render to avoid FOUC
+        (function () {
+            const stored = localStorage.getItem('theme');
+            if (stored === 'dark' || (!stored && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
+                document.documentElement.classList.add('dark');
+            }
+        })();
+    </script>
 
-{% block content %}
-<!-- Marked.js & Highlight.js CDN -->
-<script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css" id="hljs-light-theme">
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" id="hljs-dark-theme" disabled>
-<script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
-<!-- KaTeX LaTeX Math Formula CDN -->
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
-<script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
+    <!-- Marked.js & Highlight.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@12.0.0/marked.min.js"></script>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github.min.css" id="hljs-light-theme">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/styles/github-dark.min.css" id="hljs-dark-theme" disabled>
+    <script src="https://cdn.jsdelivr.net/npm/highlight.js@11.9.0/lib/highlight.min.js"></script>
+    <!-- KaTeX LaTeX Math Formula CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.css">
+    <script src="https://cdn.jsdelivr.net/npm/katex@0.16.10/dist/katex.min.js"></script>
 
-<style>
-/* 全屏全宽 IDE 级 Markdown 渲染与交互样式 */
-html, body { height: 100%; overflow: hidden !important; }
+    <style>
+        html, body {
+            height: 100%;
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
+        }
 
-/* Typora / Notion 排版样式 */
-.markdown-preview {
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "PingFang SC", "Microsoft YaHei", sans-serif;
-    color: #1e293b;
-    line-height: 1.8;
-    font-size: 0.95rem;
-}
+        /* Typora / Notion 排版样式 */
+        .markdown-preview {
+            color: #1e293b;
+            line-height: 1.8;
+            font-size: 0.95rem;
+        }
 
-.markdown-preview h1 { font-size: 1.75rem; font-weight: 700; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.4rem; margin-top: 1.2rem; margin-bottom: 1rem; }
-.markdown-preview h2 { font-size: 1.35rem; font-weight: 700; color: #0f172a; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.3rem; margin-top: 1.2rem; margin-bottom: 0.8rem; }
-.markdown-preview h3 { font-size: 1.15rem; font-weight: 600; color: #1e293b; margin-top: 1rem; margin-bottom: 0.6rem; }
-.markdown-preview h4, .markdown-preview h5 { font-size: 1rem; font-weight: 600; color: #334155; margin-top: 0.8rem; margin-bottom: 0.4rem; }
+        .markdown-preview h1 { font-size: 1.75rem; font-weight: 700; color: #0f172a; border-bottom: 1px solid #e2e8f0; padding-bottom: 0.4rem; margin-top: 1.2rem; margin-bottom: 1rem; }
+        .markdown-preview h2 { font-size: 1.35rem; font-weight: 700; color: #0f172a; border-bottom: 1px solid #f1f5f9; padding-bottom: 0.3rem; margin-top: 1.2rem; margin-bottom: 0.8rem; }
+        .markdown-preview h3 { font-size: 1.15rem; font-weight: 600; color: #1e293b; margin-top: 1rem; margin-bottom: 0.6rem; }
+        .markdown-preview h4, .markdown-preview h5 { font-size: 1rem; font-weight: 600; color: #334155; margin-top: 0.8rem; margin-bottom: 0.4rem; }
 
-.markdown-preview p { margin-bottom: 1rem; color: #334155; word-break: break-word; }
-.markdown-preview ul { list-style-type: disc; padding-left: 1.4rem; margin-bottom: 1rem; color: #334155; }
-.markdown-preview ol { list-style-type: decimal; padding-left: 1.4rem; margin-bottom: 1rem; color: #334155; }
-.markdown-preview li { margin-bottom: 0.35rem; }
+        .markdown-preview p { margin-bottom: 1rem; color: #334155; word-break: break-word; }
+        .markdown-preview ul { list-style-type: disc; padding-left: 1.4rem; margin-bottom: 1rem; color: #334155; }
+        .markdown-preview ol { list-style-type: decimal; padding-left: 1.4rem; margin-bottom: 1rem; color: #334155; }
+        .markdown-preview li { margin-bottom: 0.35rem; }
 
-.markdown-preview blockquote {
-    border-left: 4px solid #cbd5e1;
-    padding: 0.5rem 1rem;
-    margin: 1rem 0;
-    color: #64748b;
-    background: #f8fafc;
-    border-radius: 0 6px 6px 0;
-}
+        .markdown-preview blockquote {
+            border-left: 4px solid #cbd5e1;
+            padding: 0.5rem 1rem;
+            margin: 1rem 0;
+            color: #64748b;
+            background: #f8fafc;
+            border-radius: 0 6px 6px 0;
+        }
 
-.markdown-preview code {
-    font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
-    background: #f1f5f9;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    font-size: 0.86em;
-    color: #0f172a;
-    border: 1px solid #e2e8f0;
-}
+        .markdown-preview code {
+            font-family: 'JetBrains Mono', Consolas, Monaco, monospace;
+            background: #f1f5f9;
+            padding: 0.15rem 0.4rem;
+            border-radius: 4px;
+            font-size: 0.86em;
+            color: #0f172a;
+            border: 1px solid #e2e8f0;
+        }
 
-.markdown-preview pre {
-    background: #f8fafc !important;
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 1rem;
-    overflow-x: auto;
-    margin-bottom: 1.2rem;
-}
-.markdown-preview pre code {
-    background: transparent !important;
-    padding: 0;
-    border: none;
-    color: #1e293b;
-    font-size: 0.88rem;
-    line-height: 1.6;
-}
+        .markdown-preview pre {
+            background: #f8fafc !important;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 1rem;
+            overflow-x: auto;
+            margin-bottom: 1.2rem;
+        }
+        .markdown-preview pre code {
+            background: transparent !important;
+            padding: 0;
+            border: none;
+            color: #1e293b;
+            font-size: 0.88rem;
+            line-height: 1.6;
+        }
 
-.markdown-preview table { width: 100%; border-collapse: collapse; margin-bottom: 1.2rem; font-size: 0.9rem; }
-.markdown-preview th, .markdown-preview td { border: 1px solid #e2e8f0; padding: 0.55rem 0.85rem; text-align: left; }
-.markdown-preview th { background: #f8fafc; font-weight: 600; color: #0f172a; }
-.markdown-preview tr:nth-child(even) { background: #fcfcfd; }
+        .markdown-preview table { width: 100%; border-collapse: collapse; margin-bottom: 1.2rem; font-size: 0.9rem; }
+        .markdown-preview th, .markdown-preview td { border: 1px solid #e2e8f0; padding: 0.55rem 0.85rem; text-align: left; }
+        .markdown-preview th { background: #f8fafc; font-weight: 600; color: #0f172a; }
+        .markdown-preview tr:nth-child(even) { background: #fcfcfd; }
 
-.markdown-preview hr { border: 0; height: 1px; background: #e2e8f0; margin: 1.6rem 0; }
-.markdown-preview a { color: #0284c7; text-decoration: none; border-bottom: 1px solid #93c5fd; }
-.markdown-preview a:hover { color: #0369a1; border-bottom-color: #0369a1; }
-.markdown-preview img { max-width: 100%; border-radius: 6px; margin: 1rem 0; border: 1px solid #e2e8f0; }
+        .markdown-preview hr { border: 0; height: 1px; background: #e2e8f0; margin: 1.6rem 0; }
+        .markdown-preview a { color: #0284c7; text-decoration: none; border-bottom: 1px solid #93c5fd; }
+        .markdown-preview a:hover { color: #0369a1; border-bottom-color: #0369a1; }
+        .markdown-preview img { max-width: 100%; border-radius: 6px; margin: 1rem 0; border: 1px solid #e2e8f0; }
 
-/* 🌓 深色模式 */
-.dark .markdown-preview { color: #cbd5e1; }
-.dark .markdown-preview h1, .dark .markdown-preview h2, .dark .markdown-preview h3 { color: #f8fafc; border-bottom-color: #334155; }
-.dark .markdown-preview h4, .dark .markdown-preview h5 { color: #e2e8f0; }
-.dark .markdown-preview p, .dark .markdown-preview ul, .dark .markdown-preview ol { color: #cbd5e1; }
-.dark .markdown-preview blockquote { border-left-color: #475569; background: rgba(30, 41, 59, 0.5); color: #94a3b8; }
-.dark .markdown-preview code { background: #1e293b; color: #38bdf8; border-color: #334155; }
-.dark .markdown-preview pre { background: #0f172a !important; border-color: #1e293b; }
-.dark .markdown-preview pre code { color: #e2e8f0; }
-.dark .markdown-preview th { background: #1e293b; color: #f8fafc; }
-.dark .markdown-preview th, .dark .markdown-preview td { border-color: #334155; }
-.dark .markdown-preview tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
-.dark .markdown-preview hr { background: #334155; }
-.dark .markdown-preview a { color: #38bdf8; border-bottom-color: #0284c7; }
+        /* 🌓 深色模式 */
+        .dark .markdown-preview { color: #cbd5e1; }
+        .dark .markdown-preview h1, .dark .markdown-preview h2, .dark .markdown-preview h3 { color: #f8fafc; border-bottom-color: #334155; }
+        .dark .markdown-preview h4, .dark .markdown-preview h5 { color: #e2e8f0; }
+        .dark .markdown-preview p, .dark .markdown-preview ul, .dark .markdown-preview ol { color: #cbd5e1; }
+        .dark .markdown-preview blockquote { border-left-color: #475569; background: rgba(30, 41, 59, 0.5); color: #94a3b8; }
+        .dark .markdown-preview code { background: #1e293b; color: #38bdf8; border-color: #334155; }
+        .dark .markdown-preview pre { background: #0f172a !important; border-color: #1e293b; }
+        .dark .markdown-preview pre code { color: #e2e8f0; }
+        .dark .markdown-preview th { background: #1e293b; color: #f8fafc; }
+        .dark .markdown-preview th, .dark .markdown-preview td { border-color: #334155; }
+        .dark .markdown-preview tr:nth-child(even) { background: rgba(255, 255, 255, 0.02); }
+        .dark .markdown-preview hr { background: #334155; }
+        .dark .markdown-preview a { color: #38bdf8; border-bottom-color: #0284c7; }
 
-/* 标题折叠扩展与 Notion 风格折叠块 (Collapsible Headings & Details) */
-.markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4 {
-    cursor: pointer;
-    position: relative;
-    user-select: none;
-    transition: background 0.15s ease;
-    border-radius: 4px;
-    padding-left: 0.2rem;
-}
-.markdown-preview h1:hover, .markdown-preview h2:hover, .markdown-preview h3:hover, .markdown-preview h4:hover {
-    background: rgba(148, 163, 184, 0.12);
-}
-.markdown-preview .heading-toggle-icon {
-    display: inline-block;
-    font-size: 0.7em;
-    margin-right: 0.4rem;
-    color: #94a3b8;
-    transition: transform 0.2s ease;
-    vertical-align: middle;
-}
-.markdown-preview .heading-folded .heading-toggle-icon {
-    transform: rotate(-90deg);
-}
+        /* 标题折叠扩展 */
+        .markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4 {
+            cursor: pointer;
+            position: relative;
+            user-select: none;
+            transition: background 0.15s ease;
+            border-radius: 4px;
+            padding-left: 0.2rem;
+        }
+        .markdown-preview h1:hover, .markdown-preview h2:hover, .markdown-preview h3:hover, .markdown-preview h4:hover {
+            background: rgba(148, 163, 184, 0.12);
+        }
+        .markdown-preview .heading-toggle-icon {
+            display: inline-block;
+            font-size: 0.7em;
+            margin-right: 0.4rem;
+            color: #94a3b8;
+            transition: transform 0.2s ease;
+            vertical-align: middle;
+        }
+        .markdown-preview .heading-folded .heading-toggle-icon {
+            transform: rotate(-90deg);
+        }
 
-/* HTML <details> 与 <summary> 高级折叠盒 */
-.markdown-preview details {
-    border: 1px solid #e2e8f0;
-    border-radius: 8px;
-    padding: 0.6rem 1rem;
-    margin: 1rem 0;
-    background: #f8fafc;
-    transition: all 0.2s ease;
-}
-.dark .markdown-preview details {
-    border-color: #334155;
-    background: rgba(30, 41, 59, 0.4);
-}
-.markdown-preview summary {
-    font-weight: 600;
-    cursor: pointer;
-    color: #0f172a;
-    outline: none;
-    user-select: none;
-}
-.dark .markdown-preview summary {
-    color: #f8fafc;
-}
-.markdown-preview details[open] {
-    padding-bottom: 0.8rem;
-}
-.markdown-preview details[open] summary {
-    margin-bottom: 0.6rem;
-    border-bottom: 1px solid #e2e8f0;
-    padding-bottom: 0.4rem;
-}
-.dark .markdown-preview details[open] summary {
-    border-bottom-color: #334155;
-}
+        /* 滚动条 */
+        .custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scroll::-webkit-scrollbar-track { background: transparent; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .dark .custom-scroll::-webkit-scrollbar-thumb { background: #475569; }
 
-/* 滚动条 */
-.custom-scroll::-webkit-scrollbar { width: 6px; height: 6px; }
-.custom-scroll::-webkit-scrollbar-track { background: transparent; }
-.custom-scroll::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
-.dark .custom-scroll::-webkit-scrollbar-thumb { background: #475569; }
+        /* 拖拽分割线高亮 */
+        #drag-resizer:hover, #drag-resizer.resizing {
+            background-color: #38bdf8 !important;
+        }
 
-/* 拖拽分割线高亮 */
-#drag-resizer:hover, #drag-resizer.resizing {
-    background-color: #38bdf8 !important;
-}
-</style>
+        /* Toast styles */
+        #toast-container {
+            position: fixed;
+            bottom: 2rem;
+            right: 2rem;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 0.6rem;
+            pointer-events: none;
+        }
 
-<!-- 全屏 Fullscreen 容器 (铺满整个浏览器) -->
-<div class="fixed inset-0 z-30 flex flex-col bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 overflow-hidden font-sans">
-    
-    <!-- Top Header Bar (紧凑导航栏) -->
-    <header class="h-12 shrink-0 bg-white dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700/80 px-3 flex items-center justify-between select-none">
-        <div class="flex items-center gap-2">
+        .toast {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.85rem 1.25rem;
+            border-radius: 1.25rem;
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #fff;
+            pointer-events: auto;
+            box-shadow: 0 12px 30px -4px rgba(0,0,0,0.22);
+            min-width: 240px;
+            max-width: 380px;
+            backdrop-filter: blur(12px);
+        }
+
+        .toast.success { background: linear-gradient(135deg, rgba(79, 70, 229, 0.95), rgba(168, 85, 247, 0.95)); }
+        .toast.error   { background: linear-gradient(135deg, rgba(239, 68, 68, 0.95), rgba(249, 115, 22, 0.95)); }
+        .toast.leaving { opacity: 0; transform: translateY(10px); transition: all 0.25s ease; }
+    </style>
+</head>
+
+<body class="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 h-screen flex flex-col overflow-hidden select-none font-sans transition-colors duration-300">
+
+    <!-- Toast 容器 -->
+    <div id="toast-container"></div>
+
+    <!-- 顶部极简毛玻璃 Header Bar -->
+    <header class="h-14 shrink-0 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 px-4 flex items-center justify-between z-30 shadow-sm">
+        <div class="flex items-center gap-3">
             <!-- 侧边栏展开/收起切换按钮 -->
-            <button onclick="toggleSidebar()" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 rounded-lg transition-all text-slate-600 dark:text-slate-300" title="展开/收起侧边栏">
+            <button onclick="toggleSidebar()" class="p-2 hover:bg-slate-100 dark:hover:bg-white/10 rounded-xl transition-all text-slate-600 dark:text-slate-300 border border-slate-200/60 dark:border-white/10 shadow-sm cursor-pointer" title="展开/收起笔记侧边栏">
                 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 6h16M4 12h16M4 18h16"></path>
                 </svg>
             </button>
-            <span class="text-sm font-bold flex items-center gap-1.5">
-                📝 <span class="hidden sm:inline">Markdown 云笔记</span>
-            </span>
-            <span id="save-status-badge" class="text-[11px] px-2 py-0.5 rounded font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800">已就绪</span>
+            <div class="flex items-center gap-2">
+                <a href="/" class="text-xs font-bold text-slate-500 dark:text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors flex items-center gap-1">
+                    🏠 <span>首页</span>
+                </a>
+                <span class="text-slate-300 dark:text-slate-600">/</span>
+                <span class="text-sm font-extrabold text-slate-800 dark:text-slate-100 flex items-center gap-1.5">
+                    📝 <span>Markdown 云笔记</span>
+                </span>
+            </div>
+            <span id="save-status-badge" class="text-[11px] px-2.5 py-0.5 rounded-full font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800/50 shadow-sm">已就绪</span>
         </div>
 
         <div class="flex items-center gap-2">
             <!-- 视图模式按钮 -->
-            <div class="inline-flex p-0.5 rounded-lg bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 text-xs">
-                <button onclick="setViewMode('split')" id="btn-mode-split" class="px-2.5 py-1 rounded transition-all bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold shadow-sm">双栏模式</button>
-                <button onclick="setViewMode('edit')" id="btn-mode-edit" class="px-2.5 py-1 rounded transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">纯编辑</button>
-                <button onclick="setViewMode('preview')" id="btn-mode-preview" class="px-2.5 py-1 rounded transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white">纯阅读</button>
+            <div class="inline-flex p-0.5 rounded-xl bg-slate-100/80 dark:bg-white/5 border border-slate-200/60 dark:border-white/10 text-xs">
+                <button onclick="setViewMode('split')" id="btn-mode-split" class="px-3 py-1 rounded-lg transition-all bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-bold shadow-sm cursor-pointer">双栏模式</button>
+                <button onclick="setViewMode('edit')" id="btn-mode-edit" class="px-3 py-1 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">纯编辑</button>
+                <button onclick="setViewMode('preview')" id="btn-mode-preview" class="px-3 py-1 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer">纯阅读</button>
             </div>
 
             <!-- 重置两栏 50:50 比例 -->
-            <button onclick="resetSplitRatio()" id="btn-reset-ratio" class="p-1.5 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-500 rounded-lg text-xs" title="恢复 50:50 等分两栏比例">
+            <button onclick="resetSplitRatio()" id="btn-reset-ratio" class="p-1.5 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 rounded-xl text-xs border border-slate-200/60 dark:border-white/10 cursor-pointer" title="恢复 50:50 等分两栏比例">
                 ⚖️
             </button>
 
             <!-- 图片资源库按钮 -->
-            <button onclick="openImageGalleryModal()" class="px-2.5 py-1 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-all flex items-center gap-1" title="管理所有截图与上传图片">
+            <button onclick="openImageGalleryModal()" class="px-3 py-1.5 border border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer" title="管理所有截图与上传图片">
                 🖼️ 图库
             </button>
 
             <!-- 保存按钮 -->
-            <button onclick="saveCurrentNote()" class="px-3 py-1 bg-slate-900 hover:bg-slate-800 dark:bg-sky-600 dark:hover:bg-sky-500 text-white rounded-lg text-xs font-semibold transition-all shadow-sm flex items-center gap-1">
+            <button onclick="saveCurrentNote()" class="px-4 py-1.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-600 hover:to-purple-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-indigo-500/20 hover:shadow-indigo-500/35 flex items-center gap-1.5 cursor-pointer">
                 💾 保存
             </button>
 
-            <a href="/cloud" class="px-2.5 py-1 border border-slate-200 dark:border-slate-700 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 rounded-lg text-xs font-medium transition-all">← 云盘</a>
+            <!-- 昼夜切换按钮 -->
+            <button id="theme-toggle-notes" aria-label="切换深浅主题" class="w-8 h-8 rounded-full flex items-center justify-center bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-amber-300 hover:scale-105 transition-all border border-slate-200/60 dark:border-white/10 cursor-pointer">
+                <svg id="notes-sun" class="w-4 h-4 hidden" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364-6.364l-.707.707M6.343 17.657l-.707.707M17.657 17.657l-.707-.707M6.343 6.343l-.707-.707M16 12a4 4 0 11-8 0 4 4 0 018 0z"/>
+                </svg>
+                <svg id="notes-moon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+                </svg>
+            </button>
+
+            <a href="/cloud" class="px-3 py-1.5 border border-slate-200/80 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all shadow-sm flex items-center gap-1">
+                ☁️ 云盘
+            </a>
         </div>
     </header>
 
-    <!-- Main Flex Workspace Area -->
+    <!-- Main Workspace Area -->
     <div class="flex-1 flex overflow-hidden relative">
         
-        <!-- Left Sidebar: Compact File List (窄版侧边栏 220px) -->
-        <aside id="sidebar-container" class="w-56 shrink-0 bg-white dark:bg-slate-800 border-r border-slate-200 dark:border-slate-700/80 flex flex-col transition-all duration-200 select-none">
-            <div class="p-2.5 border-b border-slate-100 dark:border-slate-700/60 flex items-center justify-between">
+        <!-- Left Sidebar: Compact File List -->
+        <aside id="sidebar-container" class="w-60 shrink-0 bg-white dark:bg-slate-800/90 border-r border-slate-200 dark:border-slate-700/80 flex flex-col transition-all duration-200 select-none">
+            <div class="p-3 border-b border-slate-100 dark:border-slate-700/60 flex items-center justify-between">
                 <span class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                     📂 笔记列表 (<span id="note-count">0</span>)
                 </span>
-                <button onclick="createNewNotePrompt()" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded text-xs font-medium transition-all">
+                <button onclick="createNewNotePrompt()" class="px-2.5 py-1 bg-indigo-50 dark:bg-indigo-950/50 hover:bg-indigo-100 text-indigo-600 dark:text-indigo-400 border border-indigo-200 dark:border-indigo-800/50 rounded-lg text-xs font-bold transition-all cursor-pointer">
                     + 新建
                 </button>
             </div>
@@ -226,7 +280,7 @@ html, body { height: 100%; overflow: hidden !important; }
             <!-- Search -->
             <div class="p-2 border-b border-slate-100 dark:border-slate-700/60">
                 <input type="text" id="file-search-input" oninput="filterNotesList()" placeholder="🔍 搜索笔记..." 
-                    class="w-full px-2.5 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-sky-400">
+                    class="w-full px-2.5 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-lg text-xs text-slate-800 dark:text-slate-200 focus:outline-none focus:border-indigo-500">
             </div>
 
             <!-- Notes List -->
@@ -244,31 +298,31 @@ html, body { height: 100%; overflow: hidden !important; }
                 <!-- Title & Actions Toolbar -->
                 <div class="p-2.5 border-b border-slate-100 dark:border-slate-700/60 flex items-center gap-2">
                     <input type="text" id="current-filename-input" placeholder="文档标题.md" 
-                        class="flex-1 px-2.5 py-1 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded text-xs font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-sky-400">
+                        class="flex-1 px-3 py-1.5 bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-xs font-bold text-slate-900 dark:text-slate-100 focus:outline-none focus:border-indigo-500">
                     
-                    <button onclick="renameCurrentNote()" class="px-2 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded text-xs transition-all">
+                    <button onclick="renameCurrentNote()" class="px-2.5 py-1.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition-all cursor-pointer">
                         重命名
                     </button>
-                    <button onclick="deleteCurrentNote()" class="px-2 py-1 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 text-red-600 dark:text-red-400 rounded text-xs transition-all">
+                    <button onclick="deleteCurrentNote()" class="px-2.5 py-1.5 bg-rose-50 dark:bg-rose-950/40 hover:bg-rose-100 text-rose-600 dark:text-rose-400 rounded-xl text-xs font-semibold transition-all cursor-pointer">
                         删除
                     </button>
                 </div>
 
                 <!-- Markdown Helper Formatting Toolbar -->
-                <div class="px-2.5 py-1.5 border-b border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center gap-1 text-xs select-none">
-                    <button onclick="insertFormatting('bold')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-bold">B</button>
-                    <button onclick="insertFormatting('italic')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 italic">I</button>
-                    <button onclick="insertFormatting('h1')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-bold">H1</button>
-                    <button onclick="insertFormatting('h2')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-bold">H2</button>
-                    <button onclick="insertFormatting('code')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-mono">代码</button>
-                    <button onclick="insertFormatting('quote')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300">引用</button>
-                    <button onclick="insertFormatting('table')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300">表格</button>
-                    <button onclick="insertFormatting('link')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300">链接</button>
+                <div class="px-3 py-1.5 border-b border-slate-100 dark:border-slate-700/60 flex flex-wrap items-center gap-1.5 text-xs select-none">
+                    <button onclick="insertFormatting('bold')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-bold cursor-pointer">B</button>
+                    <button onclick="insertFormatting('italic')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 italic cursor-pointer">I</button>
+                    <button onclick="insertFormatting('h1')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-bold cursor-pointer">H1</button>
+                    <button onclick="insertFormatting('h2')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-bold cursor-pointer">H2</button>
+                    <button onclick="insertFormatting('code')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 font-mono cursor-pointer">代码</button>
+                    <button onclick="insertFormatting('quote')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 cursor-pointer">引用</button>
+                    <button onclick="insertFormatting('table')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 cursor-pointer">表格</button>
+                    <button onclick="insertFormatting('link')" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 rounded text-slate-700 dark:text-slate-300 cursor-pointer">链接</button>
                 </div>
 
                 <!-- Textarea Editor -->
                 <textarea id="markdown-editor" oninput="onEditorContentChange()" placeholder="输入 Markdown 内容..." 
-                    class="editor-textarea custom-scroll flex-1 w-full bg-transparent border-0 p-3.5 text-xs sm:text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none resize-none leading-relaxed"></textarea>
+                    class="editor-textarea custom-scroll flex-1 w-full bg-transparent border-0 p-4 text-xs sm:text-sm font-mono text-slate-900 dark:text-slate-100 focus:outline-none resize-none leading-relaxed select-text"></textarea>
 
                 <!-- Bottom Status Bar -->
                 <div class="px-3 py-1 border-t border-slate-100 dark:border-slate-700/60 flex justify-between items-center text-[11px] text-slate-400 font-mono select-none">
@@ -277,8 +331,8 @@ html, body { height: 100%; overflow: hidden !important; }
                 </div>
             </section>
 
-            <!-- Resizer Splitter Drag Line (可拖拽调整两栏大小分割线) -->
-            <div id="drag-resizer" class="w-1.5 shrink-0 bg-slate-200 dark:bg-slate-700 cursor-col-resize hover:bg-sky-500 transition-colors z-20" title="左右拖动调整编辑框与预览框比例"></div>
+            <!-- Resizer Splitter Drag Line -->
+            <div id="drag-resizer" class="w-1.5 shrink-0 bg-slate-200 dark:bg-slate-700 cursor-col-resize hover:bg-indigo-500 transition-colors z-20" title="左右拖动调整编辑框与预览框比例"></div>
 
             <!-- Preview Pane -->
             <section id="preview-section" class="flex-1 h-full flex flex-col min-w-[200px] bg-white dark:bg-slate-800">
@@ -286,794 +340,646 @@ html, body { height: 100%; overflow: hidden !important; }
                     <span class="text-xs font-bold text-slate-700 dark:text-slate-300 flex items-center gap-1">
                         👁️ 实时阅读预览
                     </span>
-                    <button onclick="copyParsedHTML()" class="px-2 py-0.5 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded text-[11px] font-medium transition-all">
+                    <button onclick="copyParsedHTML()" class="px-2.5 py-1 bg-slate-100 dark:bg-slate-700 hover:bg-slate-200 dark:hover:bg-slate-600 text-slate-700 dark:text-slate-200 rounded-lg text-[11px] font-medium transition-all cursor-pointer">
                         复制源码
                     </button>
                 </div>
 
                 <!-- Rendered Markdown HTML Area -->
-                <div id="markdown-preview-container" class="markdown-preview custom-scroll flex-1 overflow-y-auto p-5">
+                <div id="markdown-preview-container" class="markdown-preview custom-scroll flex-1 overflow-y-auto p-5 select-text">
                     <p class="text-slate-400 text-xs italic">选择或新建一个 Markdown 笔记开始浏览...</p>
                 </div>
             </section>
 
         </main>
     </div>
-</div>
 
-<!-- 🖼️ 图片资源库管理 Modal 弹窗 -->
-<div id="image-gallery-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
-    <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
-        <!-- Modal Header -->
-        <div class="p-4 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between">
-            <div class="flex items-center gap-2">
-                <span class="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
-                    🖼️ 图片资源库 (<span id="gallery-image-count">0</span>)
-                </span>
-                <span class="text-xs text-slate-400">所有存储在 VPS 云端的图片资产</span>
+    <!-- 🖼️ 图片资源库管理 Modal 弹窗 -->
+    <div id="image-gallery-modal" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-2xl shadow-2xl w-full max-w-4xl max-h-[85vh] flex flex-col overflow-hidden">
+            <div class="p-4 border-b border-slate-100 dark:border-slate-700/80 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                    <span class="text-base font-bold text-slate-900 dark:text-slate-100 flex items-center gap-1.5">
+                        🖼️ 图片资源库 (<span id="gallery-image-count">0</span>)
+                    </span>
+                    <span class="text-xs text-slate-400">所有存储在 VPS 云端的图片资产</span>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button onclick="cleanOrphanImages()" class="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-medium transition-all flex items-center gap-1 cursor-pointer" title="扫描并彻底删除未在任何 Markdown 笔记中引用的无用图片">
+                        🧹 清理废弃未引用图片
+                    </button>
+                    <button onclick="closeImageGalleryModal()" class="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 rounded-lg transition-all text-lg font-bold cursor-pointer">
+                        ✕
+                    </button>
+                </div>
             </div>
-            <div class="flex items-center gap-2">
-                <button onclick="cleanOrphanImages()" class="px-3 py-1 bg-amber-50 dark:bg-amber-950/40 hover:bg-amber-100 text-amber-700 dark:text-amber-300 border border-amber-200 dark:border-amber-800 rounded-lg text-xs font-medium transition-all flex items-center gap-1" title="扫描并彻底删除未在任何 Markdown 笔记中引用的无用图片">
-                    🧹 清理废弃未引用图片
-                </button>
-                <button onclick="closeImageGalleryModal()" class="p-1 hover:bg-slate-100 dark:hover:bg-slate-700 text-slate-400 hover:text-slate-600 rounded-lg transition-all text-lg font-bold">
-                    ✕
-                </button>
+            <div id="gallery-image-grid" class="flex-1 p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto custom-scroll">
+                <div class="col-span-full text-center py-12 text-slate-400 text-xs">正在读取云端图片列表...</div>
             </div>
-        </div>
-
-        <!-- Modal Body: Image Grid -->
-        <div id="gallery-image-grid" class="flex-1 p-4 grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3 overflow-y-auto custom-scroll">
-            <div class="col-span-full text-center py-12 text-slate-400 text-xs">正在读取云端图片列表...</div>
         </div>
     </div>
-</div>
 
-<script>
-let currentFileName = "";
-let allNotesList = [];
-let viewMode = "split";
-let autoSaveTimer = null;
-let isSidebarOpen = true;
+    <script>
+    let currentFileName = "";
+    let allNotesObjects = []; // 存储完整的 [{name, size, mtime}, ...]
+    let viewMode = "split";
+    let autoSaveTimer = null;
+    let isSidebarOpen = true;
+    let isResizing = false;
 
-// 拖拽调整两栏比例变量
-let isResizing = false;
+    // Toast 系统
+    function showToast(message, type = 'success') {
+        const container = document.getElementById('toast-container');
+        if (!container) return;
+        const toast = document.createElement('div');
+        toast.className = `toast ${type}`;
+        const iconSvg = type === 'success'
+            ? `<svg class="w-4 h-4 shrink-0 text-emerald-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M5 13l4 4L19 7"/></svg>`
+            : `<svg class="w-4 h-4 shrink-0 text-rose-300" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>`;
+        toast.innerHTML = iconSvg + `<span class="flex-1 text-xs">${message}</span>`;
+        container.appendChild(toast);
+        setTimeout(() => {
+            toast.classList.add('leaving');
+            setTimeout(() => toast.remove(), 250);
+        }, 2800);
+    }
 
-// KaTeX LaTeX 公式扩展 (支持 $...$ 行内公式与 $$...$$ 块级公式)
-const blockMathExtension = {
-    name: 'blockMath',
-    level: 'block',
-    start(src) { return src.indexOf('$$'); },
-    tokenizer(src) {
-        const match = /^\$\$\n?([\s\S]+?)\n?\$\$/.exec(src);
-        if (match) {
-            return {
-                type: 'blockMath',
-                raw: match[0],
-                text: match[1].trim()
-            };
+    // 主题切换逻辑
+    const themeBtn = document.getElementById('theme-toggle-notes');
+    const sunIcon = document.getElementById('notes-sun');
+    const moonIcon = document.getElementById('notes-moon');
+
+    function syncThemeUI(isDark) {
+        if (isDark) {
+            document.documentElement.classList.add('dark');
+            sunIcon?.classList.remove('hidden');
+            moonIcon?.classList.add('hidden');
+        } else {
+            document.documentElement.classList.remove('dark');
+            sunIcon?.classList.add('hidden');
+            moonIcon?.classList.remove('hidden');
         }
-    },
-    renderer(token) {
-        if (typeof katex !== 'undefined') {
-            try {
-                return `<div class="katex-block-wrapper text-center my-3">${katex.renderToString(token.text, { displayMode: true, throwOnError: false })}</div>`;
-            } catch(e) {}
-        }
-        return `<div class="font-mono text-xs text-red-400">$$\n${token.text}\n$$</div>`;
-    }
-};
-
-const inlineMathExtension = {
-    name: 'inlineMath',
-    level: 'inline',
-    start(src) { return src.indexOf('$'); },
-    tokenizer(src) {
-        const match = /^\$([^\$\n]+?)\$/.exec(src);
-        if (match) {
-            return {
-                type: 'inlineMath',
-                raw: match[0],
-                text: match[1].trim()
-            };
-        }
-    },
-    renderer(token) {
-        if (typeof katex !== 'undefined') {
-            try {
-                return katex.renderToString(token.text, { displayMode: false, throwOnError: false });
-            } catch(e) {}
-        }
-        return `<code class="font-mono text-xs">${token.text}</code>`;
-    }
-};
-
-marked.use({ extensions: [blockMathExtension, inlineMathExtension] });
-
-// Marked 配置
-marked.setOptions({
-    highlight: function(code, lang) {
-        if (lang && hljs.getLanguage(lang)) {
-            try { return hljs.highlight(code, { language: lang }).value; } catch (e) {}
-        }
-        try { return hljs.highlightAuto(code).value; } catch (e) {}
-        return code;
-    },
-    breaks: true,
-    gfm: true
-});
-
-document.addEventListener('DOMContentLoaded', () => {
-    loadNotesList();
-    initResizer();
-    initScrollSync();
-    initImageUploadHandler();
-    
-    // 深色模式高亮适配
-    const isDark = document.documentElement.classList.contains('dark');
-    toggleHljsTheme(isDark);
-
-    // 快捷键 (Ctrl+S / Cmd+S)
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 's') {
-            e.preventDefault();
-            saveCurrentNote();
-        }
-    });
-});
-
-// 展开/折叠侧边栏
-function toggleSidebar() {
-    const sidebar = document.getElementById('sidebar-container');
-    isSidebarOpen = !isSidebarOpen;
-    if (isSidebarOpen) {
-        sidebar.style.display = "";
-    } else {
-        sidebar.style.display = "none";
-    }
-}
-
-// 可拖拽分割线初始化 (Resizer)
-function initResizer() {
-    const resizer = document.getElementById('drag-resizer');
-    const editor = document.getElementById('editor-section');
-    const preview = document.getElementById('preview-section');
-    const container = document.getElementById('workspace-container');
-
-    if (!resizer || !editor || !preview || !container) return;
-
-    resizer.addEventListener('mousedown', (e) => {
-        if (viewMode !== 'split') return;
-        isResizing = true;
-        resizer.classList.add('resizing');
-        document.body.style.cursor = 'col-resize';
-        document.body.style.userSelect = 'none';
-    });
-
-    document.addEventListener('mousemove', (e) => {
-        if (!isResizing || viewMode !== 'split') return;
-        const rect = container.getBoundingClientRect();
-        let offsetX = e.clientX - rect.left;
-        const minW = 200;
-        const maxW = rect.width - minW;
-
-        if (offsetX < minW) offsetX = minW;
-        if (offsetX > maxW) offsetX = maxW;
-
-        const leftPercent = (offsetX / rect.width) * 100;
-        editor.style.width = `${leftPercent}%`;
-        editor.style.flex = 'none';
-        preview.style.width = `${100 - leftPercent}%`;
-        preview.style.flex = 'none';
-    });
-
-    document.addEventListener('mouseup', () => {
-        if (isResizing) {
-            isResizing = false;
-            resizer.classList.remove('resizing');
-            document.body.style.cursor = '';
-            document.body.style.userSelect = '';
-        }
-    });
-}
-
-// 恢复两栏 50:50 比例
-function resetSplitRatio() {
-    const editor = document.getElementById('editor-section');
-    const preview = document.getElementById('preview-section');
-    if (editor && preview) {
-        editor.style.width = "";
-        editor.style.flex = "1";
-        preview.style.width = "";
-        preview.style.flex = "1";
-    }
-}
-
-// 编辑器与预览框双向同步滚动
-function initScrollSync() {
-    const editor = document.getElementById('markdown-editor');
-    const preview = document.getElementById('markdown-preview-container');
-    if (!editor || !preview) return;
-
-    let isEditorScrolling = false;
-    let isPreviewScrolling = false;
-
-    editor.addEventListener('scroll', () => {
-        if (isPreviewScrolling || viewMode !== 'split') return;
-        isEditorScrolling = true;
-        const pct = editor.scrollTop / (editor.scrollHeight - editor.clientHeight || 1);
-        preview.scrollTop = pct * (preview.scrollHeight - preview.clientHeight);
-        setTimeout(() => { isEditorScrolling = false; }, 50);
-    });
-
-    preview.addEventListener('scroll', () => {
-        if (isEditorScrolling || viewMode !== 'split') return;
-        isPreviewScrolling = true;
-        const pct = preview.scrollTop / (preview.scrollHeight - preview.clientHeight || 1);
-        editor.scrollTop = pct * (editor.scrollHeight - editor.clientHeight);
-        setTimeout(() => { isPreviewScrolling = false; }, 50);
-    });
-}
-
-function toggleHljsTheme(isDark) {
-    const lightLink = document.getElementById('hljs-light-theme');
-    const darkLink = document.getElementById('hljs-dark-theme');
-    if (lightLink && darkLink) {
-        lightLink.disabled = isDark;
-        darkLink.disabled = !isDark;
-    }
-}
-
-function setViewMode(mode) {
-    viewMode = mode;
-    const editorSec = document.getElementById('editor-section');
-    const previewSec = document.getElementById('preview-section');
-    const resizer = document.getElementById('drag-resizer');
-    const btnReset = document.getElementById('btn-reset-ratio');
-
-    const btnSplit = document.getElementById('btn-mode-split');
-    const btnEdit = document.getElementById('btn-mode-edit');
-    const btnPreview = document.getElementById('btn-mode-preview');
-
-    [btnSplit, btnEdit, btnPreview].forEach(b => {
-        b.className = "px-2.5 py-1 rounded transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white";
-    });
-
-    const activeClass = "px-2.5 py-1 rounded transition-all bg-white dark:bg-slate-800 text-slate-900 dark:text-white font-semibold shadow-sm";
-
-    if (mode === 'split') {
-        btnSplit.className = activeClass;
-        resetSplitRatio();
-        editorSec.style.display = "";
-        previewSec.style.display = "";
-        if (resizer) resizer.style.display = "";
-        if (btnReset) btnReset.style.display = "";
-    } else if (mode === 'edit') {
-        btnEdit.className = activeClass;
-        editorSec.style.width = "100%";
-        editorSec.style.flex = "1";
-        editorSec.style.display = "";
-        previewSec.style.display = "none";
-        if (resizer) resizer.style.display = "none";
-        if (btnReset) btnReset.style.display = "none";
-    } else if (mode === 'preview') {
-        btnPreview.className = activeClass;
-        previewSec.style.width = "100%";
-        previewSec.style.flex = "1";
-        editorSec.style.display = "none";
-        previewSec.style.display = "";
-        if (resizer) resizer.style.display = "none";
-        if (btnReset) btnReset.style.display = "none";
-    }
-}
-
-async function loadNotesList() {
-    try {
-        const resp = await fetch('/api/notes/list');
-        if (!resp.ok) return;
-        allNotesList = await resp.json();
-        renderNotesFileList(allNotesList);
-
-        if (allNotesList.length > 0 && !currentFileName) {
-            openNote(allNotesList[0].name);
-        }
-    } catch(e) {
-        showToast('获取笔记列表失败', 'error');
-    }
-}
-
-function renderNotesFileList(files) {
-    const listElem = document.getElementById('notes-file-list');
-    document.getElementById('note-count').innerText = files.length;
-    
-    if (files.length === 0) {
-        listElem.innerHTML = `<div class="text-center py-8 text-slate-400 text-xs">暂无笔记</div>`;
-        return;
+        toggleHljsTheme(isDark);
     }
 
-    let html = '';
-    files.forEach(f => {
-        const isActive = (f.name === currentFileName);
-        const activeClass = isActive 
-            ? 'bg-slate-100 dark:bg-slate-700 text-slate-900 dark:text-white font-semibold border-slate-300 dark:border-slate-600' 
-            : 'hover:bg-slate-50 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 border-transparent';
-
-        const sizeKb = (f.size / 1024).toFixed(1);
-        const dateStr = new Date(f.mtime * 1000).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-        html += `
-            <div data-note-name="${escapeHtml(f.name)}" onclick="onNoteClick(this)" 
-                class="p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between ${activeClass}">
-                <div class="flex items-center gap-1.5 min-w-0 pr-1">
-                    <span class="shrink-0 text-xs">📄</span>
-                    <span class="truncate text-xs" title="${escapeHtml(f.name)}">${escapeHtml(f.name)}</span>
-                </div>
-                <div class="text-[10px] text-slate-400 font-mono shrink-0 text-right">
-                    <div>${sizeKb}KB</div>
-                </div>
-            </div>`;
-    });
-    listElem.innerHTML = html;
-}
-
-function onNoteClick(elem) {
-    const filename = elem.getAttribute('data-note-name');
-    if (filename) {
-        openNote(filename);
-    }
-}
-
-function filterNotesList() {
-    const query = document.getElementById('file-search-input').value.toLowerCase().trim();
-    if (!query) {
-        renderNotesFileList(allNotesList);
-        return;
-    }
-    const filtered = allNotesList.filter(f => f.name.toLowerCase().includes(query));
-    renderNotesFileList(filtered);
-}
-
-async function openNote(filename) {
-    let data;
-    try {
-        const resp = await fetch(`/api/notes/read?filename=${encodeURIComponent(filename)}`);
-        if (!resp.ok) {
-            const errJson = await resp.json().catch(() => ({}));
-            showToast(errJson.error || `读取失败 (${resp.status})`, 'error');
-            return;
-        }
-        data = await resp.json();
-    } catch(e) {
-        showToast('网络无法连接服务器', 'error');
-        return;
-    }
-
-    try {
-        currentFileName = data.name;
-        document.getElementById('current-filename-input').value = data.name;
-        document.getElementById('markdown-editor').value = data.content || "";
-        
-        onEditorContentChange(false);
-        renderNotesFileList(allNotesList);
-
-        document.getElementById('save-status-badge').innerText = "已加载";
-        document.getElementById('save-status-badge').className = "text-[11px] px-2 py-0.5 rounded font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800";
-    } catch(domErr) {
-        console.error("DOM Render Error:", domErr);
-    }
-}
-
-function onEditorContentChange(isUserTyping = true) {
-    const text = document.getElementById('markdown-editor').value;
-    const previewContainer = document.getElementById('markdown-preview-container');
-    
-    try {
-        previewContainer.innerHTML = marked.parse(text || "*暂无内容*");
-        previewContainer.querySelectorAll('pre code').forEach((block) => {
-            try { hljs.highlightElement(block); } catch(hErr) {}
+    if (themeBtn) {
+        themeBtn.addEventListener('click', () => {
+            const isDark = document.documentElement.classList.contains('dark');
+            localStorage.setItem('theme', isDark ? 'light' : 'dark');
+            syncThemeUI(!isDark);
         });
-        // 绑定阅读模式标题折叠
-        setupCollapsibleHeadings();
-    } catch(mErr) {
-        console.error("Marked parse error:", mErr);
     }
+    syncThemeUI(document.documentElement.classList.contains('dark'));
 
-    const lines = text ? text.split('\n').length : 1;
-    const chars = text.length;
-    document.getElementById('editor-stats').innerText = `字数: ${chars} | 行数: ${lines}`;
-
-    if (isUserTyping) {
-        document.getElementById('save-status-badge').innerText = "未保存";
-        document.getElementById('save-status-badge').className = "text-[11px] px-2 py-0.5 rounded font-mono text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-950/40 border border-amber-200 dark:border-amber-800";
-
-        if (autoSaveTimer) clearTimeout(autoSaveTimer);
-        autoSaveTimer = setTimeout(() => {
-            if (currentFileName) {
-                saveCurrentNote(true);
+    // KaTeX LaTeX 公式扩展
+    const blockMathExtension = {
+        name: 'blockMath',
+        level: 'block',
+        start(src) { return src.indexOf('$$'); },
+        tokenizer(src) {
+            const match = /^\$\$\n?([\s\S]+?)\n?\$\$/.exec(src);
+            if (match) {
+                return { type: 'blockMath', raw: match[0], text: match[1].trim() };
             }
-        }, 3000);
-    }
-}
-
-// 📖 阅览模式：标题段落折叠/展开
-function setupCollapsibleHeadings() {
-    const preview = document.getElementById('markdown-preview-container');
-    if (!preview) return;
-
-    const headings = preview.querySelectorAll('h1, h2, h3, h4');
-    headings.forEach(heading => {
-        if (!heading.querySelector('.heading-toggle-icon')) {
-            const icon = document.createElement('span');
-            icon.className = 'heading-toggle-icon';
-            icon.innerHTML = '▼';
-            heading.insertBefore(icon, heading.firstChild);
+        },
+        renderer(token) {
+            if (typeof katex !== 'undefined') {
+                try {
+                    return `<div class="katex-block-wrapper text-center my-3">${katex.renderToString(token.text, { displayMode: true, throwOnError: false })}</div>`;
+                } catch(e) {}
+            }
+            return `<div class="font-mono text-xs text-red-400">$$\n${token.text}\n$$</div>`;
         }
+    };
 
-        heading.onclick = (e) => {
-            e.stopPropagation();
-            const tagLevel = parseInt(heading.tagName.replace('H', ''), 10);
-            heading.classList.toggle('heading-folded');
+    const inlineMathExtension = {
+        name: 'inlineMath',
+        level: 'inline',
+        start(src) { return src.indexOf('$'); },
+        tokenizer(src) {
+            const match = /^\$([^\$\n]+?)\$/.exec(src);
+            if (match) {
+                return { type: 'inlineMath', raw: match[0], text: match[1].trim() };
+            }
+        },
+        renderer(token) {
+            if (typeof katex !== 'undefined') {
+                try {
+                    return katex.renderToString(token.text, { displayMode: false, throwOnError: false });
+                } catch(e) {}
+            }
+            return `<code class="font-mono text-xs">${token.text}</code>`;
+        }
+    };
 
-            const isFolded = heading.classList.contains('heading-folded');
-            let next = heading.nextElementSibling;
+    marked.use({ extensions: [blockMathExtension, inlineMathExtension] });
+    marked.setOptions({
+        highlight: function(code, lang) {
+            if (lang && hljs.getLanguage(lang)) {
+                try { return hljs.highlight(code, { language: lang }).value; } catch (e) {}
+            }
+            try { return hljs.highlightAuto(code).value; } catch (e) {}
+            return code;
+        },
+        breaks: true,
+        gfm: true
+    });
 
-            while (next) {
-                const nextTag = next.tagName;
-                if (/^H[1-6]$/.test(nextTag)) {
-                    const nextLevel = parseInt(nextTag.replace('H', ''), 10);
-                    if (nextLevel <= tagLevel) {
-                        break;
-                    }
-                }
-                if (isFolded) {
-                    next.style.display = 'none';
-                } else {
-                    next.style.display = '';
-                }
-                next = next.nextElementSibling;
+    document.addEventListener('DOMContentLoaded', () => {
+        loadNotesList();
+        initResizer();
+        initScrollSync();
+        initImageUploadHandler();
+        
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+                e.preventDefault();
+                saveCurrentNote();
+            }
+        });
+    });
+
+    function toggleSidebar() {
+        const sidebar = document.getElementById('sidebar-container');
+        isSidebarOpen = !isSidebarOpen;
+        sidebar.style.display = isSidebarOpen ? "" : "none";
+    }
+
+    function initResizer() {
+        const resizer = document.getElementById('drag-resizer');
+        const editor = document.getElementById('editor-section');
+        const preview = document.getElementById('preview-section');
+        const container = document.getElementById('workspace-container');
+        if (!resizer || !editor || !preview || !container) return;
+
+        const onMouseMove = (e) => {
+            if (!isResizing) return;
+            const containerRect = container.getBoundingClientRect();
+            const pointerX = e.clientX - containerRect.left;
+            const totalWidth = containerRect.width - resizer.offsetWidth;
+            const clampedX = Math.max(160, Math.min(pointerX, totalWidth - 160));
+            const leftPercent = (clampedX / totalWidth) * 100;
+            const rightPercent = 100 - leftPercent;
+            editor.style.flex = `0 0 ${leftPercent}%`;
+            preview.style.flex = `0 0 ${rightPercent}%`;
+        };
+
+        const onMouseUp = () => {
+            if (isResizing) {
+                isResizing = false;
+                resizer.classList.remove('resizing');
+                document.body.style.cursor = '';
+                document.body.style.userSelect = '';
+                window.removeEventListener('mousemove', onMouseMove);
+                window.removeEventListener('mouseup', onMouseUp);
             }
         };
-    });
-}
 
-// 🖼️ 剪贴板截图粘贴 (Ctrl+V) 与拖拽图片上传处理
-function initImageUploadHandler() {
-    const editor = document.getElementById('markdown-editor');
-    if (!editor) return;
+        resizer.addEventListener('mousedown', (e) => {
+            e.preventDefault();
+            isResizing = true;
+            resizer.classList.add('resizing');
+            document.body.style.cursor = 'col-resize';
+            document.body.style.userSelect = 'none';
+            window.addEventListener('mousemove', onMouseMove);
+            window.addEventListener('mouseup', onMouseUp);
+        });
+    }
 
-    // 1. 剪贴板粘贴 (Paste)
-    editor.addEventListener('paste', async (e) => {
-        const clipboardData = e.clipboardData || window.clipboardData;
-        if (!clipboardData || !clipboardData.items) return;
+    function resetSplitRatio() {
+        const editor = document.getElementById('editor-section');
+        const preview = document.getElementById('preview-section');
+        if (editor && preview) {
+            editor.style.flex = "1 1 0%";
+            preview.style.flex = "1 1 0%";
+        }
+    }
 
-        const items = clipboardData.items;
-        for (let i = 0; i < items.length; i++) {
-            if (items[i].type.indexOf('image') !== -1) {
-                e.preventDefault();
-                const file = items[i].getAsFile();
-                if (file) {
-                    await handleImageUpload(file);
-                }
-                break;
+    function setViewMode(mode) {
+        viewMode = mode;
+        const editor = document.getElementById('editor-section');
+        const preview = document.getElementById('preview-section');
+        const resizer = document.getElementById('drag-resizer');
+        const resetBtn = document.getElementById('btn-reset-ratio');
+
+        const btnSplit = document.getElementById('btn-mode-split');
+        const btnEdit = document.getElementById('btn-mode-edit');
+        const btnPreview = document.getElementById('btn-mode-preview');
+
+        [btnSplit, btnEdit, btnPreview].forEach(b => {
+            b.className = "px-3 py-1 rounded-lg transition-all text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white cursor-pointer";
+        });
+
+        if (mode === 'split') {
+            btnSplit.className = "px-3 py-1 rounded-lg transition-all bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-bold shadow-sm cursor-pointer";
+            editor.style.display = "";
+            preview.style.display = "";
+            if (resizer) resizer.style.display = "";
+            if (resetBtn) resetBtn.style.display = "";
+            resetSplitRatio();
+        } else if (mode === 'edit') {
+            btnEdit.className = "px-3 py-1 rounded-lg transition-all bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-bold shadow-sm cursor-pointer";
+            editor.style.display = "";
+            editor.style.flex = "1 1 100%";
+            preview.style.display = "none";
+            if (resizer) resizer.style.display = "none";
+            if (resetBtn) resetBtn.style.display = "none";
+        } else if (mode === 'preview') {
+            btnPreview.className = "px-3 py-1 rounded-lg transition-all bg-white dark:bg-slate-800 text-indigo-600 dark:text-indigo-300 font-bold shadow-sm cursor-pointer";
+            editor.style.display = "none";
+            preview.style.display = "";
+            preview.style.flex = "1 1 100%";
+            if (resizer) resizer.style.display = "none";
+            if (resetBtn) resetBtn.style.display = "none";
+            renderPreview();
+        }
+    }
+
+    async function loadNotesList() {
+        try {
+            const resp = await fetch('/api/notes/list');
+            if (resp.status === 401) {
+                window.location.href = '/';
+                return;
             }
-        }
-    });
-
-    // 2. 拖拽放置 (Drag & Drop)
-    editor.addEventListener('dragover', (e) => {
-        e.preventDefault();
-        editor.classList.add('bg-sky-50', 'dark:bg-sky-950/20');
-    });
-
-    editor.addEventListener('dragleave', (e) => {
-        e.preventDefault();
-        editor.classList.remove('bg-sky-50', 'dark:bg-sky-950/20');
-    });
-
-    editor.addEventListener('drop', async (e) => {
-        e.preventDefault();
-        editor.classList.remove('bg-sky-50', 'dark:bg-sky-950/20');
-        if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files.length > 0) {
-            for (let i = 0; i < e.dataTransfer.files.length; i++) {
-                const file = e.dataTransfer.files[i];
-                if (file.type.indexOf('image') !== -1) {
-                    await handleImageUpload(file);
-                    break;
-                }
+            const data = await resp.json();
+            // 后端返回的是数组 [ { name: "...", size: ..., mtime: ... } ]
+            allNotesObjects = Array.isArray(data) ? data : (data.notes || []);
+            document.getElementById('note-count').textContent = allNotesObjects.length;
+            renderNotesList(allNotesObjects);
+            if (allNotesObjects.length > 0 && !currentFileName) {
+                openNote(allNotesObjects[0].name);
             }
+        } catch (e) {
+            document.getElementById('notes-file-list').innerHTML = `<div class="text-center py-6 text-rose-500 text-xs">加载失败: ${e.message}</div>`;
         }
-    });
-}
-
-async function handleImageUpload(file) {
-    const editor = document.getElementById('markdown-editor');
-    const placeholder = `![图片上传中...]()`;
-
-    const startPos = editor.selectionStart;
-    const endPos = editor.selectionEnd;
-    const oldVal = editor.value;
-
-    editor.value = oldVal.substring(0, startPos) + placeholder + oldVal.substring(endPos);
-    editor.selectionStart = editor.selectionEnd = startPos + placeholder.length;
-    onEditorContentChange();
-
-    showToast('🖼️ 正在上传截图到 VPS...', 'info');
-
-    const formData = new FormData();
-    formData.append('image', file);
-
-    try {
-        const resp = await fetch('/api/notes/upload_image', {
-            method: 'POST',
-            body: formData
-        });
-        const res = await resp.json();
-        if (resp.ok && res.status === 'success') {
-            const markdownImg = `![图片](${res.url})`;
-            editor.value = editor.value.replace(placeholder, markdownImg);
-            onEditorContentChange();
-            saveCurrentNote();
-            showToast('✅ 截图已成功上传并插入！', 'success');
-        } else {
-            editor.value = editor.value.replace(placeholder, '');
-            onEditorContentChange();
-            showToast(res.error || '图片上传失败', 'error');
-        }
-    } catch(err) {
-        editor.value = editor.value.replace(placeholder, '');
-        onEditorContentChange();
-        showToast('图片上传通信异常', 'error');
-    }
-}
-
-async function saveCurrentNote(isAutoSave = false) {
-    let filename = document.getElementById('current-filename-input').value.trim();
-    if (!filename) {
-        showToast('请输入文档标题', 'error');
-        return;
-    }
-    if (!filename.endsWith('.md')) filename += '.md';
-    const content = document.getElementById('markdown-editor').value;
-
-    try {
-        const resp = await fetch('/api/notes/save', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename, content })
-        });
-        const res = await resp.json();
-        if (resp.ok && res.status === 'success') {
-            currentFileName = res.name;
-            document.getElementById('current-filename-input').value = res.name;
-            
-            document.getElementById('save-status-badge').innerText = "已保存";
-            document.getElementById('save-status-badge').className = "text-[11px] px-2 py-0.5 rounded font-mono text-emerald-600 dark:text-emerald-400 bg-emerald-50 dark:bg-emerald-950/40 border border-emerald-200 dark:border-emerald-800";
-            
-            if (!isAutoSave) {
-                showToast('已保存', 'success');
-            }
-            loadNotesList();
-        } else {
-            showToast(res.error || '保存失败', 'error');
-        }
-    } catch(e) {
-        showToast('保存通信异常', 'error');
-    }
-}
-
-function createNewNotePrompt() {
-    const title = prompt('请输入新笔记名称:', '新笔记');
-    if (!title) return;
-    let filename = title.trim();
-    if (!filename.endsWith('.md')) filename += '.md';
-
-    currentFileName = filename;
-    document.getElementById('current-filename-input').value = filename;
-    document.getElementById('markdown-editor').value = `# ${title}\n\n开始撰写内容...\n`;
-    onEditorContentChange();
-    saveCurrentNote();
-}
-
-async function renameCurrentNote() {
-    if (!currentFileName) return;
-    const newNameInput = prompt('请输入新文件名:', currentFileName);
-    if (!newNameInput || newNameInput.trim() === currentFileName) return;
-    
-    let newName = newNameInput.trim();
-    if (!newName.endsWith('.md')) newName += '.md';
-
-    try {
-        const resp = await fetch('/api/notes/rename', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ old_filename: currentFileName, new_filename: newName })
-        });
-        const res = await resp.json();
-        if (resp.ok && res.status === 'success') {
-            showToast('已重命名', 'success');
-            currentFileName = res.new_name;
-            document.getElementById('current-filename-input').value = res.new_name;
-            loadNotesList();
-        } else {
-            showToast(res.error || '重命名失败', 'error');
-        }
-    } catch(e) {
-        showToast('重命名异常', 'error');
-    }
-}
-
-async function deleteCurrentNote() {
-    if (!currentFileName) return;
-    if (!confirm(`确定要删除【${currentFileName}】吗？`)) return;
-
-    try {
-        const resp = await fetch('/api/notes/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename: currentFileName })
-        });
-        const res = await resp.json();
-        if (resp.ok && res.status === 'success') {
-            showToast('已删除', 'success');
-            currentFileName = "";
-            document.getElementById('current-filename-input').value = "";
-            document.getElementById('markdown-editor').value = "";
-            document.getElementById('markdown-preview-container').innerHTML = "";
-            loadNotesList();
-        } else {
-            showToast(res.error || '删除失败', 'error');
-        }
-    } catch(e) {
-        showToast('删除异常', 'error');
-    }
-}
-
-function insertFormatting(type) {
-    const editor = document.getElementById('markdown-editor');
-    const start = editor.selectionStart;
-    const end = editor.selectionEnd;
-    const selected = editor.value.substring(start, end);
-    let replacement = "";
-
-    switch(type) {
-        case 'bold': replacement = `**${selected || '加粗'}**`; break;
-        case 'italic': replacement = `*${selected || '斜体'}*`; break;
-        case 'h1': replacement = `\n# ${selected || '标题 1'}\n`; break;
-        case 'h2': replacement = `\n## ${selected || '标题 2'}\n`; break;
-        case 'code': replacement = `\n\`\`\`python\n${selected || '# 代码块'}\n\`\`\`\n`; break;
-        case 'quote': replacement = `\n> ${selected || '引用内容'}\n`; break;
-        case 'table': replacement = `\n| 列 1 | 列 2 |\n| :--- | :--- |\n| 内容 1 | 内容 2 |\n`; break;
-        case 'link': replacement = `[${selected || '链接'}](https://example.com)`; break;
     }
 
-    editor.value = editor.value.substring(0, start) + replacement + editor.value.substring(end);
-    editor.focus();
-    onEditorContentChange();
-}
-
-function copyParsedHTML() {
-    const text = document.getElementById('markdown-editor').value;
-    if (!text) return;
-    navigator.clipboard.writeText(text);
-    showToast('文本已复制', 'success');
-}
-
-// 🖼️ 图片资源库 Modal 控制与交互
-async function openImageGalleryModal() {
-    const modal = document.getElementById('image-gallery-modal');
-    if (modal) modal.classList.remove('hidden');
-    await loadGalleryImages();
-}
-
-function closeImageGalleryModal() {
-    const modal = document.getElementById('image-gallery-modal');
-    if (modal) modal.classList.add('hidden');
-}
-
-async function loadGalleryImages() {
-    const grid = document.getElementById('gallery-image-grid');
-    const countSpan = document.getElementById('gallery-image-count');
-    try {
-        const resp = await fetch('/api/notes/images/list');
-        if (!resp.ok) return;
-        const images = await resp.json();
-        countSpan.innerText = images.length;
-
-        if (images.length === 0) {
-            grid.innerHTML = `<div class="col-span-full text-center py-12 text-slate-400 text-xs">暂无上传图片</div>`;
+    function renderNotesList(notesList) {
+        const container = document.getElementById('notes-file-list');
+        if (!notesList || notesList.length === 0) {
+            container.innerHTML = '<div class="text-center py-6 text-slate-400 text-xs">暂无笔记，点击上方 "+ 新建" 开始</div>';
             return;
         }
-
-        let html = '';
-        images.forEach(img => {
-            const sizeKb = (img.size / 1024).toFixed(1);
-            const dateStr = new Date(img.mtime * 1000).toLocaleDateString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-
-            html += `
-                <div class="group relative bg-slate-50 dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80 rounded-xl overflow-hidden flex flex-col transition-all hover:shadow-md">
-                    <div class="h-32 w-full bg-slate-200 dark:bg-slate-950 flex items-center justify-center overflow-hidden relative">
-                        <img src="${img.url}" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-200" loading="lazy" alt="${escapeHtml(img.name)}">
-                    </div>
-                    <div class="p-2 text-[11px] text-slate-500 font-mono flex items-center justify-between border-t border-slate-100 dark:border-slate-700/60">
-                        <span class="truncate pr-1" title="${escapeHtml(img.name)}">${sizeKb} KB</span>
-                        <span class="shrink-0 text-[10px] text-slate-400">${dateStr}</span>
-                    </div>
-                    <div class="p-1.5 bg-white dark:bg-slate-800 border-t border-slate-100 dark:border-slate-700/60 flex items-center gap-1">
-                        <button onclick="insertGalleryImage('${escapeJsStr(img.url)}')" class="flex-1 py-1 bg-sky-50 dark:bg-sky-950/40 hover:bg-sky-100 text-sky-600 dark:text-sky-400 border border-sky-200 dark:border-sky-800 rounded text-[11px] font-semibold transition-all">
-                            插入
-                        </button>
-                        <button onclick="deleteGalleryImage('${escapeJsStr(img.name)}')" class="p-1 bg-red-50 dark:bg-red-950/40 hover:bg-red-100 text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded text-[11px] transition-all" title="从 VPS 硬盘彻底删除">
-                            🗑️
-                        </button>
-                    </div>
+        container.innerHTML = "";
+        notesList.forEach(item => {
+            const filename = typeof item === 'string' ? item : item.name;
+            const isActive = filename === currentFileName;
+            const div = document.createElement('div');
+            div.className = `p-2.5 rounded-xl cursor-pointer transition-all flex items-center justify-between group ${isActive ? 'bg-indigo-50 dark:bg-indigo-950/70 text-indigo-600 dark:text-indigo-300 font-bold border border-indigo-200/60 dark:border-indigo-800/60 shadow-sm' : 'hover:bg-slate-100 dark:hover:bg-slate-700/50 text-slate-700 dark:text-slate-300 border border-transparent'}`;
+            div.innerHTML = `
+                <div class="flex items-center gap-2 truncate min-w-0">
+                    <span class="text-sm shrink-0">📄</span>
+                    <span class="truncate text-xs">${filename.replace(/\.md$/, '')}</span>
                 </div>`;
+            div.onclick = () => openNote(filename);
+            container.appendChild(div);
         });
-        grid.innerHTML = html;
-    } catch(e) {
-        grid.innerHTML = `<div class="col-span-full text-center py-12 text-red-400 text-xs">加载图片失败</div>`;
     }
-}
 
-function insertGalleryImage(url) {
-    const editor = document.getElementById('markdown-editor');
-    if (!editor) return;
-    const markdownImg = `![图片](${url})`;
-    const startPos = editor.selectionStart;
-    const endPos = editor.selectionEnd;
-    const oldVal = editor.value;
-
-    editor.value = oldVal.substring(0, startPos) + markdownImg + oldVal.substring(endPos);
-    editor.focus();
-    onEditorContentChange();
-    closeImageGalleryModal();
-    showToast('✅ 已插入到编辑器', 'success');
-}
-
-async function deleteGalleryImage(filename) {
-    if (!confirm(`确定要彻底从 VPS 硬盘删除图片【${filename}】吗？`)) return;
-
-    try {
-        const resp = await fetch('/api/notes/images/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ filename })
+    function filterNotesList() {
+        const query = document.getElementById('file-search-input').value.toLowerCase();
+        const filtered = allNotesObjects.filter(item => {
+            const name = typeof item === 'string' ? item : item.name;
+            return name.toLowerCase().includes(query);
         });
-        const res = await resp.json();
-        if (resp.ok && res.status === 'success') {
-            showToast('已删除图片', 'success');
-            await loadGalleryImages();
-        } else {
-            showToast(res.error || '删除图片失败', 'error');
-        }
-    } catch(e) {
-        showToast('删除图片通信异常', 'error');
+        renderNotesList(filtered);
     }
-}
 
-async function cleanOrphanImages() {
-    if (!confirm('确定要清理所有未在任何笔记中引用的无用图片吗？此操作不可逆。')) return;
-
-    try {
-        const resp = await fetch('/api/notes/images/clean_orphans', { method: 'POST' });
-        const res = await resp.json();
-        if (resp.ok && res.status === 'success') {
-            showToast(`🧹 清理完成！共释放 ${res.deleted_count} 张孤立图片 (${res.deleted_size_kb} KB)`, 'success');
-            await loadGalleryImages();
-        } else {
-            showToast(res.error || '清理无用图片失败', 'error');
+    async function openNote(filename) {
+        currentFileName = filename;
+        document.getElementById('current-filename-input').value = filename;
+        renderNotesList(allNotesObjects);
+        
+        try {
+            // 对齐后端路由 /api/notes/read?filename=...
+            const resp = await fetch(`/api/notes/read?filename=${encodeURIComponent(filename)}`);
+            const data = await resp.json();
+            const textarea = document.getElementById('markdown-editor');
+            textarea.value = data.content || "";
+            updateEditorStats();
+            renderPreview();
+            updateSaveBadge("已就绪", "emerald");
+        } catch (e) {
+            showToast('读取笔记内容失败', 'error');
         }
-    } catch(e) {
-        showToast('清理无用图片通信异常', 'error');
     }
-}
 
-function escapeHtml(str) {
-    return String(str).replace(/[&<>"']/g, function(m) {
-        return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[m];
-    });
-}
-function escapeJsStr(str) {
-    return String(str).replace(/'/g, "\\'").replace(/"/g, '\\"');
-}
-</script>
-{% endblock %}
+    function onEditorContentChange() {
+        updateEditorStats();
+        renderPreview();
+        updateSaveBadge("正在编辑...", "amber");
+        
+        if (autoSaveTimer) clearTimeout(autoSaveTimer);
+        autoSaveTimer = setTimeout(() => {
+            saveCurrentNote(true);
+        }, 2000);
+    }
+
+    function updateEditorStats() {
+        const text = document.getElementById('markdown-editor').value;
+        const charCount = text.length;
+        const lineCount = text.split('\n').length;
+        document.getElementById('editor-stats').textContent = `字数: ${charCount} | 行数: ${lineCount}`;
+    }
+
+    function renderPreview() {
+        const mdText = document.getElementById('markdown-editor').value;
+        const previewContainer = document.getElementById('markdown-preview-container');
+        try {
+            previewContainer.innerHTML = marked.parse(mdText);
+            initHeadingFolding();
+        } catch(e) {
+            previewContainer.innerHTML = `<p class="text-rose-500 text-xs">Markdown 解析出错: ${e.message}</p>`;
+        }
+    }
+
+    function initHeadingFolding() {
+        const preview = document.getElementById('markdown-preview-container');
+        const headings = preview.querySelectorAll('h1, h2, h3, h4');
+        headings.forEach(h => {
+            if (!h.querySelector('.heading-toggle-icon')) {
+                const icon = document.createElement('span');
+                icon.className = 'heading-toggle-icon';
+                icon.textContent = '▼';
+                h.prepend(icon);
+            }
+            h.onclick = () => {
+                h.classList.toggle('heading-folded');
+                let next = h.nextElementSibling;
+                const level = parseInt(h.tagName.substring(1));
+                while (next && !(next.tagName.startsWith('H') && parseInt(next.tagName.substring(1)) <= level)) {
+                    next.style.display = h.classList.contains('heading-folded') ? 'none' : '';
+                    next = next.nextElementSibling;
+                }
+            };
+        });
+    }
+
+    async function saveCurrentNote(isAuto = false) {
+        if (!currentFileName) {
+            currentFileName = "未命名笔记.md";
+            document.getElementById('current-filename-input').value = currentFileName;
+        }
+        const content = document.getElementById('markdown-editor').value;
+        updateSaveBadge("正在保存...", "sky");
+        
+        try {
+            const resp = await fetch('/api/notes/save', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: currentFileName, content: content })
+            });
+            const res = await resp.json();
+            if (resp.ok && res.status === 'success') {
+                updateSaveBadge("已保存", "emerald");
+                if (!isAuto) showToast('笔记保存成功！', 'success');
+                const exists = allNotesObjects.some(item => (typeof item === 'string' ? item : item.name) === currentFileName);
+                if (!exists) {
+                    allNotesObjects.unshift({ name: currentFileName, size: content.length, mtime: Math.floor(Date.now()/1000) });
+                    renderNotesList(allNotesObjects);
+                }
+            } else {
+                updateSaveBadge("保存失败", "rose");
+                showToast(res.message || '保存失败', 'error');
+            }
+        } catch (e) {
+            updateSaveBadge("保存失败", "rose");
+            showToast('保存异常，请检查网络', 'error');
+        }
+    }
+
+    function updateSaveBadge(text, color) {
+        const badge = document.getElementById('save-status-badge');
+        if (!badge) return;
+        badge.textContent = text;
+        badge.className = `text-[11px] px-2.5 py-0.5 rounded-full font-mono shadow-sm bg-${color}-50 dark:bg-${color}-950/40 text-${color}-600 dark:text-${color}-400 border border-${color}-200 dark:border-${color}-800/50`;
+    }
+
+    async function createNewNotePrompt() {
+        const name = prompt("请输入新笔记文件名（例如: 算法与系统设计）:");
+        if (!name || !name.trim()) return;
+        let filename = name.trim();
+        if (!filename.endsWith('.md')) filename += '.md';
+
+        currentFileName = filename;
+        document.getElementById('current-filename-input').value = filename;
+        document.getElementById('markdown-editor').value = `# ${filename.replace('.md', '')}\n\n开始记录你的思考...`;
+        await saveCurrentNote();
+        await loadNotesList();
+    }
+
+    async function renameCurrentNote() {
+        if (!currentFileName) return;
+        const newNameInput = document.getElementById('current-filename-input').value.trim();
+        let newName = newNameInput;
+        if (!newName.endsWith('.md')) newName += '.md';
+        if (newName === currentFileName) return;
+
+        try {
+            const resp = await fetch('/api/notes/rename', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ old_filename: currentFileName, new_filename: newName })
+            });
+            const res = await resp.json();
+            if (resp.ok && res.status === 'success') {
+                showToast('重命名成功', 'success');
+                currentFileName = newName;
+                await loadNotesList();
+            } else {
+                showToast(res.message || '重命名失败', 'error');
+            }
+        } catch (e) {
+            showToast('重命名失败', 'error');
+        }
+    }
+
+    async function deleteCurrentNote() {
+        if (!currentFileName) return;
+        if (!confirm(`确定要删除笔记 "${currentFileName}" 吗？删除后无法恢复。`)) return;
+
+        try {
+            const resp = await fetch('/api/notes/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename: currentFileName })
+            });
+            const res = await resp.json();
+            if (resp.ok && res.status === 'success') {
+                showToast('删除成功', 'success');
+                currentFileName = "";
+                document.getElementById('markdown-editor').value = "";
+                document.getElementById('current-filename-input').value = "";
+                await loadNotesList();
+            } else {
+                showToast(res.message || '删除失败', 'error');
+            }
+        } catch (e) {
+            showToast('删除失败', 'error');
+        }
+    }
+
+    function insertFormatting(type) {
+        const textarea = document.getElementById('markdown-editor');
+        const start = textarea.selectionStart;
+        const end = textarea.selectionEnd;
+        const val = textarea.value;
+        const sel = val.substring(start, end);
+
+        let insert = "";
+        let cursorOffset = 0;
+
+        switch(type) {
+            case 'bold': insert = `**${sel || '粗体文本'}**`; cursorOffset = sel ? insert.length : 2; break;
+            case 'italic': insert = `*${sel || '斜体文本'}*`; cursorOffset = sel ? insert.length : 1; break;
+            case 'h1': insert = `\n# ${sel || '一级标题'}\n`; break;
+            case 'h2': insert = `\n## ${sel || '二级标题'}\n`; break;
+            case 'code': insert = `\n\`\`\`javascript\n${sel || '// 代码内容'}\n\`\`\`\n`; break;
+            case 'quote': insert = `\n> ${sel || '引用文本'}\n`; break;
+            case 'table': insert = `\n| 列 1 | 列 2 |\n| ---- | ---- |\n| 内容 | 内容 |\n`; break;
+            case 'link': insert = `[${sel || '链接文本'}](https://example.com)`; break;
+        }
+
+        textarea.value = val.substring(0, start) + insert + val.substring(end);
+        textarea.focus();
+        textarea.setSelectionRange(start + insert.length, start + insert.length);
+        onEditorContentChange();
+    }
+
+    function initScrollSync() {
+        const editor = document.getElementById('markdown-editor');
+        const preview = document.getElementById('markdown-preview-container');
+        if (!editor || !preview) return;
+
+        let isEditorScrolling = false;
+        editor.addEventListener('scroll', () => {
+            if (isEditorScrolling) return;
+            isEditorScrolling = true;
+            const ratio = editor.scrollTop / (editor.scrollHeight - editor.clientHeight);
+            preview.scrollTop = ratio * (preview.scrollHeight - preview.clientHeight);
+            setTimeout(() => { isEditorScrolling = false; }, 50);
+        });
+    }
+
+    function initImageUploadHandler() {
+        const textarea = document.getElementById('markdown-editor');
+        if (!textarea) return;
+
+        textarea.addEventListener('paste', async (e) => {
+            const items = (e.clipboardData || e.originalEvent.clipboardData).items;
+            for (let item of items) {
+                if (item.kind === 'file' && item.type.startsWith('image/')) {
+                    const file = item.getAsFile();
+                    uploadAndInsertImage(file);
+                }
+            }
+        });
+    }
+
+    async function uploadAndInsertImage(file) {
+        showToast('正在上传图片...', 'success');
+        const formData = new FormData();
+        formData.append('image', file);
+
+        try {
+            const resp = await fetch('/api/notes/upload_image', {
+                method: 'POST',
+                body: formData
+            });
+            const res = await resp.json();
+            if (resp.ok && res.status === 'success') {
+                const mdImage = `\n![图片描述](${res.url})\n`;
+                const textarea = document.getElementById('markdown-editor');
+                const start = textarea.selectionStart;
+                textarea.value = textarea.value.substring(0, start) + mdImage + textarea.value.substring(start);
+                onEditorContentChange();
+                showToast('图片上传成功并已插入！', 'success');
+            } else {
+                showToast(res.message || '图片上传失败', 'error');
+            }
+        } catch (e) {
+            showToast('图片上传异常', 'error');
+        }
+    }
+
+    async function openImageGalleryModal() {
+        const modal = document.getElementById('image-gallery-modal');
+        modal.classList.remove('hidden');
+        const grid = document.getElementById('gallery-image-grid');
+        grid.innerHTML = '<div class="col-span-full text-center py-12 text-slate-400 text-xs">正在读取云端图片列表...</div>';
+
+        try {
+            // 对齐后端 /api/notes/images/list
+            const resp = await fetch('/api/notes/images/list');
+            const images = await resp.json();
+            document.getElementById('gallery-image-count').textContent = Array.isArray(images) ? images.length : 0;
+
+            if (!Array.isArray(images) || images.length === 0) {
+                grid.innerHTML = '<div class="col-span-full text-center py-12 text-slate-400 text-xs">暂无上传的图片资源</div>';
+                return;
+            }
+
+            grid.innerHTML = "";
+            images.forEach(img => {
+                const card = document.createElement('div');
+                card.className = "group relative rounded-2xl border border-slate-200 dark:border-slate-700 overflow-hidden bg-slate-50 dark:bg-slate-900/50 aspect-square flex flex-col justify-between shadow-sm";
+                card.innerHTML = `
+                    <div class="w-full h-full overflow-hidden flex items-center justify-center p-2">
+                        <img src="${img.url}" class="max-h-full max-w-full object-contain rounded" loading="lazy">
+                    </div>
+                    <div class="absolute inset-0 bg-slate-900/85 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-2.5 text-white">
+                        <span class="text-[11px] truncate mb-2 font-mono">${img.name}</span>
+                        <button onclick="insertImageToEditor('${img.url}')" class="w-full py-1.5 bg-indigo-600 hover:bg-indigo-500 rounded-xl text-xs font-bold mb-1 cursor-pointer">插入笔记</button>
+                    </div>`;
+                grid.appendChild(card);
+            });
+        } catch (e) {
+            grid.innerHTML = `<div class="col-span-full text-center py-12 text-rose-500 text-xs">读取图库失败: ${e.message}</div>`;
+        }
+    }
+
+    function insertImageToEditor(url) {
+        const mdImage = `\n![图片描述](${url})\n`;
+        const textarea = document.getElementById('markdown-editor');
+        textarea.value += mdImage;
+        onEditorContentChange();
+        closeImageGalleryModal();
+        showToast('已插入图片到笔记末尾', 'success');
+    }
+
+    function closeImageGalleryModal() {
+        document.getElementById('image-gallery-modal').classList.add('hidden');
+    }
+
+    async function cleanOrphanImages() {
+        if (!confirm('确定要清理所有未被任何 Markdown 引用的孤立图片吗？')) return;
+        try {
+            // 对齐后端 /api/notes/images/clean_orphans
+            const resp = await fetch('/api/notes/images/clean_orphans', { method: 'POST' });
+            const res = await resp.json();
+            showToast(res.message || '清理完成', 'success');
+            openImageGalleryModal();
+        } catch (e) {
+            showToast('清理失败', 'error');
+        }
+    }
+
+    function copyParsedHTML() {
+        const preview = document.getElementById('markdown-preview-container');
+        navigator.clipboard.writeText(preview.innerHTML).then(() => {
+            showToast('已复制 HTML 源码到剪贴板！', 'success');
+        });
+    }
+
+    function toggleHljsTheme(isDark) {
+        const lightTheme = document.getElementById('hljs-light-theme');
+        const darkTheme = document.getElementById('hljs-dark-theme');
+        if (lightTheme && darkTheme) {
+            lightTheme.disabled = isDark;
+            darkTheme.disabled = !isDark;
+        }
+    }
+    </script>
+</body>
+</html>

@@ -1,201 +1,183 @@
 {% extends 'base.html' %}
 
 {% block content %}
-<div class="relative min-h-screen pb-16">
-    <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8">
-        <!-- Header & Nav -->
-        <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 glass-panel p-6 rounded-[2rem] shadow-sm">
+<div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
+
+    <!-- 顶部状态栏卡片 -->
+    <div class="glass-panel p-6 sm:p-8 rounded-[2.5rem] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div class="flex items-center gap-3.5">
+            <span class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-sky-500/20 shrink-0">
+                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path>
+                </svg>
+            </span>
             <div>
-                <div class="flex items-center gap-2">
-                    <span class="p-2.5 rounded-2xl bg-gradient-to-tr from-sky-500 to-indigo-600 text-white shadow-md">
-                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 15a4 4 0 004 4h9a5 5 0 10-.1-9.999 5.002 5.002 0 10-9.78 2.096A4.001 4.001 0 003 15z"></path>
-                        </svg>
-                    </span>
-                    <div>
-                        <h1 class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">私有云盘与离线拉取中心</h1>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-0.5">多线程云端拉取、自动 7z 引擎解压与多用户权限网盘管理</p>
-                    </div>
-                </div>
-            </div>
-            <div class="mt-4 sm:mt-0 flex flex-wrap gap-2.5 items-center">
-                <a href="/notes"
-                    class="px-4 py-2.5 bg-gradient-to-r from-indigo-500 to-sky-500 text-white rounded-xl text-xs font-bold transition-all shadow-md hover:shadow-lg flex items-center">
-                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"></path>
-                    </svg>📝 Markdown 云笔记
-                </a>
-                <a href="/2fa" target="_blank"
-                    class="px-4 py-2.5 bg-sky-500/10 border border-sky-200 dark:border-sky-500/30 text-sky-600 dark:text-sky-400 hover:bg-sky-500 hover:text-white rounded-xl text-xs font-bold transition-all shadow-sm flex items-center">
-                    🔑 2FA 工具
-                </a>
-                <a href="/traffic"
-                    class="px-4 py-2.5 bg-indigo-500/10 border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-500 hover:text-white dark:hover:bg-indigo-600 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center">
-                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 7h8m0 0v8m0-8l-8 8-4-4-6 6"></path>
-                    </svg>流量监控
-                </a>
-                <a href="/files/login" target="_blank"
-                    class="px-4 py-2.5 bg-slate-800 text-white dark:bg-slate-700 hover:bg-slate-900 rounded-xl text-xs font-bold transition-all shadow-md flex items-center">
-                    <svg class="w-4 h-4 mr-1.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
-                    </svg>新窗口打开网盘
-                </a>
+                <h1 class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">私有云盘与离线拉取中心</h1>
+                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">多线程云端高速拉取、自动 7z 智能侦测解压与 FileBrowser 私有网盘管理</p>
             </div>
         </div>
+        <div class="flex flex-wrap gap-2.5 items-center">
+            <a href="/files/login" target="_blank"
+                class="ripple-btn px-5 py-2.5 bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-sky-500/20 hover:shadow-sky-500/35 flex items-center gap-1.5">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path>
+                </svg>
+                新窗口打开网盘
+            </a>
+        </div>
+    </div>
 
-        <!-- Section 1: TG Offline Downloader Engine -->
-        <div class="glass-panel p-6 sm:p-8 rounded-[2rem] shadow-sm mb-8">
-            <div class="flex flex-col md:flex-row md:justify-between md:items-center mb-6 gap-3 border-b border-slate-200/60 dark:border-slate-700/60 pb-5">
-                <div>
-                    <h3 class="font-extrabold text-xl text-slate-800 dark:text-slate-100 flex items-center">
-                        <svg class="w-6 h-6 mr-2 text-sky-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+    <!-- Section 1: Telegram 离线拉取引擎 -->
+    <div class="glass-panel p-6 sm:p-8 rounded-[2.5rem] shadow-sm relative overflow-hidden">
+        <div class="flex flex-col md:flex-row md:justify-between md:items-center mb-6 gap-3 border-b border-slate-200/60 dark:border-white/10 pb-5">
+            <div>
+                <h3 class="font-extrabold text-xl text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                    <span class="p-2 rounded-xl bg-sky-50 dark:bg-sky-950/50 text-sky-500">
+                        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M9 19l3 3m0 0l3-3m-3 3V10"></path>
                         </svg>
-                        ⚡ Telegram 离线高速拉取与解压引擎
-                    </h3>
-                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                        系统后台将自动以 16 线程拉取资源，并调用 7z 自动侦测压缩格式解压到网盘的 <code class="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sky-600 font-mono">Telegram高速下载</code> 目录。
-                    </p>
-                </div>
-                <div class="flex items-center gap-2">
-                    <span class="text-xs bg-sky-50 dark:bg-sky-900/50 text-sky-700 dark:text-sky-300 border border-sky-100 dark:border-sky-700 px-3 py-1 rounded-full font-mono font-medium">16 Threads</span>
-                    <span class="text-xs bg-emerald-50 dark:bg-emerald-900/50 text-emerald-700 dark:text-emerald-300 border border-emerald-100 dark:border-emerald-700 px-3 py-1 rounded-full font-mono font-medium">Auto 7z Unzip</span>
-                </div>
-            </div>
-
-            <form id="tg-download-form" onsubmit="submitTgDownload(event)" class="space-y-4">
-                <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
-                    <div class="md:col-span-8">
-                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                            <span>Telegram 消息链接 (私聊 / 群组文件链接或转发链接)</span>
-                            <span class="text-[11px] font-normal text-slate-400">支持 t.me/c/xxx/123 或 t.me/bot?start=xxx</span>
-                        </label>
-                        <input type="text" id="tg-url-input" required placeholder="例如: https://t.me/c/123456789/1024"
-                            class="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400 transition-all">
-                    </div>
-                    <div class="md:col-span-4">
-                        <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
-                            <span>解压密码 (若非加密压缩包请留空)</span>
-                            <span class="text-[11px] font-normal text-slate-400">支持中文/符号</span>
-                        </label>
-                        <input type="text" id="tg-pwd-input" placeholder="例如: 123456 或 mysite.com"
-                            class="w-full px-4 py-3.5 bg-slate-50 dark:bg-slate-800/80 border border-slate-200 dark:border-slate-700 rounded-xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-400 transition-all">
-                    </div>
-                </div>
-                <div class="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2">
-                    <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
-                        <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
-                        </svg>
-                        <span>支持 <code class="text-indigo-500">.zip</code> / <code class="text-indigo-500">.rar</code> / <code class="text-indigo-500">.7z</code> / <code class="text-indigo-500">.tar</code> / <code class="text-indigo-500">.iso</code> 自动解压并保留完整目录结构</span>
-                    </div>
-                    <button type="submit" id="tg-submit-btn"
-                        class="w-full sm:w-auto bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-bold px-8 py-3.5 rounded-xl text-sm shadow-md hover:shadow-lg transition-all flex items-center justify-center shrink-0">
-                        <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                        </svg>
-                        提交下载与解压任务
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <!-- Section 1.5: Real-time Download Progress Monitor -->
-        <div class="glass-panel p-6 sm:p-8 rounded-[2rem] shadow-sm">
-            <div class="flex items-center justify-between mb-4">
-                <h3 class="font-extrabold text-lg text-slate-800 dark:text-slate-100 flex items-center">
-                    <span class="w-2 h-2 bg-emerald-400 rounded-full animate-pulse mr-2.5"></span>
-                    📡 实时下载任务监控
-                </h3>
-                <button onclick="loadJobs()" class="px-3 py-1.5 bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 text-slate-600 dark:text-slate-300 rounded-lg text-xs font-semibold transition-all">↻ 手动刷新</button>
-            </div>
-            <div id="jobs-container" class="space-y-2 min-h-[60px]">
-                <p id="jobs-empty" class="text-xs text-slate-400 text-center py-4">暂无下载任务，提交链接后自动显示进度</p>
-            </div>
-        </div>
-
-        <!-- Section 2: Standalone File Browser Portal Links -->
-        <div class="glass-panel p-6 sm:p-8 rounded-[2rem] shadow-sm">
-            <div class="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-6 gap-3">
-                <div>
-        <!-- Section 2: Standalone File Browser Portal Links -->
-        <div class="glass-panel p-6 sm:p-8 rounded-[2rem] shadow-sm">
-            <div class="mb-6 border-b border-slate-200/60 dark:border-slate-700/60 pb-5">
-                <h3 class="font-extrabold text-xl text-slate-800 dark:text-slate-100 flex items-center">
-                    <svg class="w-6 h-6 mr-2 text-indigo-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path>
-                    </svg>
-                    📂 File Browser 私有云端网盘直达通道
+                    </span>
+                    ⚡ Telegram 离线拉取与自动解压
                 </h3>
                 <p class="text-xs text-slate-500 dark:text-slate-400 mt-1">
-                    由于现代浏览器（如 Chrome/Safari/Brave）默认的安全与隐私策略会拦截第三方内嵌网页（iframe）的 Cookie 与 LocalStorage 写入，在内嵌窗口中登录会引发循环重定向（画面闪烁）。建议点击下方按钮在**新窗口/新标签页中独立打开**，即可流畅登录使用。
+                    系统后台自动以 16 线程拉取资源，并调用 7z 侦测解压到网盘的 <code class="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-sky-600 font-mono text-[11px]">Telegram高速下载</code> 目录。
                 </p>
             </div>
-
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                <!-- Card 1: Main Home -->
-                <a href="/files/" target="_blank"
-                    class="group relative p-6 bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 hover:border-indigo-400 dark:hover:border-indigo-500 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
-                    <div>
-                        <div class="w-12 h-12 rounded-xl bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-4 transition-transform group-hover:scale-110">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
-                            </svg>
-                        </div>
-                        <h4 class="font-bold text-base text-slate-800 dark:text-slate-100 group-hover:text-indigo-500 transition-colors">📂 访问网盘系统主页</h4>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                            在线管理网盘内的所有个人文件、照片、视频以及离线下载资源。支持在线新建目录、移动、重命名及删除文件。
-                        </p>
-                    </div>
-                    <div class="mt-6 flex items-center text-xs font-bold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform">
-                        <span>立即进入</span>
-                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                    </div>
-                </a>
-
-                <!-- Card 2: Telegram folder -->
-                <a href="/files/files/Telegram%E9%AB%98%E9%80%9F%E4%B8%8B%E8%BD%BD/" target="_blank"
-                    class="group relative p-6 bg-slate-50/50 dark:bg-slate-800/40 border border-slate-200/80 dark:border-slate-700/80 hover:border-sky-400 dark:hover:border-sky-500 rounded-2xl shadow-sm hover:shadow-md transition-all duration-300 flex flex-col justify-between">
-                    <div>
-                        <div class="w-12 h-12 rounded-xl bg-sky-500/10 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-4 transition-transform group-hover:scale-110">
-                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
-                            </svg>
-                        </div>
-                        <h4 class="font-bold text-base text-slate-800 dark:text-slate-100 group-hover:text-sky-500 transition-colors">⚡ 直达 Telegram 离线下载目录</h4>
-                        <p class="text-xs text-slate-500 dark:text-slate-400 mt-1.5 leading-relaxed">
-                            一步到位直接跳转进入 <code class="bg-slate-100 dark:bg-slate-850 px-1 py-0.5 rounded text-sky-600">Telegram高速下载</code> 文件夹，快速预览您刚拉取并解包的视频与媒体。
-                        </p>
-                    </div>
-                    <div class="mt-6 flex items-center text-xs font-bold text-sky-600 dark:text-sky-400 group-hover:translate-x-1 transition-transform">
-                        <span>立即进入</span>
-                        <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
-                        </svg>
-                    </div>
-                </a>
+            <div class="flex items-center gap-2">
+                <span class="text-xs bg-sky-50 dark:bg-sky-900/40 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-700/50 px-3 py-1 rounded-full font-mono font-medium">16 Threads</span>
+                <span class="text-xs bg-emerald-50 dark:bg-emerald-900/40 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-700/50 px-3 py-1 rounded-full font-mono font-medium">Auto 7z Unzip</span>
             </div>
+        </div>
+
+        <form id="tg-download-form" onsubmit="submitTgDownload(event)" class="space-y-4">
+            <div class="grid grid-cols-1 md:grid-cols-12 gap-4">
+                <div class="md:col-span-8">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                        <span>Telegram 消息链接</span>
+                        <span class="text-[11px] font-normal text-slate-400">支持私聊 / 频道 / 群组文件链接</span>
+                    </label>
+                    <input type="text" id="tg-url-input" required placeholder="例如: https://t.me/c/123456789/1024"
+                        class="w-full px-4 py-3.5 bg-white/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all shadow-inner placeholder:text-slate-400">
+                </div>
+                <div class="md:col-span-4">
+                    <label class="block text-xs font-bold text-slate-700 dark:text-slate-300 mb-1.5 flex items-center justify-between">
+                        <span>解压密码 (可选)</span>
+                        <span class="text-[11px] font-normal text-slate-400">无密码留空</span>
+                    </label>
+                    <input type="text" id="tg-pwd-input" placeholder="例如: 123456"
+                        class="w-full px-4 py-3.5 bg-white/70 dark:bg-slate-900/60 border border-slate-200 dark:border-slate-700 rounded-2xl text-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-sky-500 transition-all shadow-inner placeholder:text-slate-400">
+                </div>
+            </div>
+            <div class="flex flex-col sm:flex-row justify-between items-center gap-4 pt-2">
+                <div class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5">
+                    <svg class="w-4 h-4 text-emerald-500 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                    </svg>
+                    <span>支持 <code class="text-indigo-500 font-mono">.zip</code> / <code class="text-indigo-500 font-mono">.rar</code> / <code class="text-indigo-500 font-mono">.7z</code> / <code class="text-indigo-500 font-mono">.tar</code> 等格式</span>
+                </div>
+                <button type="submit" id="tg-submit-btn"
+                    class="ripple-btn w-full sm:w-auto bg-gradient-to-r from-sky-500 to-indigo-600 hover:from-sky-600 hover:to-indigo-700 text-white font-bold px-8 py-3.5 rounded-2xl text-sm shadow-md shadow-sky-500/20 hover:shadow-sky-500/35 transition-all flex items-center justify-center shrink-0">
+                    <svg class="w-4 h-4 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                    </svg>
+                    提交离线任务
+                </button>
+            </div>
+        </form>
+    </div>
+
+    <!-- Section 2: 实时任务进度监控 -->
+    <div class="glass-panel p-6 sm:p-8 rounded-[2.5rem] shadow-sm">
+        <div class="flex items-center justify-between mb-4 border-b border-slate-200/60 dark:border-white/10 pb-4">
+            <h3 class="font-extrabold text-lg text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span class="w-2.5 h-2.5 bg-emerald-500 rounded-full animate-ping"></span>
+                📡 实时任务执行列表
+            </h3>
+            <button onclick="loadJobs()" class="px-3.5 py-1.5 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-600 dark:text-slate-300 rounded-xl text-xs font-semibold transition-all border border-slate-200/60 dark:border-white/10 flex items-center gap-1">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                </svg>
+                手动刷新
+            </button>
+        </div>
+        <div id="jobs-container" class="space-y-3 min-h-[60px]">
+            <p id="jobs-empty" class="text-xs text-slate-400 text-center py-6">暂无正在运行的任务，提交链接后将实时显示拉取进度</p>
+        </div>
+    </div>
+
+    <!-- Section 3: File Browser 网盘快捷直达 -->
+    <div class="glass-panel p-6 sm:p-8 rounded-[2.5rem] shadow-sm">
+        <div class="mb-6 border-b border-slate-200/60 dark:border-white/10 pb-4">
+            <h3 class="font-extrabold text-xl text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                <span class="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/50 text-indigo-500">
+                    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path>
+                    </svg>
+                </span>
+                📂 File Browser 网盘通道
+            </h3>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <!-- 卡片 1: 网盘主页 -->
+            <a href="/files/" target="_blank"
+                class="glass-card-hover group p-6 bg-white/60 dark:bg-white/[0.02] border border-slate-200/70 dark:border-white/10 rounded-2xl shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="w-12 h-12 rounded-2xl bg-indigo-50 dark:bg-indigo-900/40 text-indigo-600 dark:text-indigo-400 flex items-center justify-center mb-4 transition-transform group-hover:scale-110 shadow-sm">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6"></path>
+                        </svg>
+                    </div>
+                    <h4 class="font-bold text-base text-slate-800 dark:text-slate-100 group-hover:text-indigo-500 transition-colors">访问网盘完整根目录</h4>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                        在线管理网盘内的个人文件、照片、视频以及所有存储内容，支持多选、压缩打包与分享。
+                    </p>
+                </div>
+                <div class="mt-6 flex items-center text-xs font-bold text-indigo-600 dark:text-indigo-400 group-hover:translate-x-1 transition-transform">
+                    <span>立即进入主页</span>
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </div>
+            </a>
+
+            <!-- 卡片 2: TG 离线目录直达 -->
+            <a href="/files/files/Telegram%E9%AB%98%E9%80%9F%E4%B8%8B%E8%BD%BD/" target="_blank"
+                class="glass-card-hover group p-6 bg-white/60 dark:bg-white/[0.02] border border-slate-200/70 dark:border-white/10 rounded-2xl shadow-sm flex flex-col justify-between">
+                <div>
+                    <div class="w-12 h-12 rounded-2xl bg-sky-50 dark:bg-sky-900/40 text-sky-600 dark:text-sky-400 flex items-center justify-center mb-4 transition-transform group-hover:scale-110 shadow-sm">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path>
+                        </svg>
+                    </div>
+                    <h4 class="font-bold text-base text-slate-800 dark:text-slate-100 group-hover:text-sky-500 transition-colors">直达 TG 离线下载文件夹</h4>
+                    <p class="text-xs text-slate-500 dark:text-slate-400 mt-2 leading-relaxed">
+                        一键直达 <code class="bg-slate-100 dark:bg-slate-800 px-1 py-0.5 rounded text-sky-600 font-mono">Telegram高速下载</code> 目录，快速预览与下载已拉取并解压好的媒体文件。
+                    </p>
+                </div>
+                <div class="mt-6 flex items-center text-xs font-bold text-sky-600 dark:text-sky-400 group-hover:translate-x-1 transition-transform">
+                    <span>打开下载目录</span>
+                    <svg class="w-4 h-4 ml-1" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7"></path>
+                    </svg>
+                </div>
+            </a>
         </div>
     </div>
 </div>
 
 <script>
 let _pollTimer = null;
-let _hasActiveJobs = false;
-
 const STATUS_STYLES = {
-    'pending':  { dot: 'bg-yellow-400 animate-pulse', badge: 'bg-yellow-50 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-700', label: '⏳ 排队中' },
-    'running':  { dot: 'bg-sky-400 animate-ping',    badge: 'bg-sky-50 dark:bg-sky-900/30 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-700',     label: '⚡ 拉取中' },
-    'done':     { dot: 'bg-emerald-400',              badge: 'bg-emerald-50 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700', label: '✅ 完成' },
-    'warning':  { dot: 'bg-orange-400',               badge: 'bg-orange-50 dark:bg-orange-900/30 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-700',  label: '⚠️ 部分失败' },
-    'error':    { dot: 'bg-red-400',                  badge: 'bg-red-50 dark:bg-red-900/30 text-red-700 dark:text-red-300 border-red-200 dark:border-red-700',       label: '❌ 失败' },
+    'pending':  { dot: 'bg-amber-400 animate-pulse', badge: 'bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 border-amber-200 dark:border-amber-700/50', label: '⏳ 排队中' },
+    'running':  { dot: 'bg-sky-400 animate-ping',    badge: 'bg-sky-50 dark:bg-sky-950/40 text-sky-700 dark:text-sky-300 border-sky-200 dark:border-sky-700/50',     label: '⚡ 拉取中' },
+    'done':     { dot: 'bg-emerald-400',              badge: 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-700/50', label: '✅ 完成' },
+    'warning':  { dot: 'bg-orange-400',               badge: 'bg-orange-50 dark:bg-orange-950/40 text-orange-700 dark:text-orange-300 border-orange-200 dark:border-orange-700/50',  label: '⚠️ 部分失败' },
+    'error':    { dot: 'bg-rose-400',                  badge: 'bg-rose-50 dark:bg-rose-950/40 text-rose-700 dark:text-rose-300 border-rose-200 dark:border-rose-700/50',       label: '❌ 失败' },
 };
 
 function fmtElapsed(sec) {
-    if (sec < 60) return `${sec}s`;
+    if (!sec || sec < 60) return `${sec || 0}s`;
     return `${Math.floor(sec/60)}m ${sec%60}s`;
 }
 
@@ -208,70 +190,32 @@ async function loadJobs() {
         const empty = document.getElementById('jobs-empty');
         if (!jobs || jobs.length === 0) {
             if (empty) empty.style.display = '';
-            // 清除除 empty 外所有行
-            Array.from(container.children).forEach(c => { if (c.id !== 'jobs-empty') c.remove(); });
-            _hasActiveJobs = false;
+            container.innerHTML = '<p id="jobs-empty" class="text-xs text-slate-400 text-center py-6">暂无正在运行的任务，提交链接后将实时显示拉取进度</p>';
             return;
         }
-        if (empty) empty.style.display = 'none';
-        _hasActiveJobs = jobs.some(j => j.status === 'pending' || j.status === 'running');
 
-        // 渲染每个任务
-        const newIds = new Set(jobs.map(j => j.id));
-        // 移除已不存在的行
-        Array.from(container.querySelectorAll('[data-job-id]')).forEach(row => {
-            if (!newIds.has(row.dataset.jobId)) row.remove();
-        });
-        jobs.forEach(job => {
-            const st = STATUS_STYLES[job.status] || STATUS_STYLES['pending'];
-            const existing = container.querySelector(`[data-job-id="${job.id}"]`);
-            const html = `
-                <div class="flex items-center gap-3 px-4 py-3 rounded-xl border ${st.badge.split(' ').filter(c=>c.startsWith('bg-')||c.startsWith('border-')).join(' ')} bg-opacity-50 transition-all">
-                    <span class="relative flex h-2.5 w-2.5 shrink-0">
-                        <span class="absolute inline-flex h-full w-full rounded-full opacity-60 ${st.dot}"></span>
-                        <span class="relative inline-flex rounded-full h-2.5 w-2.5 ${st.dot.replace(' animate-ping','').replace(' animate-pulse','')}"></span>
-                    </span>
-                    <div class="flex-1 min-w-0">
-                        <div class="flex items-center gap-2 flex-wrap">
-                            <span class="text-[11px] font-bold px-2 py-0.5 rounded-full border ${st.badge}">${st.label}</span>
-                            <span class="text-xs text-slate-500 dark:text-slate-400 font-mono truncate max-w-[300px]" title="${job.url}">${job.url}</span>
-                        </div>
-                        <p class="text-xs text-slate-600 dark:text-slate-300 mt-1">${job.msg}</p>
-                    </div>
-                    <span class="text-[11px] text-slate-400 dark:text-slate-500 font-mono shrink-0">${fmtElapsed(job.elapsed)}</span>
-                </div>`;
-            if (existing) {
-                existing.outerHTML = html;
-                // After outerHTML replacement, re-query and insert at same position is complex; simpler to rebuild:
-            } else {
-                container.insertAdjacentHTML('afterbegin', html);
-                const newRow = container.firstElementChild;
-                if (newRow) newRow.setAttribute('data-job-id', job.id);
-            }
-        });
-        // Simple rebuild approach for reliability:
         container.innerHTML = '';
         jobs.forEach(job => {
             const st = STATUS_STYLES[job.status] || STATUS_STYLES['pending'];
             const div = document.createElement('div');
             div.dataset.jobId = job.id;
-            div.className = 'flex items-center gap-3 px-4 py-3 rounded-xl border transition-all ' + st.badge;
+            div.className = `flex items-center gap-3 p-4 rounded-2xl border transition-all ${st.badge} backdrop-blur-md shadow-sm`;
             div.innerHTML = `
-                <span class="relative flex h-2.5 w-2.5 shrink-0">
-                    <span class="absolute inline-flex h-full w-full rounded-full opacity-60 ${st.dot}"></span>
-                    <span class="relative inline-flex rounded-full h-2.5 w-2.5 ${st.dot.replace(' animate-ping','').replace(' animate-pulse','')}"></span>
+                <span class="relative flex h-3 w-3 shrink-0">
+                    <span class="absolute inline-flex h-full w-full rounded-full opacity-70 ${st.dot}"></span>
+                    <span class="relative inline-flex rounded-full h-3 w-3 ${st.dot.replace(' animate-ping','').replace(' animate-pulse','')}"></span>
                 </span>
                 <div class="flex-1 min-w-0">
                     <div class="flex items-center gap-2 flex-wrap">
                         <span class="text-[11px] font-bold px-2 py-0.5 rounded-full border ${st.badge}">${st.label}</span>
                         <span class="text-xs text-slate-500 dark:text-slate-400 font-mono truncate max-w-[280px]" title="${job.url}">${job.url}</span>
                     </div>
-                    <p class="text-xs text-slate-600 dark:text-slate-300 mt-1">${job.msg}</p>
+                    <p class="text-xs text-slate-700 dark:text-slate-200 mt-1 font-medium">${job.msg}</p>
                 </div>
-                <span class="text-[11px] text-slate-400 dark:text-slate-500 font-mono shrink-0">${fmtElapsed(job.elapsed)}</span>`;
+                <span class="text-[11px] text-slate-400 font-mono shrink-0">${fmtElapsed(job.elapsed)}</span>`;
             container.appendChild(div);
         });
-    } catch(e) { /* 静默失败 */ }
+    } catch(e) { }
 }
 
 function startPolling() {
@@ -279,7 +223,6 @@ function startPolling() {
     _pollTimer = setInterval(loadJobs, 3000);
 }
 
-// 页面加载后立即拉取一次，然后每3秒轮询
 document.addEventListener('DOMContentLoaded', () => {
     loadJobs();
     startPolling();
@@ -293,7 +236,7 @@ async function submitTgDownload(e) {
     const origText = btn.innerHTML;
     
     btn.disabled = true;
-    btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>正在投递...`;
+    btn.innerHTML = `<svg class="animate-spin -ml-1 mr-2 h-4 w-4 text-white inline" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>正在提交...`;
     
     try {
         const resp = await fetch('/api/tg_download', {
@@ -306,7 +249,6 @@ async function submitTgDownload(e) {
             showToast(res.message, 'success');
             urlInput.value = '';
             pwdInput.value = '';
-            // 立即刷新进度面板
             setTimeout(loadJobs, 500);
         } else {
             showToast(res.message || '提交失败，请检查链接或网络', 'error');

@@ -7,10 +7,12 @@
 #   - 若密钥为空则自动安全生成并写入 proxy.env
 #   - 生成的密钥绝不打印到 stdout/stderr
 #   - 多次运行幂等：检测已有密钥则复用，不重新生成
+#   - 自动获取物理机所在国家与国旗 Emoji 并写入 proxy-meta.conf
 # =============================================================================
 
 set -euo pipefail
 
+_RENDER_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROXY_ENV_FILE="/etc/xray-portal/proxy.env"
 XRAY_CONFIG_FILE="/usr/local/etc/xray/config.json"
 
@@ -205,8 +207,24 @@ JSONEOF
     chown root:root "${tmp_cfg}"
     mv -f "${tmp_cfg}" "${XRAY_CONFIG_FILE}"
 
-    # 同步写入 /etc/xray-portal/proxy-meta.conf（不含密钥，仅含域名和端口）
+    # 自动探测公网 IP 与地理位置（国家、国旗 Emoji）
     local proxy_domain="${PROXY_DOMAIN:-$(curl -fsSL --max-time 5 ipv4.icanhazip.com 2>/dev/null || echo 'unknown')}"
+    local detect_py="${_RENDER_LIB_DIR}/detect_geo.py"
+    local country_code="UN"
+    local country_name="未知地区"
+    local country_flag="🌐"
+    local city=""
+
+    if [[ -f "${detect_py}" ]]; then
+        eval "$(python3 "${detect_py}" "${proxy_domain}" env 2>/dev/null || true)"
+        country_code="${PROXY_COUNTRY_CODE:-UN}"
+        country_name="${PROXY_COUNTRY_NAME:-未知地区}"
+        country_flag="${PROXY_COUNTRY_FLAG:-🌐}"
+        city="${PROXY_CITY:-}"
+        log_info "检测到服务器地理位置: ${country_flag} ${country_name} (${country_code}${city:+ - ${city}})"
+    fi
+
+    # 同步写入 /etc/xray-portal/proxy-meta.conf（不含密钥）
     local meta_file="/etc/xray-portal/proxy-meta.conf"
     local tmp_meta
     tmp_meta=$(mktemp /tmp/proxy-meta.XXXXXX)
@@ -214,6 +232,10 @@ JSONEOF
     cat > "${tmp_meta}" <<METAEOF
 # 代理元数据配置（不含密钥）
 PROXY_DOMAIN=${proxy_domain}
+PROXY_COUNTRY_CODE=${country_code}
+PROXY_COUNTRY_NAME=${country_name}
+PROXY_COUNTRY_FLAG=${country_flag}
+PROXY_CITY=${city}
 PROXY_PORT_V4=${port_v4}
 PROXY_PORT_V6=${port_v6}
 PROXY_PORT_LEGACY=${port_legacy}
@@ -226,7 +248,7 @@ METAEOF
     chmod 644 "${tmp_meta}"
     mv -f "${tmp_meta}" "${meta_file}"
 
-    log_success "Xray 配置渲染完成: ${XRAY_CONFIG_FILE}"
+    log_success "Xray 配置与节点位置元数据写入完成: ${XRAY_CONFIG_FILE}"
     # 再次确认：不输出任何密钥
     unset _PROXY_KEY_V4 _PROXY_KEY_V6 _PROXY_KEY_LEGACY
 }
