@@ -218,9 +218,49 @@ def traffic():
     return render_template('traffic.html', logged_in=True, wallpapers=utils.get_random_wallpapers())
 
 # ------------------------------------------
-# 🔑 2FA / TOTP 工具及云端同步 API
+# 🔑 2FA / TOTP 服务端 AES-256-GCM 透明加密存储
 # ------------------------------------------
 _2FA_STORAGE_FILE = "/var/lib/2fa_secrets.json"
+
+def _get_2fa_cipher_key():
+    """根据面板私密凭证派生 256 位 AES-GCM 强密钥"""
+    import hashlib
+    seed = (str(config.PORTAL_PASSWORD) + str(app.config.get('SECRET_KEY', 'xray-portal-default-salt'))).encode('utf-8')
+    return hashlib.sha256(seed).digest()
+
+def _encrypt_2fa_data(data_obj):
+    """将数据对象序列化并进行 AES-GCM-256 加密"""
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    import secrets, base64
+    key = _get_2fa_cipher_key()
+    aesgcm = AESGCM(key)
+    nonce = secrets.token_bytes(12)
+    plaintext = json.dumps(data_obj, ensure_ascii=False).encode('utf-8')
+    ciphertext = aesgcm.encrypt(nonce, plaintext, None)
+    return {
+        "_encrypted": True,
+        "_version": 1,
+        "algorithm": "AES-256-GCM",
+        "updated_at": __import__('datetime').datetime.now().isoformat(),
+        "nonce": base64.b64encode(nonce).decode('utf-8'),
+        "data": base64.b64encode(ciphertext).decode('utf-8')
+    }
+
+def _decrypt_2fa_data(cipher_payload):
+    """解密数据对象，兼容旧版明文格式并支持平滑升级"""
+    if isinstance(cipher_payload, list):
+        return cipher_payload
+    if not isinstance(cipher_payload, dict) or not cipher_payload.get('_encrypted'):
+        return cipher_payload
+
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    import base64
+    key = _get_2fa_cipher_key()
+    aesgcm = AESGCM(key)
+    nonce = base64.b64decode(cipher_payload['nonce'])
+    ciphertext = base64.b64decode(cipher_payload['data'])
+    decrypted_bytes = aesgcm.decrypt(nonce, ciphertext, None)
+    return json.loads(decrypted_bytes.decode('utf-8'))
 
 @app.route('/2fa', methods=['GET'])
 def page_2fa():
@@ -236,9 +276,11 @@ def get_2fa_accounts():
         return jsonify([])
     try:
         with open(_2FA_STORAGE_FILE, 'r', encoding='utf-8') as f:
-            data = json.load(f)
-            return jsonify(data)
-    except Exception:
+            raw = json.load(f)
+            decrypted = _decrypt_2fa_data(raw)
+            return jsonify(decrypted)
+    except Exception as e:
+        app.logger.error(f"Failed to read/decrypt 2fa accounts: {e}")
         return jsonify([])
 
 @app.route('/api/2fa/accounts', methods=['POST'])
@@ -260,9 +302,11 @@ def save_2fa_accounts():
             shutil.copy2(_2FA_STORAGE_FILE, bak_file)
             shutil.copy2(_2FA_STORAGE_FILE, f"{_2FA_STORAGE_FILE}.bak")
 
+        # 磁盘上以 AES-256-GCM 密文存储
+        encrypted_dict = _encrypt_2fa_data(data)
         tmp_file = f"{_2FA_STORAGE_FILE}.tmp"
         with open(tmp_file, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(encrypted_dict, f, ensure_ascii=False, indent=2)
         os.replace(tmp_file, _2FA_STORAGE_FILE)
         try:
             os.chmod(_2FA_STORAGE_FILE, 0o600)
