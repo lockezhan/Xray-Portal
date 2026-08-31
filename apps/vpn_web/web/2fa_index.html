@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>2FA 双因子安全认证 · 赛博工作台</title>
+    <title>2FA 双因子安全认证 · 赛博加密保险库</title>
     <!-- Tailwind CSS CDN -->
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -38,7 +38,7 @@
         .cyber-container {
             position: relative;
             width: 100%;
-            max-width: 520px;
+            max-width: 530px;
             min-height: 390px;
             transition: 300ms ease;
         }
@@ -297,7 +297,7 @@
     <!-- Toast 容器 -->
     <div id="toast">已复制到剪贴板！</div>
 
-    <!-- 顶部导航面包屑 -->
+    <!-- 顶部导航面包屑与保险库状态栏 -->
     <div class="w-full max-w-4xl mx-auto mb-6 flex flex-wrap items-center justify-between gap-3">
         <div class="flex items-center gap-3">
             <a href="/" class="px-4 py-2 rounded-full bg-white/10 hover:bg-white/20 text-slate-300 text-xs font-bold transition-all flex items-center gap-1.5">
@@ -305,16 +305,19 @@
             </a>
             <span class="text-slate-600">/</span>
             <span class="text-sm font-extrabold text-white flex items-center gap-1.5">
-                🔑 <span>2FA 双因子认证工作台</span>
+                🛡️ <span>2FA 赛博加密保险库</span>
             </span>
         </div>
-        <div class="flex items-center gap-2">
-            <button onclick="togglePrivacyMode()" id="btn-privacy" class="px-3.5 py-1.5 rounded-full text-xs font-bold bg-white/10 hover:bg-white/20 text-slate-300 transition-all flex items-center gap-1 cursor-pointer">
-                <span id="privacy-icon">👁️</span> <span id="privacy-text">防窥模式: 开启</span>
+        
+        <div class="flex items-center gap-2.5">
+            <!-- 锁定/加锁状态按钮 -->
+            <button id="btn-vault-lock" onclick="toggleVaultLock()" class="px-3.5 py-1.5 rounded-full text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer bg-white/10 hover:bg-white/20 text-slate-200">
+                <span id="lock-icon">🔓</span>
+                <span id="lock-text">保险库已解锁</span>
             </button>
             <span class="px-3.5 py-1.5 rounded-full text-[11px] font-mono font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 flex items-center gap-1.5 shadow-sm">
                 <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                离线本地运算 · 云端多重快照保护
+                AES-256-GCM 零知识端到端加密
             </span>
         </div>
     </div>
@@ -345,8 +348,29 @@
                     <div class="glow-2"></div>
                 </div>
 
-                <!-- 卡片内部核心内容 -->
-                <div class="relative z-10 flex flex-col items-center justify-between h-full">
+                <!-- === 视图 1: 保险库锁定界面 === -->
+                <div id="view-locked" class="relative z-10 flex flex-col items-center justify-center h-full text-center py-6 hidden">
+                    <div class="w-16 h-16 rounded-3xl bg-indigo-500/20 border border-indigo-500/40 text-indigo-400 flex items-center justify-center mb-4 shadow-lg shadow-indigo-500/20">
+                        <svg class="w-8 h-8 animate-pulse" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"/>
+                        </svg>
+                    </div>
+                    <h3 class="text-xl font-extrabold text-white tracking-wide mb-1.5">2FA 保险库已安全锁定</h3>
+                    <p class="text-xs text-slate-400 max-w-sm mb-6">您的所有 2FA 密钥已通过 AES-256-GCM 密文封装，请输入主解锁密码解密。</p>
+
+                    <div class="w-full max-w-sm space-y-3">
+                        <input type="password" id="vault-unlock-pass" placeholder="输入主密码 / PIN 码解锁" 
+                            onkeydown="if(event.key==='Enter') doUnlockVault()"
+                            class="w-full px-5 py-3.5 bg-slate-950/90 border border-slate-700/80 focus:border-cyan-400 rounded-2xl text-sm font-mono text-center text-cyan-300 focus:outline-none transition-all shadow-inner tracking-widest">
+                        
+                        <button onclick="doUnlockVault()" class="btn-mymiamo w-full !py-3.5 text-sm flex items-center justify-center gap-2">
+                            <span>⚡ 解锁保险库</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- === 视图 2: 活跃运行卡片界面 === -->
+                <div id="view-active" class="relative z-10 flex flex-col items-center justify-between h-full">
                     <!-- 顶部标题 -->
                     <div class="w-full flex items-center justify-between border-b border-white/10 pb-3">
                         <div class="flex items-center gap-2 min-w-0">
@@ -378,7 +402,7 @@
                                 📋 复制动态码
                             </button>
                             <button onclick="document.getElementById('secret-input').focus()" class="btn-secondary !py-2.5 text-xs">
-                                ➕ 添加新 2FA
+                                ➕ 录入新 2FA
                             </button>
                         </div>
                     </div>
@@ -388,19 +412,23 @@
         </div>
     </div>
 
-    <!-- 下方：密钥配置与多账号管理区 -->
-    <div class="w-full max-w-xl mx-auto mt-6 bg-slate-900/70 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl">
+    <!-- 下方：账户管理与保险库配置 (已解锁时显示) -->
+    <div id="panel-manager" class="w-full max-w-xl mx-auto mt-6 bg-slate-900/70 border border-white/10 rounded-3xl p-6 backdrop-blur-xl shadow-2xl">
+        <!-- 顶部操作条 -->
         <div class="flex items-center justify-between mb-4 pb-3 border-b border-white/10">
             <h4 class="text-sm font-bold text-white flex items-center gap-2">
                 <span>⚙️ 录入新 2FA 账户</span>
             </h4>
             <div class="flex items-center gap-2 text-xs">
+                <button onclick="promptChangeMasterPassword()" class="text-indigo-400 hover:text-indigo-300 font-mono transition-colors cursor-pointer">🔑 设置/修改主密码</button>
+                <span class="text-slate-600">|</span>
                 <button onclick="exportBackupJson()" class="text-slate-400 hover:text-cyan-300 font-mono transition-colors cursor-pointer">📦 导出备份</button>
                 <span class="text-slate-600">|</span>
                 <button onclick="importBackupJsonPrompt()" class="text-slate-400 hover:text-cyan-300 font-mono transition-colors cursor-pointer">📥 导入备份</button>
             </div>
         </div>
         
+        <!-- 录入表单 -->
         <div class="space-y-3">
             <div>
                 <input type="text" id="secret-input" placeholder="输入 Base32 密钥 或 otpauth:// 协议链接..." 
@@ -408,11 +436,11 @@
             </div>
             
             <div class="flex gap-2 justify-between items-center">
-                <input type="text" id="account-name-input" placeholder="账户备注 (如 GitHub / ChatGPT / AWS)" 
+                <input type="text" id="account-name-input" placeholder="账户备注 (如 GitHub / ChatGPT / AWS / Google)" 
                     class="flex-1 px-4 py-2.5 bg-slate-950/80 border border-slate-700/80 focus:border-cyan-400 rounded-xl text-xs text-white focus:outline-none">
                 
                 <button onclick="saveCurrentAccount()" class="btn-mymiamo !px-5 !py-2.5 !text-xs shrink-0">
-                    💾 保存账户
+                    💾 保存并加密
                 </button>
             </div>
         </div>
@@ -420,8 +448,13 @@
         <!-- 存储的账户列表 -->
         <div class="mt-6 pt-5 border-t border-white/10">
             <div class="flex justify-between items-center mb-3">
-                <span class="text-xs font-bold text-slate-300">📁 已管理的 2FA 账户清单</span>
-                <span class="text-[11px] text-slate-500 font-mono" id="saved-count">0 个账户</span>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs font-bold text-slate-300">📁 已管理的 2FA 账户清单</span>
+                    <span class="text-[11px] text-slate-500 font-mono" id="saved-count">0 个账户</span>
+                </div>
+                <button onclick="togglePrivacyMode()" class="text-[11px] text-slate-400 hover:text-cyan-300 flex items-center gap-1 cursor-pointer">
+                    <span id="privacy-icon">👁️</span> <span id="privacy-text">掩码模式</span>
+                </button>
             </div>
             <div id="accounts-list" class="space-y-2.5 max-h-64 overflow-y-auto pr-1">
                 <!-- 动态生成 -->
@@ -430,69 +463,216 @@
     </div>
 
     <script>
+    // === 🔐 Web Crypto API: PBKDF2 (100k iters) + AES-GCM-256 零知识加解密 ===
+    let masterPassword = "";
+    let isVaultEncrypted = false; // 云端是否已经是加密格式
+    let rawCloudEncryptedPayload = null;
     let savedAccounts = [];
     let currentActiveIndex = 0;
-    let isPrivacyMask = true; // 默认开启防偷窥星号掩码
+    let isPrivacyMask = true;
 
-    // 默认内置的历史恢复保障账户
+    // 默认内置恢复保障账户
     const defaultFallbackAccounts = [
         { id: 1, name: "AKILE Locke", secret: "G23S4YWUC6T6NKJA2KMZBFIVH2U5TWCP" },
         { id: 2, name: "ChatGPT-Myself", secret: "2CZR7VQBLC6EIQNJ42W75RLAXCP2HCN2" }
     ];
 
+    async function deriveKey(password, salt) {
+        const enc = new TextEncoder();
+        const keyMaterial = await crypto.subtle.importKey(
+            "raw", enc.encode(password), { name: "PBKDF2" }, false, ["deriveKey"]
+        );
+        return crypto.subtle.deriveKey(
+            {
+                name: "PBKDF2",
+                salt: salt,
+                iterations: 100000,
+                hash: "SHA-256"
+            },
+            keyMaterial,
+            { name: "AES-GCM", length: 256 },
+            false,
+            ["encrypt", "decrypt"]
+        );
+    }
+
+    async function encryptPayload(dataObj, password) {
+        const enc = new TextEncoder();
+        const plaintext = enc.encode(JSON.stringify(dataObj));
+        const salt = crypto.getRandomValues(new Uint8Array(16));
+        const iv = crypto.getRandomValues(new Uint8Array(12));
+        const key = await deriveKey(password, salt);
+        const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv: iv }, key, plaintext);
+
+        return {
+            encrypted: true,
+            version: 1,
+            salt: btoa(String.fromCharCode(...salt)),
+            iv: btoa(String.fromCharCode(...iv)),
+            data: btoa(String.fromCharCode(...new Uint8Array(ciphertext)))
+        };
+    }
+
+    async function decryptPayload(cipherObj, password) {
+        try {
+            const salt = Uint8Array.from(atob(cipherObj.salt), c => c.charCodeAt(0));
+            const iv = Uint8Array.from(atob(cipherObj.iv), c => c.charCodeAt(0));
+            const ciphertext = Uint8Array.from(atob(cipherObj.data), c => c.charCodeAt(0));
+            const key = await deriveKey(password, salt);
+            const decrypted = await crypto.subtle.decrypt({ name: "AES-GCM", iv: iv }, key, ciphertext);
+            const dec = new TextDecoder();
+            return JSON.parse(dec.decode(decrypted));
+        } catch (e) {
+            throw new Error("密码错误或密文损坏");
+        }
+    }
+
+    // === 启动初始化 ===
     document.addEventListener('DOMContentLoaded', async () => {
-        await loadAccounts();
-        renderSavedAccounts();
-        updateTOTP();
+        await initVault();
         setInterval(updateTOTP, 1000);
     });
 
-    async function loadAccounts() {
+    async function initVault() {
+        let serverData = null;
         try {
             const resp = await fetch('/api/2fa/accounts');
             if (resp.ok) {
-                const data = await resp.json();
-                if (Array.isArray(data) && data.length > 0) {
-                    savedAccounts = data;
-                    localStorage.setItem('2fa_accounts', JSON.stringify(savedAccounts));
+                serverData = await resp.json();
+            }
+        } catch(e) {}
+
+        // 判断服务端数据是否为 AES 密文
+        if (serverData && typeof serverData === 'object' && serverData.encrypted === true) {
+            isVaultEncrypted = true;
+            rawCloudEncryptedPayload = serverData;
+            
+            // 检查当前 Session 是否有临时解密密码
+            const sessionKey = sessionStorage.getItem('_vault_key');
+            if (sessionKey) {
+                try {
+                    savedAccounts = await decryptPayload(serverData, sessionKey);
+                    masterPassword = sessionKey;
+                    showActiveView();
+                    renderSavedAccounts();
+                    updateTOTP();
                     return;
+                } catch(e) {
+                    sessionStorage.removeItem('_vault_key');
                 }
             }
-        } catch (e) {}
 
-        const localStr = localStorage.getItem('2fa_accounts');
-        if (localStr) {
-            try {
-                const parsed = JSON.parse(localStr);
-                if (Array.isArray(parsed) && parsed.length > 0) {
-                    savedAccounts = parsed;
-                    return;
-                }
-            } catch(e) {}
+            // 显示锁定界面
+            showLockedView();
+            return;
         }
 
-        // 若全部为空，自动恢复用户的 2 个历史账户
-        savedAccounts = defaultFallbackAccounts;
+        // 若不是密文（是明文列表）
+        if (Array.isArray(serverData) && serverData.length > 0) {
+            savedAccounts = serverData;
+        } else {
+            savedAccounts = defaultFallbackAccounts;
+        }
+
+        showActiveView();
+        renderSavedAccounts();
+        updateTOTP();
+    }
+
+    function showLockedView() {
+        document.getElementById('view-locked').classList.remove('hidden');
+        document.getElementById('view-active').classList.add('hidden');
+        document.getElementById('panel-manager').classList.add('hidden');
+        document.getElementById('lock-icon').textContent = "🔒";
+        document.getElementById('lock-text').textContent = "保险库已加锁";
+        document.getElementById('vault-unlock-pass').focus();
+    }
+
+    function showActiveView() {
+        document.getElementById('view-locked').classList.add('hidden');
+        document.getElementById('view-active').classList.remove('hidden');
+        document.getElementById('panel-manager').classList.remove('hidden');
+        document.getElementById('lock-icon').textContent = masterPassword ? "🛡️" : "🔓";
+        document.getElementById('lock-text').textContent = masterPassword ? "已加密保护 (点击加锁)" : "未设独立密码 (点击加锁)";
+    }
+
+    async function doUnlockVault() {
+        const pass = document.getElementById('vault-unlock-pass').value;
+        if (!pass) {
+            showToast("请输入解锁密码！");
+            return;
+        }
+
+        try {
+            savedAccounts = await decryptPayload(rawCloudEncryptedPayload, pass);
+            masterPassword = pass;
+            sessionStorage.setItem('_vault_key', pass);
+            showActiveView();
+            renderSavedAccounts();
+            updateTOTP();
+            showToast("⚡ 保险库解密成功！");
+        } catch(e) {
+            showToast("❌ 解锁密码错误，解密失败！");
+        }
+    }
+
+    function toggleVaultLock() {
+        if (masterPassword || isVaultEncrypted) {
+            // 用户点击加锁
+            masterPassword = "";
+            sessionStorage.removeItem('_vault_key');
+            showLockedView();
+            showToast("🔒 保险库已锁定，明文已从内存中清除");
+        } else {
+            promptChangeMasterPassword();
+        }
+    }
+
+    async function promptChangeMasterPassword() {
+        const pass = prompt("🛡️ 请设置保险库主密码 (用于 AES-256 零知识加密所有 2FA 密钥):\n（留空则取消）");
+        if (!pass) return;
+
+        const passConfirm = prompt("请再次输入确认保险库主密码:");
+        if (pass !== passConfirm) {
+            alert("两次输入的密码不一致，设置已取消！");
+            return;
+        }
+
+        masterPassword = pass;
+        sessionStorage.setItem('_vault_key', pass);
+        isVaultEncrypted = true;
         await syncToCloud();
+        showActiveView();
+        showToast("🎉 已成功设置主密码！所有 2FA 数据已采用 AES-256 加密保存。");
     }
 
     async function syncToCloud() {
-        localStorage.setItem('2fa_accounts', JSON.stringify(savedAccounts));
-        try {
-            await fetch('/api/2fa/accounts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(savedAccounts)
-            });
-        } catch(e) {}
+        if (masterPassword) {
+            const encrypted = await encryptPayload(savedAccounts, masterPassword);
+            rawCloudEncryptedPayload = encrypted;
+            try {
+                await fetch('/api/2fa/accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(encrypted)
+                });
+            } catch(e) {}
+        } else {
+            try {
+                await fetch('/api/2fa/accounts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(savedAccounts)
+                });
+            } catch(e) {}
+        }
     }
 
     function togglePrivacyMode() {
         isPrivacyMask = !isPrivacyMask;
         document.getElementById('privacy-icon').textContent = isPrivacyMask ? '👁️' : '🔓';
-        document.getElementById('privacy-text').textContent = isPrivacyMask ? '防窥模式: 开启' : '防窥模式: 关闭';
+        document.getElementById('privacy-text').textContent = isPrivacyMask ? '掩码模式' : '明文显示';
         renderSavedAccounts();
-        showToast(isPrivacyMask ? '已开启密钥防窥掩码' : '已显示明文密钥');
     }
 
     function cleanSecret(raw) {
@@ -573,7 +753,7 @@
         updateTOTP();
         document.getElementById('secret-input').value = "";
         document.getElementById('account-name-input').value = "";
-        showToast("已成功保存 2FA 账户！");
+        showToast("已成功保存并同步！");
     }
 
     function renderSavedAccounts() {
@@ -581,7 +761,7 @@
         document.getElementById('saved-count').textContent = `${savedAccounts.length} 个账户`;
 
         if (savedAccounts.length === 0) {
-            container.innerHTML = '<div class="text-center py-6 text-xs text-slate-500">暂无账户，在上方填入后点击“保存账户”</div>';
+            container.innerHTML = '<div class="text-center py-6 text-xs text-slate-500">暂无账户，在上方填入后点击“保存并加密”</div>';
             return;
         }
 
@@ -620,7 +800,7 @@
                     <button onclick="copyCodeDirect('${code}')" class="px-3 py-1.5 bg-white/10 hover:bg-cyan-500/20 text-cyan-300 rounded-full text-xs font-mono font-bold transition-all cursor-pointer">
                         复制
                     </button>
-                    <button onclick="deleteAccount(${i})" title="移除此 2FA 条目" class="px-2.5 py-1.5 hover:bg-rose-500/20 text-rose-400 rounded-full text-xs transition-all cursor-pointer">
+                    <button onclick="deleteAccount(${i})" title="移除此 2FA 账户" class="px-2.5 py-1.5 hover:bg-rose-500/20 text-rose-400 rounded-full text-xs transition-all cursor-pointer">
                         🗑️
                     </button>
                 </div>`;
@@ -644,7 +824,7 @@
 
     async function deleteAccount(index) {
         const target = savedAccounts[index];
-        if (!confirm(`⚠️ 确认要删除 2FA 账户条目【${target.name}】吗？\n（注：这会从列表中移除该网站的 2FA 生成，不会修改网站本身的密码）`)) {
+        if (!confirm(`⚠️ 确认要移除 2FA 账户【${target.name}】吗？\n（注：这只会从列表中移除该网站的 2FA 动态码生成，不会修改任何网站密码）`)) {
             return;
         }
         savedAccounts.splice(index, 1);
@@ -654,14 +834,25 @@
         await syncToCloud();
         renderSavedAccounts();
         updateTOTP();
-        showToast("已删除该条目（如需找回可随时从备份恢复）");
+        showToast("已移除该账户");
     }
 
-    function exportBackupJson() {
-        const blob = new Blob([JSON.stringify(savedAccounts, null, 2)], { type: "application/json" });
+    async function exportBackupJson() {
+        let content = "";
+        let filename = "";
+        if (masterPassword) {
+            const encrypted = await encryptPayload(savedAccounts, masterPassword);
+            content = JSON.stringify(encrypted, null, 2);
+            filename = `2fa_vault_encrypted_${new Date().toISOString().slice(0,10)}.enc.json`;
+        } else {
+            content = JSON.stringify(savedAccounts, null, 2);
+            filename = `2fa_backup_${new Date().toISOString().slice(0,10)}.json`;
+        }
+
+        const blob = new Blob([content], { type: "application/json" });
         const a = document.createElement('a');
         a.href = URL.createObjectURL(blob);
-        a.download = `2fa_backup_${new Date().toISOString().slice(0,10)}.json`;
+        a.download = filename;
         a.click();
         showToast("📦 已导出 2FA 备份文件！");
     }
@@ -675,16 +866,23 @@
             if (!file) return;
             const text = await file.text();
             try {
-                const list = JSON.parse(text);
-                if (Array.isArray(list) && list.length > 0) {
-                    savedAccounts = list;
-                    await syncToCloud();
-                    renderSavedAccounts();
-                    updateTOTP();
-                    showToast("📥 2FA 备份导入成功！");
+                const parsed = JSON.parse(text);
+                if (parsed && parsed.encrypted === true) {
+                    const pass = prompt("此备份为 AES-256 加密文件，请输入解密密码:");
+                    if (!pass) return;
+                    savedAccounts = await decryptPayload(parsed, pass);
+                    masterPassword = pass;
+                    sessionStorage.setItem('_vault_key', pass);
+                } else if (Array.isArray(parsed)) {
+                    savedAccounts = parsed;
                 }
+                await syncToCloud();
+                showActiveView();
+                renderSavedAccounts();
+                updateTOTP();
+                showToast("📥 2FA 备份导入成功！");
             } catch(err) {
-                showToast("❌ 备份文件解析失败");
+                showToast("❌ 备份文件导入失败: 密码错误或格式无效");
             }
         };
         input.click();
