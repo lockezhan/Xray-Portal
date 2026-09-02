@@ -15,13 +15,16 @@
                 </svg>
             </span>
             <div>
-                <div class="flex items-center gap-2">
+                <div class="flex flex-wrap items-center gap-2">
                     <h1 class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">网络流量与系统安全监控</h1>
+                    <span class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">
+                        🇰🇷 Primary 节点 (Azure 首尔)
+                    </span>
                     <span id="active-iface-badge" class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
-                        网卡: eth0
+                        物理网卡: eth0
                     </span>
                 </div>
-                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">内核级真实物理网卡流量采样 · 排除虚拟网卡干扰 · 实时安全连接审计</p>
+                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">Primary 主节点物理网卡流量采样 · 重点监控 Azure 15GB 免费出站流量 (Egress)</p>
             </div>
         </div>
         <div class="flex items-center gap-2.5">
@@ -40,7 +43,7 @@
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">正在拉取真实物理网卡流量与安全大盘...</p>
+        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">正在拉取 Primary 节点流量与安全大盘...</p>
     </div>
 
     <!-- 主体数据看板 -->
@@ -49,7 +52,7 @@
         <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
             <!-- 今日流量 -->
             <div class="liquid-glass liquid-hover p-6 rounded-[2rem] flex flex-col justify-between">
-                <div class="flex justify-between items-center mb-4">
+                <div class="flex justify-between items-center mb-3">
                     <span class="text-sm font-bold text-slate-700 dark:text-slate-300">今日累计流量</span>
                     <span class="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>
@@ -57,39 +60,49 @@
                 </div>
                 <div class="space-y-3">
                     <div class="flex items-center justify-between">
-                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>下载 (RX)</span>
-                        <span id="stat-today-rx" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>入站 (RX - 免费)</span>
+                        <span id="stat-today-rx" class="text-xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
                     </div>
                     <div class="flex items-center justify-between">
-                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-400"></span>上传 (TX)</span>
-                        <span id="stat-today-tx" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-400"></span>出站 (TX - 计费)</span>
+                        <span id="stat-today-tx" class="text-xl font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">--</span>
                     </div>
                 </div>
             </div>
 
-            <!-- 本月流量 -->
-            <div class="liquid-glass liquid-hover p-6 rounded-[2rem] flex flex-col justify-between">
-                <div class="flex justify-between items-center mb-4">
-                    <span class="text-sm font-bold text-slate-700 dark:text-slate-300">本月累计流量</span>
-                    <span class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500">
-                        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"></path></svg>
-                    </span>
-                </div>
-                <div class="space-y-3">
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>下载 (RX)</span>
-                        <span id="stat-month-rx" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
+            <!-- 本月出站流量与 15GB 免费额度监控 -->
+            <div class="liquid-glass liquid-hover p-6 rounded-[2rem] flex flex-col justify-between border-2 border-indigo-500/30">
+                <div>
+                    <div class="flex justify-between items-center mb-2">
+                        <div class="flex items-center gap-1.5">
+                            <span class="text-sm font-bold text-slate-800 dark:text-slate-100">本月出站计费额度</span>
+                            <span class="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20">15GB 免费包</span>
+                        </div>
+                        <span class="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                        </span>
                     </div>
-                    <div class="flex items-center justify-between">
-                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-400"></span>上传 (TX)</span>
-                        <span id="stat-month-tx" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
+                    <div class="text-[11px] text-slate-500 dark:text-slate-400 mb-3">向手机/电脑发送的下载流量 (Azure 出站 Egress)</div>
+                    
+                    <div class="flex items-baseline justify-between mb-2">
+                        <span class="text-xs font-semibold text-slate-600 dark:text-slate-300">本月出站已用:</span>
+                        <span id="stat-month-tx" class="text-2xl font-black text-indigo-600 dark:text-indigo-400 font-mono">--</span>
+                    </div>
+
+                    <!-- 15GB 进度条 -->
+                    <div class="w-full h-2 bg-slate-200 dark:bg-slate-800 rounded-full overflow-hidden mb-1.5">
+                        <div id="quota-progress-bar" class="h-full bg-gradient-to-r from-emerald-400 via-indigo-500 to-rose-500 rounded-full transition-all duration-500" style="width: 0%"></div>
+                    </div>
+                    <div class="flex justify-between items-center text-[10px] font-mono text-slate-400">
+                        <span id="quota-used-text">已用: 0.00 GB</span>
+                        <span id="quota-left-text">剩余: 15.00 GB</span>
                     </div>
                 </div>
             </div>
 
-            <!-- 系统总计 -->
+            <!-- 系统历史总计 -->
             <div class="liquid-glass liquid-hover p-6 rounded-[2rem] flex flex-col justify-between">
-                <div class="flex justify-between items-center mb-4">
+                <div class="flex justify-between items-center mb-3">
                     <span class="text-sm font-bold text-slate-700 dark:text-slate-300">系统历史总计</span>
                     <span class="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-500">
                         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 7v10c0 2.21 3.582 4 8 4s8-1.79 8-4V7M4 7c0 2.21 3.582 4 8 4s8-1.79 8-4M4 7c0-2.21 3.582-4 8-4s8 1.79 8 4m0 5c0 2.21-3.582 4-8 4s-8-1.79-8-4"></path></svg>
@@ -97,12 +110,12 @@
                 </div>
                 <div class="space-y-3">
                     <div class="flex items-center justify-between">
-                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>下载 (RX)</span>
-                        <span id="stat-total-rx" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-emerald-400"></span>历史入站 (RX)</span>
+                        <span id="stat-total-rx" class="text-xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
                     </div>
                     <div class="flex items-center justify-between">
-                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-400"></span>上传 (TX)</span>
-                        <span id="stat-total-tx" class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
+                        <span class="text-xs text-slate-500 dark:text-slate-400 flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-indigo-400"></span>历史出站 (TX)</span>
+                        <span id="stat-total-tx" class="text-xl font-extrabold text-slate-800 dark:text-slate-100 font-mono">--</span>
                     </div>
                 </div>
             </div>
@@ -230,6 +243,7 @@ const commonTooltip = {
 
 let hourChartInstance = null;
 let dayChartInstance = null;
+const TOTAL_FREE_QUOTA_BYTES = 15 * 1024 * 1024 * 1024; // 15 GB
 
 async function loadData() {
     try {
@@ -276,14 +290,25 @@ async function loadData() {
                 document.getElementById('stat-today-tx').innerText = formatBytes(data.summary.today.tx);
             }
 
+            let monthTxBytes = 0;
             if (traffic.month && traffic.month.length > 0) {
                 const month = traffic.month[traffic.month.length - 1];
-                document.getElementById('stat-month-rx').innerText = formatBytes(month.rx);
-                document.getElementById('stat-month-tx').innerText = formatBytes(month.tx);
+                monthTxBytes = month.tx;
+                document.getElementById('stat-month-tx').innerText = formatBytes(monthTxBytes);
             } else if (data.summary && data.summary.month) {
-                document.getElementById('stat-month-rx').innerText = formatBytes(data.summary.month.rx);
-                document.getElementById('stat-month-tx').innerText = formatBytes(data.summary.month.tx);
+                monthTxBytes = data.summary.month.tx;
+                document.getElementById('stat-month-tx').innerText = formatBytes(monthTxBytes);
             }
+
+            // 计算 15GB 免费出站额度进度
+            const usedPct = Math.min(100, Math.max(0, (monthTxBytes / TOTAL_FREE_QUOTA_BYTES) * 100));
+            const usedGB = (monthTxBytes / (1024 * 1024 * 1024)).toFixed(2);
+            const leftBytes = Math.max(0, TOTAL_FREE_QUOTA_BYTES - monthTxBytes);
+            const leftGB = (leftBytes / (1024 * 1024 * 1024)).toFixed(2);
+
+            document.getElementById('quota-progress-bar').style.width = `${usedPct}%`;
+            document.getElementById('quota-used-text').innerText = `已用: ${usedGB} GB (${usedPct.toFixed(1)}%)`;
+            document.getElementById('quota-left-text').innerText = `剩余额度: ${leftGB} GB`;
 
             if (traffic.total) {
                 document.getElementById('stat-total-rx').innerText = formatBytes(traffic.total.rx);
@@ -298,7 +323,7 @@ async function loadData() {
                 }
                 hourChartInstance.setOption({
                     tooltip: commonTooltip,
-                    legend: { data: ['下载', '上传'], textStyle: { color: '#94a3b8' }, right: 0 },
+                    legend: { data: ['入站 (RX - 免费)', '出站 (TX - 计费)'], textStyle: { color: '#94a3b8' }, right: 0 },
                     grid: { left: '2%', right: '2%', bottom: '2%', containLabel: true },
                     xAxis: { 
                         type: 'category', 
@@ -313,8 +338,8 @@ async function loadData() {
                         splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.1)', type: 'dashed' } }
                     },
                     series: [
-                        { name: '下载', type: 'line', smooth: 0.35, symbolSize: 0, lineStyle: { width: 2.5, color: '#10b981' }, itemStyle: { color: '#10b981' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(16, 185, 129, 0.28)'}, {offset: 1, color: 'rgba(16, 185, 129, 0)'}]) }, data: hours.map(h => h.rx) },
-                        { name: '上传', type: 'line', smooth: 0.35, symbolSize: 0, lineStyle: { width: 2.5, color: '#6366f1' }, itemStyle: { color: '#6366f1' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(99, 102, 241, 0.28)'}, {offset: 1, color: 'rgba(99, 102, 241, 0.0)'}]) }, data: hours.map(h => h.tx) }
+                        { name: '入站 (RX - 免费)', type: 'line', smooth: 0.35, symbolSize: 0, lineStyle: { width: 2.5, color: '#10b981' }, itemStyle: { color: '#10b981' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(16, 185, 129, 0.28)'}, {offset: 1, color: 'rgba(16, 185, 129, 0)'}]) }, data: hours.map(h => h.rx) },
+                        { name: '出站 (TX - 计费)', type: 'line', smooth: 0.35, symbolSize: 0, lineStyle: { width: 2.5, color: '#6366f1' }, itemStyle: { color: '#6366f1' }, areaStyle: { color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [{offset: 0, color: 'rgba(99, 102, 241, 0.28)'}, {offset: 1, color: 'rgba(99, 102, 241, 0.0)'}]) }, data: hours.map(h => h.tx) }
                     ]
                 });
             }
@@ -327,7 +352,7 @@ async function loadData() {
                 }
                 dayChartInstance.setOption({
                     tooltip: commonTooltip,
-                    legend: { data: ['下载', '上传'], textStyle: { color: '#94a3b8' }, right: 0 },
+                    legend: { data: ['入站 (RX - 免费)', '出站 (TX - 计费)'], textStyle: { color: '#94a3b8' }, right: 0 },
                     grid: { left: '2%', right: '2%', bottom: '2%', containLabel: true },
                     xAxis: { 
                         type: 'category', 
@@ -342,8 +367,8 @@ async function loadData() {
                         splitLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.1)', type: 'dashed' } }
                     },
                     series: [
-                        { name: '下载', type: 'bar', stack: 'total', barMaxWidth: 16, itemStyle: { color: '#10b981', borderRadius: [0, 0, 3, 3] }, data: days.map(d => d.rx) },
-                        { name: '上传', type: 'bar', stack: 'total', barMaxWidth: 16, itemStyle: { color: '#6366f1', borderRadius: [3, 3, 0, 0] }, data: days.map(d => d.tx) }
+                        { name: '入站 (RX - 免费)', type: 'bar', stack: 'total', barMaxWidth: 16, itemStyle: { color: '#10b981', borderRadius: [0, 0, 3, 3] }, data: days.map(d => d.rx) },
+                        { name: '出站 (TX - 计费)', type: 'bar', stack: 'total', barMaxWidth: 16, itemStyle: { color: '#6366f1', borderRadius: [3, 3, 0, 0] }, data: days.map(d => d.tx) }
                     ]
                 });
             }
@@ -360,7 +385,6 @@ window.addEventListener('resize', () => {
 });
 
 loadData();
-// 每 30 秒自动平滑拉取最新采样
 setInterval(loadData, 30000);
 </script>
 {% endblock %}
