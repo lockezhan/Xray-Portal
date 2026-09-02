@@ -115,8 +115,18 @@ else:
 
 app = Flask(__name__)
 app.secret_key = config.SECRET_KEY
+app.config['TEMPLATES_AUTO_RELOAD'] = True
+app.jinja_env.auto_reload = True
 
 app.jinja_env.filters['url_quote'] = url_quote
+
+@app.after_request
+def add_no_cache_header(response):
+    if request.path.startswith('/api/') or request.path in ['/', '/traffic', '/notes', '/cloud', '/2fa']:
+        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
+        response.headers['Pragma'] = 'no-cache'
+        response.headers['Expires'] = '0'
+    return response
 
 # 启动 Linux 内核物理网卡原生流量监控线程
 try:
