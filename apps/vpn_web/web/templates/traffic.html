@@ -6,8 +6,8 @@
 
 <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
 
-    <!-- 顶部状态栏卡片 -->
-    <div class="glass-panel p-6 sm:p-8 rounded-[2.5rem] shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <!-- 顶部状态栏卡片 (Apple Liquid Glass) -->
+    <div class="liquid-glass p-6 sm:p-8 flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div class="flex items-center gap-3.5">
             <span class="w-12 h-12 rounded-2xl bg-gradient-to-tr from-emerald-500 to-indigo-600 text-white flex items-center justify-center shadow-lg shadow-emerald-500/20 shrink-0">
                 <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -15,14 +15,19 @@
                 </svg>
             </span>
             <div>
-                <h1 class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">流量与系统安全监控</h1>
-                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">基于 vnStat 高精度流量采样与实时系统内核安全审计</p>
+                <div class="flex items-center gap-2">
+                    <h1 class="text-2xl font-extrabold text-slate-800 dark:text-slate-100 tracking-tight">网络流量与系统安全监控</h1>
+                    <span id="active-iface-badge" class="px-2.5 py-0.5 rounded-full text-xs font-mono font-bold bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-500/20">
+                        网卡: eth0
+                    </span>
+                </div>
+                <p class="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">内核级真实物理网卡流量采样 · 排除虚拟网卡干扰 · 实时安全连接审计</p>
             </div>
         </div>
-        <div class="flex items-center gap-2">
-            <button onclick="loadData()" class="ripple-btn px-4 py-2 bg-slate-100 dark:bg-white/5 hover:bg-slate-200 dark:hover:bg-white/10 text-slate-700 dark:text-slate-300 border border-slate-200/80 dark:border-white/10 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm">
+        <div class="flex items-center gap-2.5">
+            <button onclick="loadData()" class="btn-mymiamo !px-4 !py-2 text-xs flex items-center gap-1.5 shadow-sm">
                 <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/>
                 </svg>
                 刷新数据
             </button>
@@ -30,12 +35,12 @@
     </div>
 
     <!-- 加载骨架屏 -->
-    <div id="loading" class="text-center py-20 glass-panel rounded-[2.5rem]">
+    <div id="loading" class="text-center py-20 liquid-glass rounded-[2.5rem]">
         <svg class="animate-spin h-10 w-10 mx-auto mb-4 text-indigo-500" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
             <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
             <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
         </svg>
-        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">正在拉取节点流量与系统安全大盘...</p>
+        <p class="text-slate-500 dark:text-slate-400 text-sm font-medium">正在拉取真实物理网卡流量与安全大盘...</p>
     </div>
 
     <!-- 主体数据看板 -->
@@ -43,7 +48,7 @@
         <!-- 统计指标 3 列卡片 -->
         <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
             <!-- 今日流量 -->
-            <div class="glass-panel glass-card-hover p-6 rounded-[2rem] flex flex-col justify-between">
+            <div class="liquid-glass liquid-hover p-6 rounded-[2rem] flex flex-col justify-between">
                 <div class="flex justify-between items-center mb-4">
                     <span class="text-sm font-bold text-slate-700 dark:text-slate-300">今日累计流量</span>
                     <span class="p-2 rounded-xl bg-indigo-50 dark:bg-indigo-950/40 text-indigo-500">
@@ -63,7 +68,7 @@
             </div>
 
             <!-- 本月流量 -->
-            <div class="glass-panel glass-card-hover p-6 rounded-[2rem] flex flex-col justify-between">
+            <div class="liquid-glass liquid-hover p-6 rounded-[2rem] flex flex-col justify-between">
                 <div class="flex justify-between items-center mb-4">
                     <span class="text-sm font-bold text-slate-700 dark:text-slate-300">本月累计流量</span>
                     <span class="p-2 rounded-xl bg-emerald-50 dark:bg-emerald-950/40 text-emerald-500">
@@ -83,7 +88,7 @@
             </div>
 
             <!-- 系统总计 -->
-            <div class="glass-panel glass-card-hover p-6 rounded-[2rem] flex flex-col justify-between">
+            <div class="liquid-glass liquid-hover p-6 rounded-[2rem] flex flex-col justify-between">
                 <div class="flex justify-between items-center mb-4">
                     <span class="text-sm font-bold text-slate-700 dark:text-slate-300">系统历史总计</span>
                     <span class="p-2 rounded-xl bg-amber-50 dark:bg-amber-950/40 text-amber-500">
@@ -105,14 +110,14 @@
 
         <!-- ECharts 动态图表区 -->
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div class="glass-panel p-6 rounded-[2.5rem] shadow-sm">
+            <div class="liquid-glass p-6 rounded-[2.5rem] shadow-sm">
                 <h3 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-indigo-500"></span>
                     最近 24 小时流量走势 (每小时)
                 </h3>
                 <div id="chart-hourly" class="w-full h-[300px]"></div>
             </div>
-            <div class="glass-panel p-6 rounded-[2.5rem] shadow-sm">
+            <div class="liquid-glass p-6 rounded-[2.5rem] shadow-sm">
                 <h3 class="text-base font-bold text-slate-800 dark:text-slate-100 mb-4 flex items-center gap-2">
                     <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
                     最近 30 天流量消耗 (每日)
@@ -122,7 +127,7 @@
         </div>
 
         <!-- 系统安全与连接诊断区 -->
-        <div class="glass-panel p-6 sm:p-8 rounded-[2.5rem] shadow-sm">
+        <div class="liquid-glass p-6 sm:p-8 rounded-[2.5rem] shadow-sm">
             <div class="flex flex-col sm:flex-row sm:items-center justify-between mb-6 gap-3 border-b border-slate-200/60 dark:border-white/10 pb-4">
                 <h3 class="font-extrabold text-xl text-slate-800 dark:text-slate-100 flex items-center gap-2.5">
                     <span class="p-2 rounded-xl bg-rose-50 dark:bg-rose-950/50 text-rose-500">
@@ -137,7 +142,7 @@
 
             <!-- 连接状态数统计 -->
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
-                <div class="bg-white/60 dark:bg-black/20 rounded-2xl p-5 border border-slate-200/70 dark:border-white/5 flex items-center justify-between">
+                <div class="liquid-sub-card rounded-2xl p-5 flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-900/40 flex items-center justify-center text-indigo-500">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13.828 10.172a4 4 0 00-5.656 0l-4 4a4 4 0 105.656 5.656l1.102-1.101m-.758-4.899a4 4 0 005.656 0l4-4a4 4 0 00-5.656-5.656l-1.1 1.1"></path></svg>
@@ -146,7 +151,7 @@
                     </div>
                     <span id="log-tcp" class="text-2xl font-extrabold text-indigo-600 dark:text-indigo-400 font-mono">--</span>
                 </div>
-                <div class="bg-white/60 dark:bg-black/20 rounded-2xl p-5 border border-slate-200/70 dark:border-white/5 flex items-center justify-between">
+                <div class="liquid-sub-card rounded-2xl p-5 flex items-center justify-between">
                     <div class="flex items-center gap-3">
                         <div class="w-10 h-10 rounded-xl bg-rose-50 dark:bg-rose-900/40 flex items-center justify-center text-rose-500">
                             <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
@@ -223,6 +228,9 @@ const commonTooltip = {
     }
 };
 
+let hourChartInstance = null;
+let dayChartInstance = null;
+
 async function loadData() {
     try {
         const res = await fetch('/api/traffic');
@@ -235,22 +243,15 @@ async function loadData() {
         document.getElementById('loading').style.display = 'none';
         document.getElementById('dashboard').style.display = 'block';
 
+        if (data.summary && data.summary.iface) {
+            document.getElementById('active-iface-badge').textContent = `物理网卡: ${data.summary.iface}`;
+        }
+
         if (data.log && typeof data.log === 'object' && !data.log.error) {
             const l = data.log;
-            let timeStr = '更新时间未知';
-            if (l.time) {
-                try {
-                    const dateObj = new Date(l.time);
-                    if (!Number.isNaN(dateObj.getTime())) {
-                        const yyyy = dateObj.getFullYear();
-                        const mm = String(dateObj.getMonth() + 1).padStart(2, '0');
-                        const dd = String(dateObj.getDate()).padStart(2, '0');
-                        const HH = String(dateObj.getHours()).padStart(2, '0');
-                        const MM = String(dateObj.getMinutes()).padStart(2, '0');
-                        const SS = String(dateObj.getSeconds()).padStart(2, '0');
-                        timeStr = `最后更新：${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`;
-                    }
-                } catch (e) {}
+            let timeStr = '更新时间: 刚刚';
+            if (l.time && l.time !== '未知') {
+                timeStr = `最后更新：${l.time}`;
             }
             
             document.getElementById('log-time').innerText = timeStr;
@@ -263,28 +264,39 @@ async function loadData() {
         }
 
         if (data.vnstat && data.vnstat.interfaces && data.vnstat.interfaces.length > 0) {
-            const iface = data.vnstat.interfaces.find(i => i.name === 'eth0' || i.name === 'ens3' || i.name === 'enp0s3') || data.vnstat.interfaces.find(i => !i.name.startsWith('docker') && !i.name.startsWith('veth') && !i.name.startsWith('br-') && i.name !== 'lo') || data.vnstat.interfaces[0];
+            const iface = data.vnstat.interfaces[0];
             const traffic = iface.traffic;
 
             if (traffic.day && traffic.day.length > 0) {
-                const today = traffic.day[0];
+                const today = traffic.day[traffic.day.length - 1];
                 document.getElementById('stat-today-rx').innerText = formatBytes(today.rx);
                 document.getElementById('stat-today-tx').innerText = formatBytes(today.tx);
+            } else if (data.summary && data.summary.today) {
+                document.getElementById('stat-today-rx').innerText = formatBytes(data.summary.today.rx);
+                document.getElementById('stat-today-tx').innerText = formatBytes(data.summary.today.tx);
             }
+
             if (traffic.month && traffic.month.length > 0) {
-                const month = traffic.month[0];
+                const month = traffic.month[traffic.month.length - 1];
                 document.getElementById('stat-month-rx').innerText = formatBytes(month.rx);
                 document.getElementById('stat-month-tx').innerText = formatBytes(month.tx);
+            } else if (data.summary && data.summary.month) {
+                document.getElementById('stat-month-rx').innerText = formatBytes(data.summary.month.rx);
+                document.getElementById('stat-month-tx').innerText = formatBytes(data.summary.month.tx);
             }
+
             if (traffic.total) {
                 document.getElementById('stat-total-rx').innerText = formatBytes(traffic.total.rx);
                 document.getElementById('stat-total-tx').innerText = formatBytes(traffic.total.tx);
             }
 
+            // 绘制 24 小时折线图
             if (traffic.hour && traffic.hour.length > 0) {
-                const hours = [...traffic.hour].reverse();
-                const hourChart = echarts.init(document.getElementById('chart-hourly'));
-                hourChart.setOption({
+                const hours = traffic.hour;
+                if (!hourChartInstance) {
+                    hourChartInstance = echarts.init(document.getElementById('chart-hourly'));
+                }
+                hourChartInstance.setOption({
                     tooltip: commonTooltip,
                     legend: { data: ['下载', '上传'], textStyle: { color: '#94a3b8' }, right: 0 },
                     grid: { left: '2%', right: '2%', bottom: '2%', containLabel: true },
@@ -307,16 +319,19 @@ async function loadData() {
                 });
             }
 
+            // 绘制 30 天每日柱状图
             if (traffic.day && traffic.day.length > 0) {
-                const days = [...traffic.day].reverse();
-                const dayChart = echarts.init(document.getElementById('chart-daily'));
-                dayChart.setOption({
+                const days = traffic.day;
+                if (!dayChartInstance) {
+                    dayChartInstance = echarts.init(document.getElementById('chart-daily'));
+                }
+                dayChartInstance.setOption({
                     tooltip: commonTooltip,
                     legend: { data: ['下载', '上传'], textStyle: { color: '#94a3b8' }, right: 0 },
                     grid: { left: '2%', right: '2%', bottom: '2%', containLabel: true },
                     xAxis: { 
                         type: 'category', 
-                        data: days.map(d => `${String(d.date.month).padStart(2, '0')}-${String(d.date.day).padStart(2, '0')}`),
+                        data: days.map(d => d.date ? `${String(d.date.month).padStart(2, '0')}-${String(d.date.day).padStart(2, '0')}` : '今日'),
                         axisLabel: { color: '#94a3b8', margin: 10, fontSize: 11 },
                         axisTick: { show: false },
                         axisLine: { lineStyle: { color: 'rgba(148, 163, 184, 0.2)' } }
@@ -340,12 +355,12 @@ async function loadData() {
 }
 
 window.addEventListener('resize', () => {
-    const c1 = echarts.getInstanceByDom(document.getElementById('chart-hourly'));
-    const c2 = echarts.getInstanceByDom(document.getElementById('chart-daily'));
-    if(c1) c1.resize();
-    if(c2) c2.resize();
+    if(hourChartInstance) hourChartInstance.resize();
+    if(dayChartInstance) dayChartInstance.resize();
 });
 
 loadData();
+// 每 30 秒自动平滑拉取最新采样
+setInterval(loadData, 30000);
 </script>
 {% endblock %}

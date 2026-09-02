@@ -118,6 +118,13 @@ app.secret_key = config.SECRET_KEY
 
 app.jinja_env.filters['url_quote'] = url_quote
 
+# 启动 Linux 内核物理网卡原生流量监控线程
+try:
+    from traffic_monitor import traffic_monitor
+    traffic_monitor.start()
+except Exception as e:
+    app.logger.error(f"Failed to start traffic_monitor: {e}")
+
 # 只允许代理下载的仓库列表
 _ALLOWED_REPO_LABELS = frozenset({'ClashVergeRev', 'FlClash'})
 
@@ -630,16 +637,25 @@ def api_traffic():
     if not session.get('logged_in'):
         return abort(401)
     
-    import subprocess
-    import json
-    
-    # 获取 vnstat json 数据
-    vnstat_data = {}
-    try:
-        res = subprocess.run(["vnstat", "--json"], capture_output=True, text=True, check=True)
-        vnstat_data = json.loads(res.stdout)
-    except Exception as e:
-        vnstat_data = {"error": str(e)}
+    # 纯原生 /proc/net/dev 物理网卡流量监控数据
+    from traffic_monitor import traffic_monitor
+    summary = traffic_monitor.get_summary()
+
+    # 封装为前端 ECharts 完全兼容的结构
+    vnstat_compatible_data = {
+        "interfaces": [
+            {
+                "name": summary['iface'],
+                "speed": summary['speed'],
+                "traffic": {
+                    "total": summary['total'],
+                    "day": summary['day'] if summary['day'] else [{'rx': summary['today']['rx'], 'tx': summary['today']['tx']}],
+                    "month": [{'rx': summary['month']['rx'], 'tx': summary['month']['tx']}],
+                    "hour": summary['hour']
+                }
+            }
+        ]
+    }
 
     # 获取最后一次安全检查日志
     parsed_log = {}
@@ -652,7 +668,6 @@ def api_traffic():
             else:
                 log_content = content
             
-            # 简单解析逻辑
             import re
             
             # 基本信息
@@ -664,7 +679,6 @@ def api_traffic():
             parsed_log["tcp_est"] = m_tcp.group(1).strip() if m_tcp else "0"
             parsed_log["tcp_syn"] = m_syn.group(1).strip() if m_syn else "0"
             
-            # 提取各个板块
             sections = [
                 ("listen_ports", "对外监听端口"),
                 ("top_ips", "连接最多的目标 IP"),
@@ -687,7 +701,8 @@ def api_traffic():
         parsed_log["error"] = f"无法读取或解析日志: {e}"
 
     return jsonify({
-        "vnstat": vnstat_data,
+        "vnstat": vnstat_compatible_data,
+        "summary": summary,
         "log": parsed_log
     })
 
