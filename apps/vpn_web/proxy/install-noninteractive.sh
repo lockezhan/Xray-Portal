@@ -44,8 +44,8 @@ _install_proxy_packages() {
         unzip \
         coreutils
 
-    # 设置时区（静默，失败不中止）
-    timedatectl set-timezone UTC 2>/dev/null || true
+    # 设置时区为 Asia/Shanghai（中国标准时间 CST UTC+8）
+    timedatectl set-timezone Asia/Shanghai 2>/dev/null || true
 
     log_success "代理依赖包安装完成。"
 }

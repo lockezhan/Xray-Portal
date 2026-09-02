@@ -175,7 +175,7 @@ apt_init() {
   export DEBIAN_FRONTEND=noninteractive
   apt update && apt -y upgrade
   apt install -y curl nano ufw openssl jq python3
-  timedatectl set-timezone UTC || true
+  timedatectl set-timezone Asia/Shanghai || true
 }
 
 install_xray() {
