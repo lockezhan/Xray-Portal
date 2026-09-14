@@ -121,11 +121,12 @@ app.jinja_env.auto_reload = True
 app.jinja_env.filters['url_quote'] = url_quote
 
 @app.after_request
-def add_no_cache_header(response):
-    if request.path.startswith('/api/') or request.path in ['/', '/traffic', '/notes', '/cloud', '/2fa']:
-        response.headers['Cache-Control'] = 'no-store, no-cache, must-revalidate, max-age=0'
-        response.headers['Pragma'] = 'no-cache'
-        response.headers['Expires'] = '0'
+def add_cache_control_header(response):
+    if request.path.startswith('/api/'):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+    elif request.path in ['/', '/traffic', '/notes', '/cloud', '/2fa']:
+        # 页面采用协商缓存，允许保留 bfcache (秒级往返切换)，但强制向服务器确认更新
+        response.headers['Cache-Control'] = 'no-cache'
     return response
 
 # 启动 Linux 内核物理网卡原生流量监控线程
@@ -667,16 +668,23 @@ def api_traffic():
         ]
     }
 
-    # 获取最后一次安全检查日志
+    # 获取最后一次安全检查日志（仅高效读取文件末尾 64KB）
     parsed_log = {}
     try:
-        with open("/var/log/traffic-watch.log", "r", encoding="utf-8") as f:
-            content = f.read()
-            last_idx = content.rfind("============================================================")
+        log_path = "/var/log/traffic-watch.log"
+        if os.path.exists(log_path):
+            with open(log_path, "rb") as f:
+                f.seek(0, os.SEEK_END)
+                fsize = f.tell()
+                read_len = min(fsize, 65536)
+                f.seek(fsize - read_len)
+                log_chunk = f.read().decode('utf-8', errors='ignore')
+            
+            last_idx = log_chunk.rfind("============================================================")
             if last_idx != -1:
-                log_content = content[last_idx:]
+                log_content = log_chunk[last_idx:]
             else:
-                log_content = content
+                log_content = log_chunk
             
             import re
             

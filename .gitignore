@@ -17,6 +17,8 @@ credentials/
 private/
 *.token
 *.secret
+*.session
+checkin_state.json
 
 # SSH 密钥文件 (防止误交 SSH 互信凭据)
 *.pem
