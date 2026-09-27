@@ -11,6 +11,7 @@ from flask import stream_with_context
 from urllib.parse import quote as url_quote
 import utils
 import config
+import rewards_manager
 
 # 全局任务状态字典 {job_id: {status, url, msg, start_time, end_time}}
 _TG_JOBS: dict = {}
@@ -234,6 +235,53 @@ def traffic():
     if not session.get('logged_in'):
         return redirect('/')
     return render_template('traffic.html', logged_in=True, wallpapers=utils.get_random_wallpapers())
+
+# ==========================================
+# 🎁 Bing Rewards 积分与兑换监控看板
+# ==========================================
+@app.route('/rewards', methods=['GET'])
+def rewards_page():
+    if not session.get('logged_in'):
+        return redirect('/')
+    return render_template('rewards.html', logged_in=True, wallpapers=utils.get_random_wallpapers())
+
+@app.route('/api/rewards/data', methods=['GET'])
+def api_rewards_data():
+    if not session.get('logged_in'):
+        return abort(401)
+    summary = rewards_manager.get_dashboard_summary()
+    return jsonify(summary)
+
+@app.route('/api/rewards/settings', methods=['POST'])
+def api_rewards_settings():
+    if not session.get('logged_in'):
+        return abort(401)
+    data = request.get_json(silent=True) or {}
+    target_pts = int(data.get('target_points', 20000))
+    reward_name = str(data.get('reward_name', '微软大额官方礼品卡')).strip()
+
+    store = rewards_manager.load_rewards_store()
+    store.setdefault("settings", {})
+    store["settings"]["target_points"] = target_pts
+    store["settings"]["reward_name"] = reward_name
+    rewards_manager.save_rewards_store(store)
+    return jsonify({"status": "success"})
+
+@app.route('/api/rewards/report', methods=['POST'])
+def api_rewards_report():
+    # 鉴权：检查请求头中的 Token 或 URL 参数，必须匹配 SUB_TOKEN
+    req_token = request.headers.get('X-Rewards-Token') or request.args.get('token')
+    if not req_token or req_token != SUB_TOKEN:
+        return jsonify({"status": "error", "message": "Unauthorized"}), 403
+
+    payload = request.get_json(silent=True)
+    if not payload:
+        return jsonify({"status": "error", "message": "Empty payload"}), 400
+
+    success = rewards_manager.update_account_report(payload)
+    if success:
+        return jsonify({"status": "success", "message": "Report saved"})
+    return jsonify({"status": "error", "message": "Failed to persist report"}), 500
 
 # ------------------------------------------
 # 🔑 2FA / TOTP 服务端 AES-256-GCM 透明加密存储
