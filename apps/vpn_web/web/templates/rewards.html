@@ -126,18 +126,35 @@
 
         <!-- ECharts 增长趋势图表卡片 -->
         <div class="liquid-glass p-6 sm:p-8 rounded-[2.5rem] space-y-4">
-            <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
                 <div class="flex items-center gap-2">
                     <span class="w-3 h-3 rounded-full bg-amber-500"></span>
                     <h2 class="text-lg font-bold text-slate-800 dark:text-slate-100">历史积分增长走势与日增分析</h2>
+                    <span class="text-[11px] text-slate-400 dark:text-slate-500 ml-1.5 hidden sm:inline">(正常基准: 每日 ≥ 90分)</span>
                 </div>
-                <div class="flex items-center gap-1.5 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl text-xs">
-                    <button onclick="switchChartType('points')" id="btn-chart-points" class="px-3 py-1 rounded-lg font-bold bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm transition-all">
-                        累积总分曲线
-                    </button>
-                    <button onclick="switchChartType('earned')" id="btn-chart-earned" class="px-3 py-1 rounded-lg font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-all">
-                        每日新增柱状
-                    </button>
+                <div class="flex flex-wrap items-center gap-2.5">
+                    <!-- 时间范围筛选：近 7 天 / 近 14 天 / 全部 -->
+                    <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl text-xs">
+                        <button onclick="switchChartRange('7')" id="btn-range-7" class="px-2.5 py-1 rounded-lg font-bold bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-sm transition-all">
+                            近7天 (1周)
+                        </button>
+                        <button onclick="switchChartRange('14')" id="btn-range-14" class="px-2.5 py-1 rounded-lg font-semibold text-slate-600 dark:text-slate-300 hover:text-amber-600 transition-all">
+                            近14天 (2周)
+                        </button>
+                        <button onclick="switchChartRange('all')" id="btn-range-all" class="px-2.5 py-1 rounded-lg font-semibold text-slate-600 dark:text-slate-300 hover:text-amber-600 transition-all">
+                            全部
+                        </button>
+                    </div>
+
+                    <!-- 图表形态切换：累积总分 / 每日新增 -->
+                    <div class="flex items-center gap-1 bg-slate-100 dark:bg-slate-800/80 p-1 rounded-xl text-xs">
+                        <button onclick="switchChartType('earned')" id="btn-chart-earned" class="px-3 py-1 rounded-lg font-bold bg-white dark:bg-slate-700 text-indigo-600 dark:text-indigo-400 shadow-sm transition-all">
+                            每日新增柱状
+                        </button>
+                        <button onclick="switchChartType('points')" id="btn-chart-points" class="px-3 py-1 rounded-lg font-semibold text-slate-600 dark:text-slate-300 hover:text-indigo-600 transition-all">
+                            累积总分曲线
+                        </button>
+                    </div>
                 </div>
             </div>
             <!-- ECharts 容器 -->
@@ -207,7 +224,8 @@
 
 <script>
 let currentData = null;
-let currentChartType = 'points';
+let currentChartType = 'earned';
+let currentChartRange = '7';
 let rewardsChart = null;
 
 async function loadRewardsData() {
@@ -305,9 +323,15 @@ function createAccountCard(acc, targetPts, idx) {
             </div>
             <div class="text-right">
                 <span class="text-xs font-bold text-slate-400 block mb-0.5">今日收益</span>
-                <span class="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
-                    +${acc.today_earned}
-                </span>
+                <div class="flex items-center justify-end gap-1.5">
+                    <span class="text-lg font-black text-emerald-600 dark:text-emerald-400 font-mono">
+                        +${acc.today_earned}
+                    </span>
+                    ${acc.today_earned >= 90 
+                        ? `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20">✅ 达标</span>`
+                        : `<span class="px-1.5 py-0.5 rounded text-[10px] font-bold bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20">⚠️ <90分</span>`
+                    }
+                </div>
             </div>
         </div>
 
@@ -328,8 +352,8 @@ function createAccountCard(acc, targetPts, idx) {
                 <div class="w-full bg-slate-200 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
                     <div class="h-full bg-gradient-to-r from-orange-400 to-amber-500 rounded-full" style="width: ${(acc.cycle_days / 7) * 100}%"></div>
                 </div>
-                <div class="flex justify-between text-[10px] text-slate-400">
-                    <span>当前周已打卡 ${acc.cycle_days}/7 天</span>
+                <div class="flex justify-between items-center text-[10px] text-slate-400">
+                    <span>当前周已打卡 ${acc.cycle_days}/7 天 (基准: ≥90分/天)</span>
                     <span class="text-amber-600 dark:text-amber-400 font-semibold">
                         ${acc.days_to_next_week_bonus === 7 ? '🎁 本周加成已达成或待触发' : `距下个周度额外奖励还剩 ${acc.days_to_next_week_bonus} 天`}
                     </span>
@@ -367,14 +391,48 @@ function createAccountCard(acc, targetPts, idx) {
     return div;
 }
 
-function renderChart(chartData) {
+function getFilteredChartData(rawChartData) {
+    if (!rawChartData || !rawChartData.dates || rawChartData.dates.length === 0) return rawChartData;
+    let limit = rawChartData.dates.length;
+    if (currentChartRange === '7') {
+        limit = 7;
+    } else if (currentChartRange === '14') {
+        limit = 14;
+    } else {
+        return rawChartData;
+    }
+
+    const startIndex = Math.max(0, rawChartData.dates.length - limit);
+    return {
+        dates: rawChartData.dates.slice(startIndex),
+        series_points: (rawChartData.series_points || []).map(s => ({
+            ...s,
+            data: s.data.slice(startIndex)
+        })),
+        series_earned: (rawChartData.series_earned || []).map(s => ({
+            ...s,
+            data: s.data.slice(startIndex)
+        }))
+    };
+}
+
+function renderChart(rawChartData) {
     const chartDom = document.getElementById('rewards-chart');
     if (!chartDom) return;
 
     if (!rewardsChart) {
         rewardsChart = echarts.init(chartDom);
         window.addEventListener('resize', () => rewardsChart && rewardsChart.resize());
+        try {
+            const ro = new ResizeObserver(() => {
+                if (rewardsChart) rewardsChart.resize();
+            });
+            ro.observe(chartDom);
+        } catch (e) {}
     }
+
+    const chartData = getFilteredChartData(rawChartData || (currentData ? currentData.charts : null));
+    if (!chartData || !chartData.dates || chartData.dates.length === 0) return;
 
     const isDark = document.documentElement.classList.contains('dark');
     const dates = chartData.dates;
@@ -407,26 +465,82 @@ function renderChart(chartData) {
     } else {
         // 柱状图展示每日新增积分
         const barColors = ['#f59e0b', '#6366f1'];
-        series = chartData.series_earned.map((s, idx) => ({
-            name: s.name,
-            type: 'bar',
-            barMaxWidth: 20,
-            borderRadius: [4, 4, 0, 0],
-            data: s.data,
-            itemStyle: { color: barColors[idx % 2] }
-        }));
+        // 根据显示天数自适应柱宽，7天时更宽更饱满，14天时紧凑，全部时自适应
+        const maxBarW = currentChartRange === '7' ? 36 : (currentChartRange === '14' ? 24 : 18);
+        series = chartData.series_earned.map((s, idx) => {
+            const sItem = {
+                name: s.name,
+                type: 'bar',
+                barMaxWidth: maxBarW,
+                barGap: '15%',
+                borderRadius: [5, 5, 0, 0],
+                data: s.data,
+                itemStyle: { color: barColors[idx % 2] }
+            };
+            // 在第一个系列中注入 90 分达标基准虚线
+            if (idx === 0) {
+                sItem.markLine = {
+                    symbol: 'none',
+                    silent: true,
+                    data: [{
+                        yAxis: 90,
+                        name: '90分达标基准',
+                        lineStyle: {
+                            type: 'dashed',
+                            color: isDark ? '#10b981' : '#059669',
+                            width: 2
+                        },
+                        label: {
+                            formatter: '🎯 每日达标线: 90分 (3活动+20搜索)',
+                            position: 'insideEndTop',
+                            color: isDark ? '#34d399' : '#059669',
+                            fontSize: 11,
+                            fontWeight: 'bold',
+                            padding: [0, 4, 4, 0]
+                        }
+                    }]
+                };
+            }
+            return sItem;
+        });
     }
 
     const option = {
         backgroundColor: 'transparent',
         tooltip: {
             trigger: 'axis',
-            backgroundColor: isDark ? 'rgba(30, 41, 59, 0.9)' : 'rgba(255, 255, 255, 0.95)',
-            borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.1)',
+            backgroundColor: isDark ? 'rgba(30, 41, 59, 0.96)' : 'rgba(255, 255, 255, 0.98)',
+            borderColor: isDark ? 'rgba(255, 255, 255, 0.1)' : 'rgba(0, 0, 0, 0.08)',
             textStyle: { color: isDark ? '#f8fafc' : '#0f172a', fontSize: 12 },
             padding: [10, 14],
             borderRadius: 12,
-            axisPointer: { type: 'cross', label: { show: false } }
+            axisPointer: { type: currentChartType === 'earned' ? 'shadow' : 'cross', label: { show: false } },
+            formatter: function(params) {
+                if (!params || !params.length) return '';
+                let title = `<div style="font-weight:bold;margin-bottom:6px;font-family:monospace;font-size:12px;">📅 ${params[0].axisValue}</div>`;
+                let body = params.map(p => {
+                    let marker = p.marker;
+                    let val = p.value || 0;
+                    let statusBadge = '';
+                    if (currentChartType === 'earned') {
+                        if (val >= 90) {
+                            statusBadge = ` <span style="color:#10b981;font-weight:bold;font-size:11px;">(✅ 达标)</span>`;
+                        } else if (val > 0) {
+                            statusBadge = ` <span style="color:#f59e0b;font-weight:bold;font-size:11px;">(⚠️ 未达标 <90分)</span>`;
+                        } else {
+                            statusBadge = ` <span style="color:#94a3b8;font-size:11px;">(0新增)</span>`;
+                        }
+                    }
+                    return `<div style="display:flex;justify-content:space-between;gap:16px;margin-top:3px;font-size:12px;">
+                        <span>${marker} ${p.seriesName}</span>
+                        <span style="font-weight:bold;font-family:monospace;">${val.toLocaleString()} pts${statusBadge}</span>
+                    </div>`;
+                }).join('');
+                if (currentChartType === 'earned') {
+                    body += `<div style="margin-top:8px;padding-top:6px;border-top:1px dashed ${isDark ? '#334155' : '#e2e8f0'};font-size:10px;color:#94a3b8;">💡 标配每日 90分: 3个10分活动 + 20次3分搜索</div>`;
+                }
+                return title + body;
+            }
         },
         legend: {
             data: series.map(s => s.name),
@@ -436,23 +550,26 @@ function renderChart(chartData) {
         },
         grid: {
             left: '2%',
-            right: '2%',
+            right: '4%',
             bottom: '5%',
-            top: '14%',
+            top: '16%',
             containLabel: true
         },
         xAxis: {
             type: 'category',
             data: dates,
+            boundaryGap: currentChartType === 'earned',
             axisLine: { lineStyle: { color: isDark ? 'rgba(255,255,255,0.1)' : 'rgba(0,0,0,0.1)' } },
             axisLabel: {
                 color: isDark ? '#94a3b8' : '#64748b',
-                fontSize: 10,
+                fontSize: 11,
+                interval: 0,
                 formatter: val => val.slice(5) // 只显 MM-DD
             }
         },
         yAxis: {
             type: 'value',
+            minInterval: 1,
             splitLine: { lineStyle: { color: isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.06)' } },
             axisLabel: { color: isDark ? '#94a3b8' : '#64748b', fontSize: 10 }
         },
@@ -460,6 +577,27 @@ function renderChart(chartData) {
     };
 
     rewardsChart.setOption(option, true);
+    setTimeout(() => {
+        if (rewardsChart) rewardsChart.resize();
+    }, 60);
+}
+
+function switchChartRange(range) {
+    currentChartRange = range;
+    const ranges = ['7', '14', 'all'];
+    ranges.forEach(r => {
+        const btn = document.getElementById(`btn-range-${r}`);
+        if (!btn) return;
+        if (r === range) {
+            btn.className = "px-2.5 py-1 rounded-lg font-bold bg-white dark:bg-slate-700 text-amber-600 dark:text-amber-400 shadow-sm transition-all";
+        } else {
+            btn.className = "px-2.5 py-1 rounded-lg font-semibold text-slate-600 dark:text-slate-300 hover:text-amber-600 transition-all";
+        }
+    });
+
+    if (currentData) {
+        renderChart(currentData.charts);
+    }
 }
 
 function switchChartType(type) {
