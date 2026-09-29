@@ -1,0 +1,17 @@
+[Unit]
+Description=Telegram Media Forward Worker (HK-VPS Ephemeral Worker)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/usr/local/tg_worker
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/local/tg_worker/venv/bin/python /usr/local/tg_worker/worker.py
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+
+[Install]
+WantedBy=multi-user.target

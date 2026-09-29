@@ -29,6 +29,10 @@ TOKEN = os.environ.get('CHANNEL_BOT_TOKEN')
 ADMIN_ID_STR = os.environ.get('CHANNEL_ADMIN_ID')
 GROUP_ID_STR = os.environ.get('CHANNEL_GROUP_ID')
 
+# HK-VPS 异步转推 Worker 配置 (流量分流与小磁盘安全方案)
+HK_WORKER_URL = os.environ.get('HK_WORKER_URL', '').rstrip('/')
+HK_WORKER_SECRET_TOKEN = os.environ.get('HK_WORKER_SECRET_TOKEN', '')
+
 if not TOKEN or TOKEN == 'replace_me' or not ADMIN_ID_STR or ADMIN_ID_STR == 'replace_me' or not GROUP_ID_STR or GROUP_ID_STR == 'replace_me':
     print("警告: 机器人配置 (TOKEN, ADMIN_ID, GROUP_ID) 未配置或为 replace_me 占位符！", file=sys.stderr)
     print("Channel Bot 暂不激活，将进入待机挂起状态。补齐配置后重启服务即可启用。", file=sys.stderr)
@@ -96,6 +100,47 @@ def handle_private_message(message):
             urls = re.findall(r'(https?://t\.me/\S+)', message.text)
             if urls:
                 url = urls[0]
+                
+                # 方案 A: 若配置了 HK-VPS Worker，优先将大流量媒体下载与转推委托给 HK-VPS 执行
+                if HK_WORKER_URL:
+                    status_msg = bot.reply_to(message, "⏳ 检测到 Telegram 链接，已派发至 HK-VPS 高速 Worker 处理中 (0 公网流量)...")
+                    import requests
+                    try:
+                        headers = {}
+                        if HK_WORKER_SECRET_TOKEN:
+                            headers["Authorization"] = f"Bearer {HK_WORKER_SECRET_TOKEN}"
+                        resp = requests.post(
+                            f"{HK_WORKER_URL}/api/forward",
+                            json={"url": url, "target_chat_id": GROUP_ID, "caption": message.text},
+                            headers=headers,
+                            timeout=1800  # 30分钟超时，适应大文件转推
+                        )
+                        if resp.status_code == 200:
+                            res_json = resp.json()
+                            if res_json.get("success"):
+                                cnt = res_json.get("files_count", 1)
+                                size_mb = res_json.get("total_size", 0) / (1024 * 1024)
+                                bot.edit_message_text(
+                                    f"✅ [HK-VPS 分流成功] 媒体已转推至目标频道！\n"
+                                    f"📦 文件数量: {cnt} 个\n"
+                                    f"📊 媒体大小: {size_mb:.2f} MB\n"
+                                    f"⚡ 即下即清完成，已释放本地磁盘，Korea-VPS 流量消耗: 0 MB",
+                                    chat_id=message.chat.id,
+                                    message_id=status_msg.message_id
+                                )
+                            else:
+                                err = res_json.get("error", "未知错误")
+                                bot.edit_message_text(f"❌ [HK-VPS 错误]: {err}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                        else:
+                            try:
+                                err_detail = resp.json().get("error", resp.text[:100])
+                            except Exception:
+                                err_detail = resp.text[:100]
+                            bot.edit_message_text(f"❌ [HK-VPS HTTP {resp.status_code}]: {err_detail}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                    except Exception as req_err:
+                        bot.edit_message_text(f"❌ 连接 HK-VPS Worker 异常: {req_err}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                    return
+
                 status_msg = bot.reply_to(message, "⏳ 检测到 Telegram 链接，正在启动 Userbot 下载媒体...")
                 fetch_script = os.path.join(os.path.dirname(os.path.abspath(__file__)), "fetch_link.py")
                 
@@ -121,65 +166,75 @@ def handle_private_message(message):
                     return
                 
                 # 转发到目标频道：智能分流大小判断与错误处理
-                use_userbot_upload = False
-                for f in files:
-                    if os.path.exists(f['path']) and os.path.getsize(f['path']) > 48 * 1024 * 1024 and not is_port_open("127.0.0.1", 8081):
-                        use_userbot_upload = True
-                        break
-
-                if not use_userbot_upload:
-                    try:
-                        if len(files) == 1:
-                            f = files[0]
-                            with open(f['path'], 'rb') as file_obj:
-                                if f["type"].startswith("video/"):
-                                    bot.send_video(GROUP_ID, file_obj, caption=message.text, timeout=600)
-                                elif f["type"].startswith("image/"):
-                                    bot.send_photo(GROUP_ID, file_obj, caption=message.text, timeout=600)
-                                else:
-                                    bot.send_document(GROUP_ID, file_obj, caption=message.text, timeout=600)
-                        else:
-                            opened_files = []
-                            try:
-                                media_list = []
-                                for i, f in enumerate(files):
-                                    file_obj = open(f['path'], 'rb')
-                                    opened_files.append(file_obj)
-                                    
-                                    # 把用户发来的包含 link 的文本，作为第一张图/视频的描述（标签）
-                                    cap = message.text if i == 0 else None
-                                    
-                                    if f["type"].startswith("video/"):
-                                        media_list.append(InputMediaVideo(file_obj, caption=cap))
-                                    elif f["type"].startswith("image/"):
-                                        media_list.append(InputMediaPhoto(file_obj, caption=cap))
-                                    else:
-                                        media_list.append(InputMediaDocument(file_obj, caption=cap))
-                                
-                                bot.send_media_group(GROUP_ID, media_list, timeout=600)
-                            finally:
-                                for fo in opened_files:
-                                    try:
-                                        fo.close()
-                                    except Exception:
-                                        pass
-                    except Exception as bot_send_err:
-                        if "Too Large" in str(bot_send_err) or "413" in str(bot_send_err):
+                try:
+                    use_userbot_upload = False
+                    for f in files:
+                        if os.path.exists(f['path']) and os.path.getsize(f['path']) > 48 * 1024 * 1024 and not is_port_open("127.0.0.1", 8081):
                             use_userbot_upload = True
-                        else:
-                            raise bot_send_err
+                            break
 
-                if use_userbot_upload:
-                    bot.edit_message_text("⚡ 检测到文件大于 48MB 触发官方 API 大小受限，正在启用 Userbot 2GB MTProto 高速通道直传目标频道...", chat_id=message.chat.id, message_id=status_msg.message_id)
-                    for i, f in enumerate(files):
-                        cap = message.text if i == 0 else ""
-                        up_res = subprocess.run([sys.executable, fetch_script, "--upload", f['path'], "--to", str(GROUP_ID), "--caption", cap or ""], capture_output=True, text=True)
-                        if up_res.returncode != 0 or "error" in up_res.stdout:
-                            bot.edit_message_text(f"❌ Userbot 2GB 大文件传输通道失败: {up_res.stderr or up_res.stdout[:100]}", chat_id=message.chat.id, message_id=status_msg.message_id)
-                            return
+                    if not use_userbot_upload:
+                        try:
+                            if len(files) == 1:
+                                f = files[0]
+                                with open(f['path'], 'rb') as file_obj:
+                                    if f["type"].startswith("video/"):
+                                        bot.send_video(GROUP_ID, file_obj, caption=message.text, timeout=600)
+                                    elif f["type"].startswith("image/"):
+                                        bot.send_photo(GROUP_ID, file_obj, caption=message.text, timeout=600)
+                                    else:
+                                        bot.send_document(GROUP_ID, file_obj, caption=message.text, timeout=600)
+                            else:
+                                opened_files = []
+                                try:
+                                    media_list = []
+                                    for i, f in enumerate(files):
+                                        file_obj = open(f['path'], 'rb')
+                                        opened_files.append(file_obj)
+                                        
+                                        # 把用户发来的包含 link 的文本，作为第一张图/视频的描述（标签）
+                                        cap = message.text if i == 0 else None
+                                        
+                                        if f["type"].startswith("video/"):
+                                            media_list.append(InputMediaVideo(file_obj, caption=cap))
+                                        elif f["type"].startswith("image/"):
+                                            media_list.append(InputMediaPhoto(file_obj, caption=cap))
+                                        else:
+                                            media_list.append(InputMediaDocument(file_obj, caption=cap))
+                                    
+                                    bot.send_media_group(GROUP_ID, media_list, timeout=600)
+                                finally:
+                                    for fo in opened_files:
+                                        try:
+                                            fo.close()
+                                        except Exception:
+                                            pass
+                        except Exception as bot_send_err:
+                            if "Too Large" in str(bot_send_err) or "413" in str(bot_send_err):
+                                use_userbot_upload = True
+                            else:
+                                raise bot_send_err
 
-                bot.edit_message_text("✅ Userbot 下载并转发频道成功，已保留原文本作为描述。", chat_id=message.chat.id, message_id=status_msg.message_id)
-                return
+                    if use_userbot_upload:
+                        bot.edit_message_text("⚡ 检测到文件大于 48MB 触发官方 API 大小受限，正在启用 Userbot 2GB MTProto 高速通道直传目标频道...", chat_id=message.chat.id, message_id=status_msg.message_id)
+                        for i, f in enumerate(files):
+                            cap = message.text if i == 0 else ""
+                            up_res = subprocess.run([sys.executable, fetch_script, "--upload", f['path'], "--to", str(GROUP_ID), "--caption", cap or ""], capture_output=True, text=True)
+                            if up_res.returncode != 0 or "error" in up_res.stdout:
+                                bot.edit_message_text(f"❌ Userbot 2GB 大文件传输通道失败: {up_res.stderr or up_res.stdout[:100]}", chat_id=message.chat.id, message_id=status_msg.message_id)
+                                return
+
+                    bot.edit_message_text("✅ Userbot 下载并转发频道成功，已保留原文本作为描述。", chat_id=message.chat.id, message_id=status_msg.message_id)
+                    return
+                finally:
+                    # 即下即清：清理本地下载的媒体临时文件，防止占满磁盘
+                    for f in files:
+                        p = f.get('path')
+                        if p and os.path.exists(p):
+                            try:
+                                os.remove(p)
+                            except Exception:
+                                pass
 
         # 1. 处理合并消息（相册）
         if message.media_group_id:
