@@ -25,6 +25,7 @@ from telethon import TelegramClient
 from telethon.tl.types import (
     MessageMediaDocument,
     DocumentAttributeFilename,
+    DocumentAttributeVideo,
     InputDocumentFileLocation,
     InputPhotoFileLocation,
     InputPeerChannel,
@@ -490,6 +491,43 @@ async def execute_fetch_and_forward(
             else:
                 os.replace(tmp_file, file_path)
 
+            # 提取原视频属性与缩略图，确保上传后客户端能够在线流式秒开播放
+            video_attrs = []
+            thumb_path = None
+            if is_vid:
+                if m.document and m.document.attributes:
+                    for attr in m.document.attributes:
+                        if isinstance(attr, DocumentAttributeVideo):
+                            video_attrs.append(DocumentAttributeVideo(
+                                duration=int(attr.duration) if attr.duration else 0,
+                                w=attr.w or 0,
+                                h=attr.h or 0,
+                                round_message=attr.round_message or False,
+                                supports_streaming=True
+                            ))
+                        elif not isinstance(attr, DocumentAttributeFilename):
+                            video_attrs.append(attr)
+                
+                # 如果没有从原消息中找到 VideoAttribute，补充默认流式属性
+                if not any(isinstance(a, DocumentAttributeVideo) for a in video_attrs):
+                    video_attrs.append(DocumentAttributeVideo(
+                        duration=0,
+                        w=720,
+                        h=1280,
+                        supports_streaming=True
+                    ))
+
+                # 尝试下载原始封面缩略图，让在线播放器有原生封面
+                if m.photo or (m.document and getattr(m.document, 'thumbs', None)):
+                    thumb_file = f"{file_path}.thumb.jpg"
+                    task_temp_files.add(thumb_file)
+                    try:
+                        dl_thumb = await client.download_media(m, file=thumb_file, thumb=-1)
+                        if dl_thumb and os.path.exists(dl_thumb):
+                            thumb_path = dl_thumb
+                    except Exception as thumb_err:
+                        logger.debug(f"[-] 下载缩略图失败: {thumb_err}")
+
             task_temp_files.discard(tmp_file)
             task_temp_files.discard(faststart_path)
 
@@ -499,6 +537,8 @@ async def execute_fetch_and_forward(
                 "size": os.path.getsize(file_path) if os.path.exists(file_path) else s,
                 "is_video": is_vid,
                 "is_photo": is_pic,
+                "attributes": video_attrs if is_vid else None,
+                "thumb_path": thumb_path,
             })
 
         # ----------------------------------------------------
@@ -551,12 +591,16 @@ async def execute_fetch_and_forward(
         try:
             if len(downloaded_items) == 1:
                 item = downloaded_items[0]
-                logger.info(f"[*] 正在推送单文件至频道: {item['name']} ({item['size'] / (1024*1024):.2f}MB)")
+                is_v = item["is_video"]
+                logger.info(f"[*] 正在推送单文件至频道: {item['name']} (视频在线播放模式: {is_v})")
                 await upload_client.send_file(
                     target_entity,
                     file=item["path"],
                     caption=caption or "",
-                    force_document=not (item["is_video"] or item["is_photo"]),
+                    attributes=item.get("attributes"),
+                    supports_streaming=True if is_v else False,
+                    thumb=item.get("thumb_path"),
+                    force_document=False if is_v else not (item["is_photo"]),
                     progress_callback=on_upload_progress,
                 )
             else:
@@ -566,6 +610,7 @@ async def execute_fetch_and_forward(
                     target_entity,
                     file=file_paths,
                     caption=caption or "",
+                    supports_streaming=True,
                     progress_callback=on_upload_progress,
                 )
         finally:
