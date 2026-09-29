@@ -243,12 +243,11 @@ def update_account_report(report_data: Dict[str, Any]) -> bool:
         # 服务端防呆校准：
         # 1. 若客户端未上报增量 (earned_today == 0)
         # 2. 或客户端将总积分误算为增量 (earned_today >= end_points)
-        # 3. 或增量异常超出微软 Rewards 单日物理上限 (> 400分)
         # 只要前次总积分存在且当前总积分不低于前次，自动校准为精确差值 (end_points - old_points)
         if old_points > 0 and end_points >= old_points:
             delta = end_points - old_points
-            if earned_today == 0 or earned_today >= end_points or earned_today > 400:
-                print(f"[Rewards Store] {email} 收益异常或未传 ({earned_today})，自动校准为基准差值: +{delta}")
+            if earned_today == 0 or earned_today >= end_points:
+                print(f"[Rewards Store] {email} 收益未传或误等总积分 ({earned_today})，自动校准为基准差值: +{delta}")
                 earned_today = delta
 
         if end_points > 0:
