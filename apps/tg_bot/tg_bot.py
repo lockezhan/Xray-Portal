@@ -111,7 +111,13 @@ def handle_private_message(message):
                             headers["Authorization"] = f"Bearer {HK_WORKER_SECRET_TOKEN}"
                         resp = requests.post(
                             f"{HK_WORKER_URL}/api/forward",
-                            json={"url": url, "target_chat_id": GROUP_ID, "caption": message.text},
+                            json={
+                                "url": url,
+                                "target_chat_id": GROUP_ID,
+                                "caption": message.text,
+                                "progress_chat_id": message.chat.id,
+                                "progress_msg_id": status_msg.message_id,
+                            },
                             headers=headers,
                             timeout=1800  # 30分钟超时，适应大文件转推
                         )

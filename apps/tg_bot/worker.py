@@ -2,14 +2,16 @@
 Telegram 媒体转推轻量异步 Worker (运行于 HK-VPS)
 解决小磁盘空间约束与公网流量瓶颈:
 1. 流量分流: 所有媒体的下载与转推均在 HK-VPS 上执行，主控节点仅发送轻量 HTTP 控制信令。
-2. 磁盘安全水位检测 (Pre-flight Disk Check): 下载前计算媒体大小与磁盘剩余空间，严格保留至少 500MB 安全红线。
-3. 即下即清机制 (Ephemeral Storage): 单任务串行执行，转推成功立即删除本地临时文件，finally 块强制彻底清理残留。
+2. 实时动态进度通知 (Live Progress): 支持每 2.5 秒通过 Telegram Bot API 原位编辑消息，实时刷新下载/转码/上传进度条与速率。
+3. 磁盘安全水位检测 (Pre-flight Disk Check): 下载前计算媒体大小与磁盘剩余空间，严格保留至少 500MB 安全红线。
+4. 即下即清机制 (Ephemeral Storage): 单任务串行执行，转推成功立即删除本地临时文件，finally 块强制彻底清理残留。
 """
 
 from __future__ import annotations
 import os
 import sys
 import re
+import time
 import json
 import uuid
 import math
@@ -17,6 +19,7 @@ import shutil
 import asyncio
 import logging
 from typing import Union, Optional
+import aiohttp
 from aiohttp import web
 from telethon import TelegramClient
 from telethon.tl.types import (
@@ -83,11 +86,59 @@ class DiskSpaceError(Exception):
     """磁盘剩余空间不足异常"""
     pass
 
+class ProgressReporter:
+    """
+    Telegram 实时进度通知器：
+    内置节流机制 (默认 2.5 秒)，防止触发 Telegram Bot API 429 请求限流
+    """
+    def __init__(self, bot_token: Optional[str], chat_id: Optional[int], message_id: Optional[int], throttle_seconds: float = 2.5):
+        self.bot_token = bot_token
+        self.chat_id = chat_id
+        self.message_id = message_id
+        self.throttle_seconds = throttle_seconds
+        self.last_update_time = 0.0
+        self.last_text = ""
+        self._session: Optional[aiohttp.ClientSession] = None
+
+    def make_progress_bar(self, percent: float, length: int = 10) -> str:
+        """生成字符进度条 [████░░░░░░]"""
+        filled = max(0, min(length, int(length * percent / 100)))
+        return "█" * filled + "░" * (length - filled)
+
+    async def update(self, text: str, force: bool = False):
+        if not self.bot_token or not self.chat_id or not self.message_id:
+            return
+        now = time.time()
+        if not force and ((now - self.last_update_time < self.throttle_seconds) or text == self.last_text):
+            return
+        self.last_update_time = now
+        self.last_text = text
+        try:
+            if not self._session or self._session.closed:
+                self._session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=5))
+            url = f"https://api.telegram.org/bot{self.bot_token}/editMessageText"
+            payload = {
+                "chat_id": self.chat_id,
+                "message_id": self.message_id,
+                "text": text,
+                "parse_mode": "HTML",
+            }
+            async with self._session.post(url, json=payload) as resp:
+                await resp.read()
+        except Exception as e:
+            logger.debug(f"[-] 进度通知编辑失败 (可忽略): {e}")
+
+    async def close(self):
+        if self._session and not self._session.closed:
+            try:
+                await self._session.close()
+            except Exception:
+                pass
+
 def clean_stale_cache():
     """清理历史遗留的临时残留文件"""
     try:
         count = 0
-        now = asyncio.get_event_loop().time() if asyncio.get_event_loop().is_running() else 0
         for entry in os.scandir(CACHE_DIR):
             if entry.name.startswith("userbot_") or entry.name.endswith(".downloading") or ".faststart." in entry.name:
                 try:
@@ -169,8 +220,8 @@ def get_input_file_location(message):
         ), (largest.size if hasattr(largest, "size") else 0)
     return None, 0
 
-async def fast_download_file(client, location, file_size, out_file, workers=TG_DOWNLOAD_WORKERS):
-    """多并发分块高速下载器"""
+async def fast_download_file(client, location, file_size, out_file, workers=TG_DOWNLOAD_WORKERS, progress_callback=None):
+    """多并发分块高速下载器，支持实时进度汇报"""
     chunk_size = 512 * 1024
     chunks = math.ceil(file_size / chunk_size)
     queue = asyncio.Queue()
@@ -193,8 +244,10 @@ async def fast_download_file(client, location, file_size, out_file, workers=TG_D
             f.write(b"\0")
 
     lock = asyncio.Lock()
+    downloaded_bytes = 0
 
     async def worker():
+        nonlocal downloaded_bytes
         while not queue.empty():
             try:
                 i, offset = queue.get_nowait()
@@ -204,10 +257,17 @@ async def fast_download_file(client, location, file_size, out_file, workers=TG_D
                 try:
                     req = GetFileRequest(location=location, offset=offset, limit=chunk_size)
                     result = await client._call(sender, req)
+                    chunk_len = len(result.bytes)
                     async with lock:
                         with open(out_file, "rb+") as f:
                             f.seek(offset)
                             f.write(result.bytes)
+                        downloaded_bytes += chunk_len
+                    if progress_callback:
+                        try:
+                            await progress_callback(downloaded_bytes, file_size)
+                        except Exception:
+                            pass
                     break
                 except Exception as e:
                     if attempt == 2:
@@ -253,16 +313,24 @@ async def get_entity_safe(client_obj, peer_id):
         res_entity = res_entity[0]
     return res_entity
 
-async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], caption: str = ""):
+async def execute_fetch_and_forward(
+    url: str,
+    target_chat_id: Union[int, str],
+    caption: str = "",
+    progress_chat_id: Optional[int] = None,
+    progress_msg_id: Optional[int] = None
+):
     """
     核心执行器：
-    1. 复制隔离临时 session
+    1. 动态进度汇报器初始化
     2. 解析目标消息媒体与大小
     3. 前置磁盘水位安全检查
-    4. 分块下载与 faststart 优化
-    5. 直传目标频道
+    4. 分块下载与 faststart 优化（带实时进度刷新）
+    5. 直传目标频道（带上传实时进度刷新）
     6. 即下即清与 finally 强制清理
     """
+    reporter = ProgressReporter(CHANNEL_BOT_TOKEN, progress_chat_id, progress_msg_id)
+
     match = re.search(r"t\.me/(?:c/)?([^/]+)/(\d+)", url)
     if not match:
         raise ValueError("无效的 Telegram 消息链接格式")
@@ -298,6 +366,7 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
     client = TelegramClient(temp_session, API_ID, API_HASH)
 
     try:
+        await reporter.update("🔍 <b>[1/3 调度与解析]</b>\n正在连接 Telegram 数据中心并检索媒体信息...", force=True)
         await client.connect()
         if not await client.is_user_authorized():
             raise RuntimeError("HK-VPS 上 Userbot 未授权登录，请先同步有效的 telegram_session.session")
@@ -338,14 +407,17 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
             locations_and_sizes.append((loc, s))
             total_media_size += s
 
-        logger.info(f"[*] 准备下载媒体: 共 {len(messages_to_download)} 个文件，总大小: {total_media_size / (1024*1024):.2f}MB")
+        total_mb = total_media_size / (1024 * 1024)
+        logger.info(f"[*] 准备下载媒体: 共 {len(messages_to_download)} 个文件，总大小: {total_mb:.2f}MB")
         # 检查总大小是否超过剩余可用空间 - 500MB
         check_disk_space(total_media_size, safety_margin_mb=DISK_SAFETY_MARGIN_MB)
 
         # ----------------------------------------------------
-        # 开始逐个下载媒体
+        # 开始逐个下载媒体 (附带实时进度刷新)
         # ----------------------------------------------------
         downloaded_items = []
+        dl_start_time = time.time()
+
         for idx, m in enumerate(messages_to_download):
             is_pic = m.photo and not m.document
             is_vid = is_video(m) or m.video
@@ -364,22 +436,36 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
             tmp_file = f"{file_path}.{uuid.uuid4().hex}.downloading"
             faststart_path = tmp_file + ".faststart.mp4"
 
-            # 注册到临时文件集合，确保一旦中途崩溃能在 finally 彻底删除
             task_temp_files.add(tmp_file)
             task_temp_files.add(faststart_path)
             task_temp_files.add(file_path)
 
             loc, s = locations_and_sizes[idx]
+
+            async def on_download_progress(current, total):
+                percent = (current / max(1, total)) * 100
+                elapsed = max(0.1, time.time() - dl_start_time)
+                speed = current / elapsed
+                bar = reporter.make_progress_bar(percent)
+                msg_text = (
+                    f"📥 <b>[1/3 正在极速下载媒体]</b>\n"
+                    f"<code>{bar}</code> {percent:.1f}%\n"
+                    f"📊 进度: {current / (1024*1024):.1f} MB / {total / (1024*1024):.1f} MB\n"
+                    f"⚡ 速率: {speed / (1024*1024):.2f} MB/s (多线程加速)\n"
+                    f"🌐 节点: HK-VPS (0 Korea流量消耗)"
+                )
+                await reporter.update(msg_text)
+
             if loc and s > 0:
-                await fast_download_file(client, loc, s, tmp_file, workers=TG_DOWNLOAD_WORKERS)
+                await fast_download_file(client, loc, s, tmp_file, workers=TG_DOWNLOAD_WORKERS, progress_callback=on_download_progress)
             else:
                 await client.download_media(m, file=tmp_file)
 
             # ----------------------------------------------------
-            # Faststart 优化 (仅在可用空间足够且安装了 ffmpeg 时安全执行)
+            # Faststart 优化 (秒开处理)
             # ----------------------------------------------------
             if ext == ".mp4" and shutil.which("ffmpeg"):
-                # faststart 需要复制一个临时文件，检测剩余空间是否满足两倍该文件大小 + 红线
+                await reporter.update("🔄 <b>[2/3 视频优化]</b>\n正在注入 Faststart 秒开流式元数据...", force=True)
                 curr_usage = shutil.disk_usage(CACHE_DIR)
                 if curr_usage.free > (s + DISK_SAFETY_MARGIN_MB * 1024 * 1024):
                     try:
@@ -417,12 +503,13 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
 
         # ----------------------------------------------------
         # 转发至目标频道 (MTProto 直传支持最高 2GB 文件)
+        # 核心修复: 确保用谁上传就用谁解析频道实体，彻底杜绝 ChannelInvalidError
         # ----------------------------------------------------
-        target_entity = await get_entity_safe(client, target_chat_id)
-
-        # 优先使用 Userbot 或 Channel Bot 上传
+        await reporter.update("📤 <b>[3/3 准备推流]</b>\n正在连接目标频道并初始化 MTProto 直传通道...", force=True)
         bot_client = None
         upload_client = client
+        target_entity = None
+
         if CHANNEL_BOT_TOKEN:
             try:
                 bot_session_path = f"{SESSION_PATH}_bot_{unique_id}"
@@ -430,11 +517,36 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
                     task_temp_files.add(f"{bot_session_path}.session" + ext)
                 bot_client = TelegramClient(bot_session_path, API_ID, API_HASH)
                 await bot_client.start(bot_token=CHANNEL_BOT_TOKEN)
+                # 关键修复: 必须用 bot_client 自身去解析目标频道
+                target_entity = await get_entity_safe(bot_client, target_chat_id)
                 upload_client = bot_client
-                logger.info("[*] 已启用 Bot 身份直传目标频道")
-            except Exception as bot_err:
-                logger.warning(f"[-] Bot 客户端初始化失败，回退使用 Userbot 身份转推: {bot_err}")
+                logger.info(f"[*] 已成功启用 Bot 身份解析并推送目标频道: {getattr(target_entity, 'title', target_chat_id)}")
+            except Exception as bot_init_err:
+                logger.warning(f"[-] Bot 身份解析频道失败，自动回退使用 Userbot 身份: {bot_init_err}")
+                if bot_client:
+                    try: await bot_client.disconnect()
+                    except Exception: pass
+                    bot_client = None
                 upload_client = client
+                target_entity = await get_entity_safe(client, target_chat_id)
+        else:
+            target_entity = await get_entity_safe(client, target_chat_id)
+
+        upload_start_time = time.time()
+
+        async def on_upload_progress(current, total):
+            percent = (current / max(1, total)) * 100
+            elapsed = max(0.1, time.time() - upload_start_time)
+            speed = current / elapsed
+            bar = reporter.make_progress_bar(percent)
+            msg_text = (
+                f"📤 <b>[3/3 正在推送目标频道]</b>\n"
+                f"<code>{bar}</code> {percent:.1f}%\n"
+                f"📊 进度: {current / (1024*1024):.1f} MB / {total / (1024*1024):.1f} MB\n"
+                f"⚡ 速率: {speed / (1024*1024):.2f} MB/s (MTProto 直传通道)\n"
+                f"🚀 目标: 目标频道"
+            )
+            await reporter.update(msg_text)
 
         try:
             if len(downloaded_items) == 1:
@@ -445,6 +557,7 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
                     file=item["path"],
                     caption=caption or "",
                     force_document=not (item["is_video"] or item["is_photo"]),
+                    progress_callback=on_upload_progress,
                 )
             else:
                 file_paths = [it["path"] for it in downloaded_items]
@@ -453,6 +566,7 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
                     target_entity,
                     file=file_paths,
                     caption=caption or "",
+                    progress_callback=on_upload_progress,
                 )
         finally:
             if bot_client:
@@ -474,6 +588,18 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
                 except Exception as del_err:
                     logger.error(f"[-] 删除临时文件失败: {fpath}, {del_err}")
 
+        # 最终完成通知
+        total_time_str = f"{int(time.time() - dl_start_time)} 秒"
+        await reporter.update(
+            f"✅ <b>[HK-VPS 分流转推成功]</b>\n"
+            f"📦 文件数量: {len(downloaded_items)} 个\n"
+            f"📊 媒体总计: {total_mb:.2f} MB\n"
+            f"⏱️ 总计耗时: {total_time_str}\n"
+            f"⚡ <b>即下即清完成</b>，HK-VPS 磁盘 0 残留\n"
+            f"🛡️ Korea-VPS 流量消耗: <b>0 MB</b>",
+            force=True
+        )
+
         return {
             "success": True,
             "files_count": len(downloaded_items),
@@ -481,7 +607,14 @@ async def execute_fetch_and_forward(url: str, target_chat_id: Union[int, str], c
             "details": [{"name": it["name"], "size": it["size"]} for it in downloaded_items],
         }
 
+    except Exception as e:
+        err_msg = str(e)
+        logger.error(f"[-] 转推异常: {err_msg}", exc_info=True)
+        await reporter.update(f"❌ <b>[HK-VPS 处理失败]</b>: {err_msg}", force=True)
+        raise e
+
     finally:
+        await reporter.close()
         # 断开并关闭 Telethon 客户端连接
         try:
             await client.disconnect()
@@ -551,6 +684,8 @@ async def handle_forward(request: web.Request):
     url = data.get("url", "").strip()
     target_chat_id = data.get("target_chat_id")
     caption = data.get("caption", "")
+    progress_chat_id = data.get("progress_chat_id")
+    progress_msg_id = data.get("progress_msg_id")
 
     if not url or not target_chat_id:
         return web.json_response({"success": False, "error": "缺少必要参数: url 或 target_chat_id"}, status=400)
@@ -558,8 +693,12 @@ async def handle_forward(request: web.Request):
     # 串行排队锁：防止多任务并发挤占磁盘
     async with TASK_SERIAL_LOCK:
         try:
-            logger.info(f"[*] 收到转发请求: URL={url}, Target={target_chat_id}")
-            result = await execute_fetch_and_forward(url, target_chat_id, caption)
+            logger.info(f"[*] 收到转发请求: URL={url}, Target={target_chat_id}, ProgressMsg={progress_msg_id}")
+            result = await execute_fetch_and_forward(
+                url, target_chat_id, caption,
+                progress_chat_id=progress_chat_id,
+                progress_msg_id=progress_msg_id
+            )
             return web.json_response(result)
         except DiskSpaceError as dse:
             logger.warning(f"[-] 磁盘水位超限拒绝: {dse}")
