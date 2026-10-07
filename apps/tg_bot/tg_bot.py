@@ -119,21 +119,13 @@ def handle_private_message(message):
                                 "progress_msg_id": status_msg.message_id,
                             },
                             headers=headers,
-                            timeout=1800  # 30分钟超时，适应大文件转推
+                            timeout=30  # 异步快速入队，30秒超时足够
                         )
                         if resp.status_code == 200:
                             res_json = resp.json()
                             if res_json.get("success"):
-                                cnt = res_json.get("files_count", 1)
-                                size_mb = res_json.get("total_size", 0) / (1024 * 1024)
-                                bot.edit_message_text(
-                                    f"✅ [HK-VPS 分流成功] 媒体已转推至目标频道！\n"
-                                    f"📦 文件数量: {cnt} 个\n"
-                                    f"📊 媒体大小: {size_mb:.2f} MB\n"
-                                    f"⚡ 即下即清完成，已释放本地磁盘，Korea-VPS 流量消耗: 0 MB",
-                                    chat_id=message.chat.id,
-                                    message_id=status_msg.message_id
-                                )
+                                # 任务已成功排入 HK-VPS 异步队列，HK-VPS Worker 将直接原位刷新进度条与完成通知
+                                return
                             else:
                                 err = res_json.get("error", "未知错误")
                                 bot.edit_message_text(f"❌ [HK-VPS 错误]: {err}", chat_id=message.chat.id, message_id=status_msg.message_id)

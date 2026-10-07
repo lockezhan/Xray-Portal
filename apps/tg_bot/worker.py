@@ -80,8 +80,9 @@ except Exception:
     CACHE_DIR = "/tmp/tg-bridge-cache"
     os.makedirs(CACHE_DIR, exist_ok=True)
 
-# 全局任务串行互斥锁：小磁盘机器绝对严禁多任务并发下载，必须一进一出一清
-TASK_SERIAL_LOCK = asyncio.Lock()
+# 全局任务异步缓冲队列：在 aiohttp 当前事件循环内初始化
+TASK_QUEUE: Optional[asyncio.Queue] = None
+CURRENT_RUNNING_TASK: Optional[dict] = None
 
 class DiskSpaceError(Exception):
     """磁盘剩余空间不足异常"""
@@ -715,9 +716,66 @@ async def handle_health(request: web.Request):
         }
     })
 
+async def queue_consumer():
+    """
+    后台任务单并发消费循环：
+    严格串行出队执行任务，单任务执行完毕并释放磁盘后才处理下一个，保障小磁盘安全
+    """
+    global CURRENT_RUNNING_TASK
+    logger.info("[*] 异步任务消费队列监听循环已启动就绪...")
+    while True:
+        if TASK_QUEUE is None:
+            await asyncio.sleep(0.1)
+            continue
+        try:
+            task = await TASK_QUEUE.get()
+            CURRENT_RUNNING_TASK = task
+            task_id = task["task_id"]
+            url = task["url"]
+            target_chat_id = task["target_chat_id"]
+            caption = task["caption"]
+            progress_chat_id = task.get("progress_chat_id")
+            progress_msg_id = task.get("progress_msg_id")
+
+            logger.info(f"[*] [队列开始执行] 任务ID={task_id}, URL={url}, 当前剩余排队={TASK_QUEUE.qsize()}")
+
+            try:
+                await execute_fetch_and_forward(
+                    url, target_chat_id, caption,
+                    progress_chat_id=progress_chat_id,
+                    progress_msg_id=progress_msg_id
+                )
+            except DiskSpaceError as dse:
+                logger.warning(f"[-] 任务 [{task_id}] 磁盘空间超限拦截: {dse}")
+            except Exception as ex:
+                logger.error(f"[-] 任务 [{task_id}] 执行失败: {ex}", exc_info=True)
+            finally:
+                CURRENT_RUNNING_TASK = None
+                TASK_QUEUE.task_done()
+                logger.info(f"[+] [队列任务完毕] 任务ID={task_id}, 当前剩余排队={TASK_QUEUE.qsize()}")
+        except asyncio.CancelledError:
+            logger.info("[*] 消费队列已收到取消信号，安全退出")
+            break
+        except Exception as queue_err:
+            logger.error(f"[-] 队列调度未知异常: {queue_err}", exc_info=True)
+            await asyncio.sleep(1)
+
+@routes.get("/api/queue")
+async def handle_get_queue(request: web.Request):
+    """查询当前队列排队状态接口"""
+    return web.json_response({
+        "status": "ok",
+        "is_busy": (CURRENT_RUNNING_TASK is not None),
+        "current_task": CURRENT_RUNNING_TASK.get("task_id") if CURRENT_RUNNING_TASK else None,
+        "queue_length": TASK_QUEUE.qsize(),
+    })
+
 @routes.post("/api/forward")
 async def handle_forward(request: web.Request):
-    """转推核心接口"""
+    """
+    任务接入核心接口 (异步快速入队模型):
+    0.05秒极速响应入队成功，彻底杜绝长连接阻塞与 500 超时，任务由后台队列按序消费
+    """
     if not check_auth(request):
         return web.json_response({"success": False, "error": "Unauthorized: 无效的鉴权令牌"}, status=401)
 
@@ -735,28 +793,67 @@ async def handle_forward(request: web.Request):
     if not url or not target_chat_id:
         return web.json_response({"success": False, "error": "缺少必要参数: url 或 target_chat_id"}, status=400)
 
-    # 串行排队锁：防止多任务并发挤占磁盘
-    async with TASK_SERIAL_LOCK:
-        try:
-            logger.info(f"[*] 收到转发请求: URL={url}, Target={target_chat_id}, ProgressMsg={progress_msg_id}")
-            result = await execute_fetch_and_forward(
-                url, target_chat_id, caption,
-                progress_chat_id=progress_chat_id,
-                progress_msg_id=progress_msg_id
-            )
-            return web.json_response(result)
-        except DiskSpaceError as dse:
-            logger.warning(f"[-] 磁盘水位超限拒绝: {dse}")
-            return web.json_response({"success": False, "error": str(dse)}, status=400)
-        except Exception as ex:
-            logger.error(f"[-] 任务处理失败: {ex}", exc_info=True)
-            return web.json_response({"success": False, "error": str(ex)}, status=500)
+    global TASK_QUEUE
+    if TASK_QUEUE is None:
+        TASK_QUEUE = asyncio.Queue()
+
+    task_id = uuid.uuid4().hex[:8]
+    current_q_size = TASK_QUEUE.qsize()
+    is_busy = (CURRENT_RUNNING_TASK is not None)
+    # 排队位次
+    queue_pos = (current_q_size + 1) if is_busy else 1
+
+    task_item = {
+        "task_id": task_id,
+        "url": url,
+        "target_chat_id": target_chat_id,
+        "caption": caption,
+        "progress_chat_id": progress_chat_id,
+        "progress_msg_id": progress_msg_id,
+        "enqueue_time": time.time(),
+    }
+
+    # 若当前有任务正在执行，立即向 Telegram 回复一条排队提示，告知用户已锁定，无需重复发送
+    if is_busy and progress_chat_id and progress_msg_id:
+        reporter = ProgressReporter(CHANNEL_BOT_TOKEN, progress_chat_id, progress_msg_id)
+        waiting_count = current_q_size + 1
+        asyncio.create_task(reporter.update(
+            f"⏳ <b>[已加入任务缓冲队列]</b>\n"
+            f"📋 当前排队位次: <b>#{waiting_count}</b> (前方有 {waiting_count} 个任务正在处理)\n"
+            f"⚡ 系统将在前序任务完成并释放磁盘后<b>自动按序下载转推</b>，无需重复发送！",
+            force=True
+        ))
+
+    # 压入任务队列
+    await TASK_QUEUE.put(task_item)
+    logger.info(f"[+] 任务成功入队 [{task_id}]: URL={url}, 位次=#{queue_pos}, 队列总长={TASK_QUEUE.qsize()}")
+
+    # 毫秒级返回入队成功，彻底解决 HTTP 500 Server got itself in trouble
+    return web.json_response({
+        "success": True,
+        "queued": True,
+        "task_id": task_id,
+        "queue_position": queue_pos,
+        "is_busy": is_busy,
+        "message": f"任务已安全加入队列 (位次 #{queue_pos})"
+    })
+
+async def init_background_tasks(app):
+    """管理后台消费协程与事件循环生命周期"""
+    global TASK_QUEUE
+    TASK_QUEUE = asyncio.Queue()
+    consumer = asyncio.create_task(queue_consumer())
+    app["consumer_task"] = consumer
+    yield
+    consumer.cancel()
+    await asyncio.gather(consumer, return_exceptions=True)
 
 def main():
     clean_stale_cache()
     app = web.Application()
+    app.cleanup_ctx.append(init_background_tasks)
     app.add_routes(routes)
-    logger.info(f"[*] TG HK-Worker 正在启动，监听 {WORKER_HOST}:{WORKER_PORT}...")
+    logger.info(f"[*] TG HK-Worker 正在启动 (异步消息队列模式)，监听 {WORKER_HOST}:{WORKER_PORT}...")
     web.run_app(app, host=WORKER_HOST, port=WORKER_PORT)
 
 if __name__ == "__main__":
