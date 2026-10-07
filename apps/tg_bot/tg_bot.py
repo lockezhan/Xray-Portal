@@ -163,6 +163,16 @@ def handle_private_message(message):
                     bot.edit_message_text(f"❌ 未找到可下载的文件", chat_id=message.chat.id, message_id=status_msg.message_id)
                     return
                 
+                # 拼接保留原描述、tag 与来源链接的 final_caption
+                orig_caption = res_data.get("original_caption", "").strip()
+                if orig_caption:
+                    final_caption = f"{orig_caption}\n\n🔗 来源: {url}"
+                else:
+                    final_caption = url
+                if len(final_caption) > 1024:
+                    suffix = f"\n\n🔗 来源: {url}"
+                    final_caption = orig_caption[:max(10, 1024 - len(suffix) - 5)] + "..." + suffix
+
                 # 转发到目标频道：智能分流大小判断与错误处理
                 try:
                     use_userbot_upload = False
@@ -177,11 +187,11 @@ def handle_private_message(message):
                                 f = files[0]
                                 with open(f['path'], 'rb') as file_obj:
                                     if f["type"].startswith("video/"):
-                                        bot.send_video(GROUP_ID, file_obj, caption=message.text, timeout=600)
+                                        bot.send_video(GROUP_ID, file_obj, caption=final_caption, timeout=600)
                                     elif f["type"].startswith("image/"):
-                                        bot.send_photo(GROUP_ID, file_obj, caption=message.text, timeout=600)
+                                        bot.send_photo(GROUP_ID, file_obj, caption=final_caption, timeout=600)
                                     else:
-                                        bot.send_document(GROUP_ID, file_obj, caption=message.text, timeout=600)
+                                        bot.send_document(GROUP_ID, file_obj, caption=final_caption, timeout=600)
                             else:
                                 opened_files = []
                                 try:
@@ -190,8 +200,7 @@ def handle_private_message(message):
                                         file_obj = open(f['path'], 'rb')
                                         opened_files.append(file_obj)
                                         
-                                        # 把用户发来的包含 link 的文本，作为第一张图/视频的描述（标签）
-                                        cap = message.text if i == 0 else None
+                                        cap = final_caption if i == 0 else None
                                         
                                         if f["type"].startswith("video/"):
                                             media_list.append(InputMediaVideo(file_obj, caption=cap))
@@ -216,13 +225,13 @@ def handle_private_message(message):
                     if use_userbot_upload:
                         bot.edit_message_text("⚡ 检测到文件大于 48MB 触发官方 API 大小受限，正在启用 Userbot 2GB MTProto 高速通道直传目标频道...", chat_id=message.chat.id, message_id=status_msg.message_id)
                         for i, f in enumerate(files):
-                            cap = message.text if i == 0 else ""
+                            cap = final_caption if i == 0 else ""
                             up_res = subprocess.run([sys.executable, fetch_script, "--upload", f['path'], "--to", str(GROUP_ID), "--caption", cap or ""], capture_output=True, text=True)
                             if up_res.returncode != 0 or "error" in up_res.stdout:
                                 bot.edit_message_text(f"❌ Userbot 2GB 大文件传输通道失败: {up_res.stderr or up_res.stdout[:100]}", chat_id=message.chat.id, message_id=status_msg.message_id)
                                 return
 
-                    bot.edit_message_text("✅ Userbot 下载并转发频道成功，已保留原文本作为描述。", chat_id=message.chat.id, message_id=status_msg.message_id)
+                    bot.edit_message_text("✅ Userbot 下载并转发频道成功，已保留原描述与Tag。", chat_id=message.chat.id, message_id=status_msg.message_id)
                     return
                 finally:
                     # 即下即清：清理本地下载的媒体临时文件，防止占满磁盘

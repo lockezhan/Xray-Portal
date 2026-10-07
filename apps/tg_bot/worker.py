@@ -18,10 +18,11 @@ import math
 import shutil
 import asyncio
 import logging
-from typing import Union, Optional
+from typing import Union, Optional, Tuple
 import aiohttp
 from aiohttp import web
 from telethon import TelegramClient
+from telethon.extensions import html
 from telethon.tl.types import (
     MessageMediaDocument,
     DocumentAttributeFilename,
@@ -315,6 +316,77 @@ async def get_entity_safe(client_obj, peer_id):
         res_entity = res_entity[0]
     return res_entity
 
+def format_forward_caption(
+    orig_raw_text: str,
+    orig_entities: list,
+    source_url: str,
+    user_input_caption: str = ""
+) -> Tuple[str, str]:
+    """
+    格式化转发至频道的 Caption：
+    1. 完整保留原消息的正文、描述词与所有 Tag 标签（保留富文本样式与可点击性）
+    2. 追加原链接来源，防止原帖被删除后死无对证
+    3. 保留用户发送时附带的个性化备注（若有）
+    4. 严格遵守 Telegram 媒体 Caption 1024 字符限制，超长智能截断并保底
+    返回: (final_caption_html, final_caption_plain)
+    """
+    # 提取用户私聊附带的个性化说明（扣除匹配到的 url 后剩余的有效字符）
+    user_note = re.sub(r"https?://t\.me/\S+", "", user_input_caption or "").strip()
+
+    content_blocks = []
+    plain_blocks = []
+
+    if user_note:
+        safe_note = html.unparse(user_note, [])
+        content_blocks.append(f"💬 <b>附言:</b> {safe_note}")
+        plain_blocks.append(f"💬 附言: {user_note}")
+
+    if orig_raw_text:
+        try:
+            orig_html = html.unparse(orig_raw_text, orig_entities or [])
+        except Exception:
+            orig_html = html.unparse(orig_raw_text, [])
+        content_blocks.append(orig_html)
+        plain_blocks.append(orig_raw_text)
+
+    # 如果原消息或用户附言中尚未包含此原链接，则在末尾附带来源链接
+    if source_url and source_url not in (orig_raw_text or "") and source_url not in user_note:
+        content_blocks.append(f"🔗 <b>来源:</b> <a href=\"{source_url}\">{source_url}</a>")
+        plain_blocks.append(f"🔗 来源: {source_url}")
+
+    final_html = "\n\n".join(content_blocks).strip()
+    final_plain = "\n\n".join(plain_blocks).strip()
+
+    # 若没有任何文本，直接返回来源链接
+    if not final_html:
+        if source_url:
+            final_html = f"🔗 <b>来源:</b> <a href=\"{source_url}\">{source_url}</a>"
+            final_plain = f"🔗 来源: {source_url}"
+        else:
+            return "", ""
+
+    # 检查纯文本字符数限制 (Telegram Caption 上限为 1024 字符)
+    try:
+        parsed_text, _ = html.parse(final_html)
+    except Exception:
+        parsed_text = final_plain
+
+    if len(parsed_text) > 1024:
+        source_suffix_plain = f"\n\n🔗 来源: {source_url}" if source_url else ""
+        source_suffix_html = f"\n\n🔗 <b>来源:</b> <a href=\"{source_url}\">{source_url}</a>" if source_url else ""
+
+        max_body_len = 1024 - len(source_suffix_plain) - 5
+        if max_body_len > 0 and orig_raw_text:
+            truncated_raw = orig_raw_text[:max_body_len] + "..."
+            truncated_html = html.unparse(truncated_raw, [])
+            final_html = f"{truncated_html}{source_suffix_html}"
+            final_plain = f"{truncated_raw}{source_suffix_plain}"
+        else:
+            final_html = final_html[:1020] + "..."
+            final_plain = final_plain[:1020] + "..."
+
+    return final_html, final_plain
+
 async def execute_fetch_and_forward(
     url: str,
     target_chat_id: Union[int, str],
@@ -398,6 +470,27 @@ async def execute_fetch_and_forward(
             messages_to_download.sort(key=lambda x: x.id)
         else:
             messages_to_download.append(message)
+
+        # ----------------------------------------------------
+        # 核心功能: 完整提取原消息的文字描述与 Tag 标签 (支持单消息与相册)
+        # 解决原贴被删除后丢失主播名、tag 检索标签和说明的核心痛点
+        # ----------------------------------------------------
+        original_raw_text = ""
+        original_entities = []
+        candidate_msgs = [message] + [m for m in messages_to_download if m.id != message.id]
+        for m in candidate_msgs:
+            if m.raw_text and m.raw_text.strip():
+                original_raw_text = m.raw_text.strip()
+                original_entities = m.entities or []
+                break
+
+        final_caption_html, final_caption_plain = format_forward_caption(
+            orig_raw_text=original_raw_text,
+            orig_entities=original_entities,
+            source_url=url,
+            user_input_caption=caption
+        )
+        logger.info(f"[*] 已成功提取并格式化原消息描述 (原描述字数: {len(original_raw_text)}, 最终Caption字数: {len(final_caption_plain)})")
 
         # ----------------------------------------------------
         # 核心防爆盘安全机制 1: 前置磁盘水位安全检测
@@ -594,26 +687,53 @@ async def execute_fetch_and_forward(
                 item = downloaded_items[0]
                 is_v = item["is_video"]
                 logger.info(f"[*] 正在推送单文件至频道: {item['name']} (视频在线播放模式: {is_v})")
-                await upload_client.send_file(
-                    target_entity,
-                    file=item["path"],
-                    caption=caption or "",
-                    attributes=item.get("attributes"),
-                    supports_streaming=True if is_v else False,
-                    thumb=item.get("thumb_path"),
-                    force_document=False if is_v else not (item["is_photo"]),
-                    progress_callback=on_upload_progress,
-                )
+                try:
+                    await upload_client.send_file(
+                        target_entity,
+                        file=item["path"],
+                        caption=final_caption_html,
+                        parse_mode="html",
+                        attributes=item.get("attributes"),
+                        supports_streaming=True if is_v else False,
+                        thumb=item.get("thumb_path"),
+                        force_document=False if is_v else not (item["is_photo"]),
+                        progress_callback=on_upload_progress,
+                    )
+                except Exception as send_html_err:
+                    logger.warning(f"[-] HTML 格式推送失败 ({send_html_err})，自动降级回退纯文本 Caption 推送")
+                    await upload_client.send_file(
+                        target_entity,
+                        file=item["path"],
+                        caption=final_caption_plain,
+                        parse_mode=None,
+                        attributes=item.get("attributes"),
+                        supports_streaming=True if is_v else False,
+                        thumb=item.get("thumb_path"),
+                        force_document=False if is_v else not (item["is_photo"]),
+                        progress_callback=on_upload_progress,
+                    )
             else:
                 file_paths = [it["path"] for it in downloaded_items]
                 logger.info(f"[*] 正在以相册形式推送 {len(file_paths)} 个文件至目标频道")
-                await upload_client.send_file(
-                    target_entity,
-                    file=file_paths,
-                    caption=caption or "",
-                    supports_streaming=True,
-                    progress_callback=on_upload_progress,
-                )
+                try:
+                    await upload_client.send_file(
+                        target_entity,
+                        file=file_paths,
+                        caption=final_caption_html,
+                        parse_mode="html",
+                        supports_streaming=True,
+                        progress_callback=on_upload_progress,
+                    )
+                except Exception as send_album_html_err:
+                    logger.warning(f"[-] 相册 HTML 格式推送失败 ({send_album_html_err})，自动降级回退纯文本 Caption 推送")
+                    await upload_client.send_file(
+                        target_entity,
+                        file=file_paths,
+                        caption=final_caption_plain,
+                        parse_mode=None,
+                        supports_streaming=True,
+                        progress_callback=on_upload_progress,
+                    )
         finally:
             if bot_client:
                 try:

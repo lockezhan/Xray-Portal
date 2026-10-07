@@ -201,6 +201,18 @@ async def main():
         else:
             messages_to_download.append(message)
             
+        original_raw_text = ""
+        original_caption_html = ""
+        for m in ([message] + [x for x in messages_to_download if x.id != message.id]):
+            if m.raw_text and m.raw_text.strip():
+                original_raw_text = m.raw_text.strip()
+                try:
+                    from telethon.extensions import html
+                    original_caption_html = html.unparse(original_raw_text, m.entities or [])
+                except Exception:
+                    original_caption_html = original_raw_text
+                break
+
         downloaded_files = []
         
         from telethon.tl.functions.upload import GetFileRequest
@@ -391,7 +403,12 @@ async def main():
             if extracted_items:
                 downloaded_files.extend(extracted_items)
 
-        print(json.dumps({"success": True, "files": downloaded_files}))
+        print(json.dumps({
+            "success": True,
+            "files": downloaded_files,
+            "original_caption": original_raw_text,
+            "original_caption_html": original_caption_html
+        }))
         
     except Exception as e:
         print(json.dumps({"error": str(e)}))
