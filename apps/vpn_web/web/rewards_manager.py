@@ -84,6 +84,8 @@ def calculate_account_metrics(acc_data: Dict[str, Any], target_points: int) -> D
     # 1. 连签天数与周数分析
     streak_weeks = streak_days // 7
     cycle_days = streak_days % 7  # 当前周内的进度 (0~6)
+    # 当整周打满 (如 7, 14, 21, 28 天) 时，当前周进度记为 7/7，避免显示 0/7
+    display_cycle = 7 if (streak_days > 0 and cycle_days == 0) else cycle_days
     days_to_next_week_bonus = 7 - cycle_days if cycle_days > 0 else 7
 
     # 2. 速度与预计达成测算
@@ -116,7 +118,7 @@ def calculate_account_metrics(acc_data: Dict[str, Any], target_points: int) -> D
         "today_earned": today_earned,
         "streak_days": streak_days,
         "streak_weeks": streak_weeks,
-        "cycle_days": cycle_days,
+        "cycle_days": display_cycle,
         "days_to_next_week_bonus": days_to_next_week_bonus,
         "avg_speed": avg_speed,
         "remaining_pts": remaining_pts,
@@ -253,16 +255,18 @@ def update_account_report(report_data: Dict[str, Any]) -> bool:
         if end_points > 0:
             acc["current_points"] = end_points
 
+        old_updated_date = acc.get("last_updated", "")[:10]
+
+        if streak is not None and int(streak) > 0:
+            acc["streak_days"] = int(streak)
+        else:
+            # 若今日打卡成功且非今日重复上报，连签天数自增
+            if status == "success" and old_updated_date != today_str:
+                acc["streak_days"] = acc.get("streak_days", 0) + 1
+
         acc["today_earned"] = earned_today
         acc["status"] = status
         acc["last_updated"] = now_str
-
-        if streak is not None:
-            acc["streak_days"] = int(streak)
-        else:
-            # 若今日打卡成功，连签天数自增
-            if status == "success" and acc.get("last_updated", "")[:10] != today_str:
-                acc["streak_days"] = acc.get("streak_days", 0) + 1
 
         # 更新历史记录
         history = acc.setdefault("history", [])
