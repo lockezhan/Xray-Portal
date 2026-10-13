@@ -226,14 +226,25 @@ def handle_sticker_to_gif(message):
                 f"🎨 特性: 保留 Alpha 透明通道 / 高画质自适应调色板"
             )
 
+            # 1. 发送动图预览 (供在 Telegram 聊天内直接循环播放与长按收藏)
             with open(output_gif_path, 'rb') as gif_file:
-                # 发送动图 (在 Telegram 客户端中可直接预览、循环播放并长按保存为表情)
                 bot.send_animation(
                     chat_id=message.chat.id,
                     animation=gif_file,
                     caption=caption_text,
                     parse_mode="HTML",
                     reply_to_message_id=message.message_id
+                )
+
+            # 2. 发送原始无损 GIF 文档 (彻底解决 Telegram 强行转码为 .gif.mp4 导致本地不可用的问题)
+            doc_caption = f"📥 <b>无损原版 GIF 文件</b> (点击即可直接保存为标准 <code>.gif</code> 文件，微信/本地相册完全可用)"
+            with open(output_gif_path, 'rb') as gif_file:
+                bot.send_document(
+                    chat_id=message.chat.id,
+                    document=gif_file,
+                    visible_file_name=f"sticker_{unique_id}.gif",
+                    caption=doc_caption,
+                    parse_mode="HTML"
                 )
 
             # 发送成功后删除过渡提示消息
