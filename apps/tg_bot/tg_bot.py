@@ -122,6 +122,7 @@ def handle_sticker_to_gif(message):
     import shutil
 
     with tempfile.TemporaryDirectory() as tmpdir:
+        local_source_file = None
         try:
             file_info = bot.get_file(sticker.file_id)
             file_path = file_info.file_path
@@ -132,6 +133,7 @@ def handle_sticker_to_gif(message):
             if file_path:
                 # 1. 尝试直接作为绝对路径读取
                 if os.path.isabs(file_path) and os.path.exists(file_path):
+                    local_source_file = file_path
                     with open(file_path, 'rb') as f:
                         downloaded_bytes = f.read()
 
@@ -145,6 +147,7 @@ def handle_sticker_to_gif(message):
                     ]
                     for cand in candidates:
                         if os.path.exists(cand) and os.path.isfile(cand):
+                            local_source_file = cand
                             with open(cand, 'rb') as f:
                                 downloaded_bytes = f.read()
                                 break
@@ -241,6 +244,15 @@ def handle_sticker_to_gif(message):
 
         except Exception as e:
             bot.edit_message_text(f"❌ 贴纸处理异常: {e}", chat_id=message.chat.id, message_id=status_msg.message_id)
+        finally:
+            # 💡 核心保障：即下即清！不仅 tmpdir 临时目录会自动销毁，
+            # 本地 telegram-bot-api 在数据目录下生成的原始贴纸文件也强制立即删除，确保 VPS 磁盘 0 残留！
+            if local_source_file and os.path.exists(local_source_file):
+                try:
+                    os.remove(local_source_file)
+                    print(f"[+] [即下即清] 已成功删除本地 telegram-bot-api 原始贴纸缓存: {local_source_file}")
+                except Exception as del_err:
+                    print(f"[-] 删除原始贴纸缓存失败: {del_err}")
 
 @bot.message_handler(func=lambda message: message.chat.type == 'private' and message.from_user.id == ADMIN_ID,
                      content_types=['text', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
@@ -436,7 +448,54 @@ def handle_private_message(message):
     except Exception as e:
         bot.send_message(message.chat.id, f"❌ 转发失败: {e}")
 
+def clean_stale_sticker_cache():
+    """定期清理本地 telegram-bot-api 与系统的孤立历史贴纸残留，防止 VPS 磁盘长期膨胀"""
+    import glob
+    import time
+    now = time.time()
+    patterns = [
+        "/var/lib/telegram-bot-api/*/stickers/*",
+        "/var/lib/telegram-bot-api/*/temp/*",
+        "/tmp/telegram-bot-api/*",
+        "/tmp/sticker_*.gif",
+        "/tmp/input_*",
+    ]
+    cleaned_count = 0
+    cleaned_bytes = 0
+    for pat in patterns:
+        try:
+            for fpath in glob.glob(pat):
+                if os.path.isfile(fpath):
+                    # 清理修改时间超过 15 分钟的孤立残留文件
+                    if now - os.path.getmtime(fpath) > 900:
+                        try:
+                            fsize = os.path.getsize(fpath)
+                            os.remove(fpath)
+                            cleaned_bytes += fsize
+                            cleaned_count += 1
+                        except Exception:
+                            pass
+        except Exception:
+            pass
+    if cleaned_count > 0:
+        print(f"[*] [磁盘巡检] 已自动清理 {cleaned_count} 个历史贴纸/临时残留文件，释放磁盘: {cleaned_bytes / 1024:.1f} KB")
+
+def start_periodic_cleaner(interval_seconds=3600):
+    """启动后台定时磁盘巡检清理守护线程"""
+    import threading
+    import time
+    def _run():
+        while True:
+            time.sleep(interval_seconds)
+            clean_stale_sticker_cache()
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+
 if __name__ == '__main__':
+    # 启动前先执行一次历史孤立缓存大扫除
+    clean_stale_sticker_cache()
+    # 启动后台守护定时清理线程 (每 1 小时自动巡检清理一次)
+    start_periodic_cleaner(3600)
     print("机器人已启动，等待接收消息...")
     bot.infinity_polling()
 
