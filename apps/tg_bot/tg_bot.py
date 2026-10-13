@@ -89,6 +89,119 @@ def send_grouped_media(media_group_id, chat_id, admin_chat_id):
         bot.send_message(admin_chat_id, f"❌ 转发相册失败: {e}")
 
 @bot.message_handler(func=lambda message: message.chat.type == 'private' and message.from_user.id == ADMIN_ID,
+                     content_types=['sticker'])
+def handle_sticker_to_gif(message):
+    """
+    处理管理员发送的 Sticker 并转换为高质量透明背景 GIF：
+    1. 视频贴纸 (.webm): 使用 FFmpeg 两阶段自适应调色板 (palettegen + paletteuse) 算法，保留透明通道与丝滑帧率
+    2. 静态贴纸 (.webp): 高清调色板生成并无损转为 GIF
+    3. 矢量贴纸 (.tgs): 给出友好格式提示
+    4. 即下即清: 临时目录在操作完毕后立即强制清理，保证 0 磁盘堆积
+    """
+    sticker = message.sticker
+    if not sticker:
+        return
+
+    is_video = getattr(sticker, 'is_video', False)
+    is_animated = getattr(sticker, 'is_animated', False)
+    emoji = getattr(sticker, 'emoji', '') or '✨'
+
+    # 若为 .tgs 矢量动画贴纸，友好提示
+    if is_animated:
+        bot.reply_to(
+            message,
+            f"{emoji} 检测到 Telegram Lottie 矢量动画贴纸 (.tgs)。\n"
+            f"💡 建议发送【视频贴纸 (WebM 动图)】或【普通贴纸】，系统将基于 WebM 专属调色板算法为您生成极致画质 GIF！"
+        )
+        return
+
+    status_msg = bot.reply_to(message, f"{emoji} 正在下载贴纸并基于 WebM 调色板引擎转换为高质量 GIF...")
+
+    import tempfile
+    import subprocess
+    import shutil
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        try:
+            file_info = bot.get_file(sticker.file_id)
+            file_path = file_info.file_path
+            downloaded_bytes = bot.download_file(file_path)
+
+            ext = os.path.splitext(file_path)[1].lower() if file_path else ('.webm' if is_video else '.webp')
+            if not ext:
+                ext = '.webm' if is_video else '.webp'
+
+            unique_id = getattr(sticker, 'file_unique_id', 'temp')
+            input_path = os.path.join(tmpdir, f"input_{unique_id}{ext}")
+            output_gif_path = os.path.join(tmpdir, f"sticker_{unique_id}.gif")
+
+            with open(input_path, 'wb') as f:
+                f.write(downloaded_bytes)
+
+            ffmpeg_bin = shutil.which("ffmpeg")
+            if not ffmpeg_bin:
+                bot.edit_message_text("❌ 服务器环境未找到 ffmpeg，请先安装 ffmpeg 工具。", chat_id=message.chat.id, message_id=status_msg.message_id)
+                return
+
+            if is_video or ext == '.webm':
+                # WebM 视频贴纸转换为高质量 GIF (参考 Convertio 核心算法)
+                # 1. 适配 20fps 保持动作丝滑与文件体积平衡
+                # 2. scale=512:-1:flags=lanczos 高清抗锯齿缩放
+                # 3. palettegen=reserve_transparent=on 保留透明色槽位，避免透明背景发灰
+                # 4. paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3 消除噪点与色阶断层
+                cmd = [
+                    ffmpeg_bin, "-y", "-i", input_path,
+                    "-filter_complex",
+                    "[0:v] fps=fps=20:round=near,scale=512:-1:flags=lanczos,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on:transparency_color=ffffff [p];"
+                    "[b][p] paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3",
+                    output_gif_path
+                ]
+            else:
+                # 静态贴纸 WebP 转换为 GIF
+                cmd = [
+                    ffmpeg_bin, "-y", "-i", input_path,
+                    "-filter_complex",
+                    "[0:v] scale=512:-1:flags=lanczos,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on [p];"
+                    "[b][p] paletteuse=alpha_threshold=128",
+                    output_gif_path
+                ]
+
+            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
+            if proc.returncode != 0 or not os.path.exists(output_gif_path):
+                err_msg = proc.stderr[-200:] if proc.stderr else "未知错误"
+                bot.edit_message_text(f"❌ 贴纸转 GIF 失败:\n<code>{err_msg}</code>", chat_id=message.chat.id, message_id=status_msg.message_id, parse_mode="HTML")
+                return
+
+            gif_size_kb = os.path.getsize(output_gif_path) / 1024
+            caption_text = (
+                f"{emoji} <b>贴纸已成功转为 GIF！</b>\n"
+                f"📊 格式转换: <code>{ext.upper().lstrip('.')} ➔ GIF</code>\n"
+                f"📦 文件大小: <code>{gif_size_kb:.1f} KB</code>\n"
+                f"🎨 特性: 保留 Alpha 透明通道 / 高画质自适应调色板"
+            )
+
+            with open(output_gif_path, 'rb') as gif_file:
+                # 发送动图 (在 Telegram 客户端中可直接预览、循环播放并长按保存为表情)
+                bot.send_animation(
+                    chat_id=message.chat.id,
+                    animation=gif_file,
+                    caption=caption_text,
+                    parse_mode="HTML",
+                    reply_to_message_id=message.message_id
+                )
+
+            # 发送成功后删除过渡提示消息
+            try:
+                bot.delete_message(chat_id=message.chat.id, message_id=status_msg.message_id)
+            except Exception:
+                pass
+
+        except Exception as e:
+            bot.edit_message_text(f"❌ 贴纸处理异常: {e}", chat_id=message.chat.id, message_id=status_msg.message_id)
+
+@bot.message_handler(func=lambda message: message.chat.type == 'private' and message.from_user.id == ADMIN_ID,
                      content_types=['text', 'photo', 'video', 'document', 'audio', 'voice', 'animation'])
 def handle_private_message(message):
     try: 
