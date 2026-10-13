@@ -218,29 +218,31 @@ def handle_sticker_to_gif(message):
                 bot.edit_message_text(f"❌ 贴纸转 GIF 失败:\n<code>{err_msg}</code>", chat_id=message.chat.id, message_id=status_msg.message_id, parse_mode="HTML")
                 return
 
-            gif_size_kb = os.path.getsize(output_gif_path) / 1024
+            import zipfile
+            output_zip_path = os.path.join(tmpdir, f"sticker_{unique_id}.zip")
+            with zipfile.ZipFile(output_zip_path, "w", compression=zipfile.ZIP_STORED) as zf:
+                zf.write(output_gif_path, arcname="sticker.gif")
+
+            zip_size_kb = os.path.getsize(output_zip_path) / 1024
             caption_text = (
-                f"{emoji} <b>贴纸已成功转为标准 GIF 文件！</b>\n"
-                f"📊 格式转换: <code>{ext.upper().lstrip('.')} ➔ GIF</code>\n"
-                f"📦 文件大小: <code>{gif_size_kb:.1f} KB</code>\n"
+                f"{emoji} <b>贴纸已成功转为真实 GIF 文件！</b>\n"
+                f"📦 交付格式: <code>ZIP 纯净归档 (内含无损透明 sticker.gif)</code>\n"
+                f"📊 原始转换: <code>{ext.upper().lstrip('.')} ➔ GIF</code>\n"
+                f"📁 文件大小: <code>{zip_size_kb:.1f} KB</code>\n"
                 f"🎨 特性: 保留 Alpha 透明通道 / 高画质自适应调色板\n"
-                f"💾 <b>下载提示:</b> 点击文件卡片即可直接保存为真实 <code>.gif</code> 文件 (微信/本地相册直接可用)"
+                f"💡 <b>说明:</b> Ayugram/Telegram 客户端对直发的 <code>.gif</code> 会强制展开为大图且无法保存文件。打包为 ZIP 彻底规避此限制，点击下方文件卡片即可直接下载，解压后即为真正的 <code>sticker.gif</code> 动图！"
             )
 
-            file_name = f"sticker_{unique_id}.gif"
-            with open(output_gif_path, 'rb') as f:
-                gif_bytes = f.read()
-
-            # 以严格的通用文件模式发送 (禁用内容类型自动嗅探，防止 Ayugram/TG 客户端展开为动图大图)
-            # 用户点击即可直接触发原生文件下载保存，文件后缀严格为 .gif
-            bot.send_document(
-                chat_id=message.chat.id,
-                document=(file_name, gif_bytes, 'application/octet-stream'),
-                caption=caption_text,
-                parse_mode="HTML",
-                reply_to_message_id=message.message_id,
-                disable_content_type_detection=True
-            )
+            zip_file_name = f"sticker_{unique_id}.zip"
+            with open(output_zip_path, 'rb') as zf_obj:
+                bot.send_document(
+                    chat_id=message.chat.id,
+                    document=zf_obj,
+                    visible_file_name=zip_file_name,
+                    caption=caption_text,
+                    parse_mode="HTML",
+                    reply_to_message_id=message.message_id
+                )
 
             # 发送成功后删除过渡提示消息
             try:
