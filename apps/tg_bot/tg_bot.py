@@ -60,7 +60,7 @@ def is_port_open(host, port, timeout=1):
 if is_port_open("127.0.0.1", 8081):
     from telebot import apihelper
     apihelper.API_URL = "http://127.0.0.1:8081/bot{0}/{1}"
-    apihelper.FILE_URL = "http://127.0.0.1:8081"
+    apihelper.FILE_URL = "http://127.0.0.1:8081/file/bot{0}/{1}"
     print("检测到本地 Telegram Bot API 服务器已启动（8081），使用本地 API 模式。")
 else:
     print("未检测到本地 Telegram Bot API 服务器，已自动回退使用 Telegram 官方 API (https://api.telegram.org)。")
@@ -125,7 +125,48 @@ def handle_sticker_to_gif(message):
         try:
             file_info = bot.get_file(sticker.file_id)
             file_path = file_info.file_path
-            downloaded_bytes = bot.download_file(file_path)
+
+            # 自适应获取贴纸数据：
+            # 在 telegram-bot-api --local 模式下，直接从本地磁盘秒读（0网络延迟与0流量）
+            downloaded_bytes = None
+            if file_path:
+                # 1. 尝试直接作为绝对路径读取
+                if os.path.isabs(file_path) and os.path.exists(file_path):
+                    with open(file_path, 'rb') as f:
+                        downloaded_bytes = f.read()
+
+                # 2. 尝试从本地 telegram-bot-api 存储目录读取
+                if downloaded_bytes is None:
+                    candidates = [
+                        f"/var/lib/telegram-bot-api/{TOKEN}/{file_path}",
+                        f"/var/lib/telegram-bot-api/{file_path}",
+                        f"/tmp/telegram-bot-api/{TOKEN}/{file_path}",
+                        f"/tmp/telegram-bot-api/{file_path}",
+                    ]
+                    for cand in candidates:
+                        if os.path.exists(cand) and os.path.isfile(cand):
+                            with open(cand, 'rb') as f:
+                                downloaded_bytes = f.read()
+                                break
+
+            # 3. 若本地未找到，通过官方 Telegram API 接口下载 (绕过本地 8081 的 501 / 404 限制)
+            if downloaded_bytes is None:
+                import requests
+                try:
+                    official_url = f"https://api.telegram.org/file/bot{TOKEN}/{file_path}"
+                    resp = requests.get(official_url, timeout=30)
+                    if resp.status_code == 200:
+                        downloaded_bytes = resp.content
+                except Exception as net_e:
+                    print(f"[-] 官方网络下载异常: {net_e}")
+
+            # 4. 回退调用 bot.download_file
+            if downloaded_bytes is None:
+                downloaded_bytes = bot.download_file(file_path)
+
+            if not downloaded_bytes:
+                bot.edit_message_text("❌ 无法获取贴纸文件内容", chat_id=message.chat.id, message_id=status_msg.message_id)
+                return
 
             ext = os.path.splitext(file_path)[1].lower() if file_path else ('.webm' if is_video else '.webp')
             if not ext:
@@ -145,14 +186,14 @@ def handle_sticker_to_gif(message):
 
             if is_video or ext == '.webm':
                 # WebM 视频贴纸转换为高质量 GIF (参考 Convertio 核心算法)
-                # 1. 适配 20fps 保持动作丝滑与文件体积平衡
+                # 1. 适配 16fps 保持动作丝滑与文件体积平衡
                 # 2. scale=512:-1:flags=lanczos 高清抗锯齿缩放
                 # 3. palettegen=reserve_transparent=on 保留透明色槽位，避免透明背景发灰
                 # 4. paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3 消除噪点与色阶断层
                 cmd = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
-                    "[0:v] fps=fps=20:round=near,scale=512:-1:flags=lanczos,split [a][b];"
+                    "[0:v] fps=fps=16:round=near,scale=512:-1:flags=lanczos,split [a][b];"
                     "[a] palettegen=reserve_transparent=on:transparency_color=ffffff [p];"
                     "[b][p] paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3",
                     output_gif_path
