@@ -220,32 +220,27 @@ def handle_sticker_to_gif(message):
 
             gif_size_kb = os.path.getsize(output_gif_path) / 1024
             caption_text = (
-                f"{emoji} <b>贴纸已成功转为 GIF！</b>\n"
+                f"{emoji} <b>贴纸已成功转为标准 GIF 文件！</b>\n"
                 f"📊 格式转换: <code>{ext.upper().lstrip('.')} ➔ GIF</code>\n"
                 f"📦 文件大小: <code>{gif_size_kb:.1f} KB</code>\n"
-                f"🎨 特性: 保留 Alpha 透明通道 / 高画质自适应调色板"
+                f"🎨 特性: 保留 Alpha 透明通道 / 高画质自适应调色板\n"
+                f"💾 <b>下载提示:</b> 点击文件卡片即可直接保存为真实 <code>.gif</code> 文件 (微信/本地相册直接可用)"
             )
 
-            # 1. 发送动图预览 (供在 Telegram 聊天内直接循环播放与长按收藏)
-            with open(output_gif_path, 'rb') as gif_file:
-                bot.send_animation(
-                    chat_id=message.chat.id,
-                    animation=gif_file,
-                    caption=caption_text,
-                    parse_mode="HTML",
-                    reply_to_message_id=message.message_id
-                )
+            file_name = f"sticker_{unique_id}.gif"
+            with open(output_gif_path, 'rb') as f:
+                gif_bytes = f.read()
 
-            # 2. 发送原始无损 GIF 文档 (彻底解决 Telegram 强行转码为 .gif.mp4 导致本地不可用的问题)
-            doc_caption = f"📥 <b>无损原版 GIF 文件</b> (点击即可直接保存为标准 <code>.gif</code> 文件，微信/本地相册完全可用)"
-            with open(output_gif_path, 'rb') as gif_file:
-                bot.send_document(
-                    chat_id=message.chat.id,
-                    document=gif_file,
-                    visible_file_name=f"sticker_{unique_id}.gif",
-                    caption=doc_caption,
-                    parse_mode="HTML"
-                )
+            # 以严格的通用文件模式发送 (禁用内容类型自动嗅探，防止 Ayugram/TG 客户端展开为动图大图)
+            # 用户点击即可直接触发原生文件下载保存，文件后缀严格为 .gif
+            bot.send_document(
+                chat_id=message.chat.id,
+                document=(file_name, gif_bytes, 'application/octet-stream'),
+                caption=caption_text,
+                parse_mode="HTML",
+                reply_to_message_id=message.message_id,
+                disable_content_type_detection=True
+            )
 
             # 发送成功后删除过渡提示消息
             try:
