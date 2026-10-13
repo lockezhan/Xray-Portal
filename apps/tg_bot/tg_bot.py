@@ -188,16 +188,16 @@ def handle_sticker_to_gif(message):
                 return
 
             if is_video or ext == '.webm':
-                # WebM 视频贴纸转换为高质量 GIF (参考 Convertio 核心算法)
-                # 1. 适配 16fps 保持动作丝滑与文件体积平衡
-                # 2. scale=512:-1:flags=lanczos 高清抗锯齿缩放
-                # 3. palettegen=reserve_transparent=on 保留透明色槽位，避免透明背景发灰
-                # 4. paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3 消除噪点与色阶断层
+                # WebM 视频贴纸转换为轻量高清 GIF (体积深度优化算法):
+                # 1. scale='min(320,iw)':-1 采用表情包黄金分辨率 320px，比 512px 面积暴减 61%
+                # 2. fps=14 兼顾流畅动作与轻量帧数
+                # 3. max_colors=160 限制自适应调色板上限，大幅提升 LZW 压缩比
+                # 4. palettegen=reserve_transparent=on 保留透明通道
                 cmd = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
-                    "[0:v] fps=fps=16:round=near,scale=512:-1:flags=lanczos,split [a][b];"
-                    "[a] palettegen=reserve_transparent=on:transparency_color=ffffff [p];"
+                    "[0:v] fps=fps=14:round=near,scale='min(320,iw)':-1:flags=lanczos,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on:transparency_color=ffffff:max_colors=160 [p];"
                     "[b][p] paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3",
                     output_gif_path
                 ]
@@ -206,8 +206,8 @@ def handle_sticker_to_gif(message):
                 cmd = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
-                    "[0:v] scale=512:-1:flags=lanczos,split [a][b];"
-                    "[a] palettegen=reserve_transparent=on [p];"
+                    "[0:v] scale='min(320,iw)':-1:flags=lanczos,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on:max_colors=160 [p];"
                     "[b][p] paletteuse=alpha_threshold=128",
                     output_gif_path
                 ]
@@ -217,6 +217,22 @@ def handle_sticker_to_gif(message):
                 err_msg = proc.stderr[-200:] if proc.stderr else "未知错误"
                 bot.edit_message_text(f"❌ 贴纸转 GIF 失败:\n<code>{err_msg}</code>", chat_id=message.chat.id, message_id=status_msg.message_id, parse_mode="HTML")
                 return
+
+            # 二级深度体积瘦身：调用 Gifsicle 进行 LZW 重复像素修剪与轻量有损量化
+            gifsicle_bin = shutil.which("gifsicle")
+            if gifsicle_bin:
+                opt_gif_path = os.path.join(tmpdir, f"opt_{unique_id}.gif")
+                try:
+                    subprocess.run(
+                        [gifsicle_bin, "-O3", "--lossy=80", output_gif_path, "-o", opt_gif_path],
+                        capture_output=True,
+                        text=True,
+                        timeout=30
+                    )
+                    if os.path.exists(opt_gif_path) and os.path.getsize(opt_gif_path) < os.path.getsize(output_gif_path):
+                        output_gif_path = opt_gif_path
+                except Exception as opt_err:
+                    print(f"[-] Gifsicle 优化跳过: {opt_err}")
 
             import zipfile
             output_zip_path = os.path.join(tmpdir, f"sticker_{unique_id}.zip")
