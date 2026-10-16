@@ -180,6 +180,7 @@ def handle_sticker_to_gif(message):
             input_path = os.path.join(tmpdir, f"input_{unique_id}{ext}")
             output_gif_path = os.path.join(tmpdir, f"sticker_{unique_id}.gif")
             output_apng_path = os.path.join(tmpdir, f"sticker_{unique_id}.png")
+            output_apng_shield_path = os.path.join(tmpdir, f"sticker_shield_{unique_id}.png")
             output_webp_path = os.path.join(tmpdir, f"sticker_{unique_id}.webp")
 
             with open(input_path, 'wb') as f:
@@ -217,7 +218,26 @@ def handle_sticker_to_gif(message):
                     except Exception as opt_err:
                         print(f"[-] Gifsicle 优化跳过: {opt_err}")
 
-                # 2. 转换为 APNG (.png) (QQ 表情防检测首选: 调色板深度瘦身 + Alpha透明 + plays=0循环 + 剥离元数据)
+                # 2. 转换为带安全首帧护盾的 APNG (.png) (专克 QQ "下载失败 -134" 与封面审查)
+                # 原理: 在最前置插入 1 帧透明安全帧，QQ 安全系统扫描封面时只提取到全透明无害帧，彻底绕过封面审查与特征比对
+                cmd_apng_shield = [
+                    ffmpeg_bin, "-y",
+                    "-f", "lavfi", "-i", "color=c=black@0.0:duration=0.04:size=240x240,format=rgba",
+                    "-i", input_path,
+                    "-filter_complex",
+                    "[1:v] scale='min(240,iw)':-1:flags=lanczos,fps=12 [main];"
+                    "[0:v] fps=12 [lead];"
+                    "[lead][main] concat=n=2:v=1:a=0,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on:transparency_color=ffffff:max_colors=128 [p];"
+                    "[b][p] paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3",
+                    "-f", "apng",
+                    "-plays", "0",
+                    "-map_metadata", "-1",
+                    output_apng_shield_path
+                ]
+                subprocess.run(cmd_apng_shield, capture_output=True, text=True, timeout=60)
+
+                # 3. 转换为标准 APNG (.png) (调色板深度瘦身 + Alpha透明 + plays=0循环 + 剥离元数据)
                 cmd_apng = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
@@ -231,7 +251,7 @@ def handle_sticker_to_gif(message):
                 ]
                 subprocess.run(cmd_apng, capture_output=True, text=True, timeout=60)
 
-                # 3. 转换为 动态 WebP (.webp) (超高压缩比 + 8-bit Alpha 边缘平滑无杂色)
+                # 4. 转换为 动态 WebP (.webp) (超高压缩比 + 8-bit Alpha 边缘平滑无杂色)
                 cmd_webp = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-vf", "fps=fps=12:round=near,scale='min(240,iw)':-1:flags=lanczos",
@@ -281,8 +301,10 @@ def handle_sticker_to_gif(message):
                 subprocess.run(cmd_webp, capture_output=True, text=True, timeout=60)
 
             valid_files = []
+            if os.path.exists(output_apng_shield_path) and os.path.getsize(output_apng_shield_path) > 0:
+                valid_files.append((output_apng_shield_path, "sticker_shield.png", "🛡️ 安全首帧 APNG (QQ防-134首选)"))
             if os.path.exists(output_apng_path) and os.path.getsize(output_apng_path) > 0:
-                valid_files.append((output_apng_path, "sticker.png", "APNG 动图 / PNG"))
+                valid_files.append((output_apng_path, "sticker.png", "标准 APNG / PNG"))
             if os.path.exists(output_webp_path) and os.path.getsize(output_webp_path) > 0:
                 valid_files.append((output_webp_path, "sticker.webp", "动态 WebP"))
             if os.path.exists(output_gif_path) and os.path.getsize(output_gif_path) > 0:
@@ -311,9 +333,10 @@ def handle_sticker_to_gif(message):
                 f"{details_str}\n"
                 f"📊 压缩包总大小: <code>{zip_size_kb:.1f} KB</code>\n\n"
                 f"✨ <b>格式特性与使用指南:</b>\n"
-                f"1. <b>sticker.png (APNG)</b>: ⭐ <b>QQ 添加首选！</b> 原生动态 PNG，完美避开 QQ 对 GIF 的风控拦截和黑底压缩，直接添加即享丝滑透明动效。\n"
-                f"2. <b>sticker.webp (动态 WebP)</b>: 极小体积与原生 8-bit Alpha 边缘平滑无杂色，现代应用首选。\n"
-                f"3. <b>sticker.gif (标准 GIF)</b>: 传统通用格式，经 Gifsicle 极致体积优化。\n\n"
+                f"1. <b>sticker_shield.png (🛡️ QQ防封首选)</b>: 注入了超轻透明安全首帧。腾讯审核系统在检测动图时仅扫描封面第 1 帧，安全首帧可彻底绕过 OCR 敏感字与图像特征比对，<b>专克 QQ『下载失败 -134』</b>！\n"
+                f"2. <b>sticker.png (标准 APNG)</b>: 无前置帧标准动图，经调色板量化深度瘦身。\n"
+                f"3. <b>sticker.webp (动态 WebP)</b>: 极小体积与原生 8-bit Alpha 边缘平滑无杂色。\n"
+                f"4. <b>sticker.gif (标准 GIF)</b>: 传统通用格式。\n\n"
                 f"💡 <b>说明:</b> Ayugram/Telegram 客户端对直发的动图会强制展开为大图且无法保存文件。打包为 ZIP 彻底规避此限制，点击下方文件卡片即可直接下载，解压后即可直接获取上述表情文件！"
             )
 
