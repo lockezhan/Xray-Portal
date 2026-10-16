@@ -194,13 +194,14 @@ def handle_sticker_to_gif(message):
 
             if is_video or ext == '.webm':
                 # 动态贴纸处理:
-                # 1. 转换为 GIF (采用表情包黄金分辨率 320px + fps=14 + max_colors=160 + Gifsicle 优化)
+                # 1. 转换为 GIF (采用 QQ 规范 240px + fps=12 + max_colors=128 + Gifsicle 优化)
                 cmd_gif = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
-                    "[0:v] fps=fps=14:round=near,scale='min(320,iw)':-1:flags=lanczos,split [a][b];"
-                    "[a] palettegen=reserve_transparent=on:transparency_color=ffffff:max_colors=160 [p];"
+                    "[0:v] fps=fps=12:round=near,scale='min(240,iw)':-1:flags=lanczos,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on:transparency_color=ffffff:max_colors=128 [p];"
                     "[b][p] paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3",
+                    "-map_metadata", "-1",
                     output_gif_path
                 ]
                 subprocess.run(cmd_gif, capture_output=True, text=True, timeout=60)
@@ -216,12 +217,16 @@ def handle_sticker_to_gif(message):
                     except Exception as opt_err:
                         print(f"[-] Gifsicle 优化跳过: {opt_err}")
 
-                # 2. 转换为 APNG (.png) (QQ 防检测/防审查首选: 原生 24/32bit 色深 + 无损 Alpha 透明，plays=0 循环)
+                # 2. 转换为 APNG (.png) (QQ 表情防检测首选: 调色板深度瘦身 + Alpha透明 + plays=0循环 + 剥离元数据)
                 cmd_apng = [
                     ffmpeg_bin, "-y", "-i", input_path,
-                    "-vf", "fps=fps=16:round=near,scale='min(320,iw)':-1:flags=lanczos",
+                    "-filter_complex",
+                    "[0:v] fps=fps=12:round=near,scale='min(240,iw)':-1:flags=lanczos,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on:transparency_color=ffffff:max_colors=128 [p];"
+                    "[b][p] paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3",
                     "-f", "apng",
                     "-plays", "0",
+                    "-map_metadata", "-1",
                     output_apng_path
                 ]
                 subprocess.run(cmd_apng, capture_output=True, text=True, timeout=60)
@@ -229,12 +234,13 @@ def handle_sticker_to_gif(message):
                 # 3. 转换为 动态 WebP (.webp) (超高压缩比 + 8-bit Alpha 边缘平滑无杂色)
                 cmd_webp = [
                     ffmpeg_bin, "-y", "-i", input_path,
-                    "-vf", "fps=fps=16:round=near,scale='min(320,iw)':-1:flags=lanczos",
+                    "-vf", "fps=fps=12:round=near,scale='min(240,iw)':-1:flags=lanczos",
                     "-c:v", "libwebp_anim",
                     "-lossless", "0",
-                    "-q:v", "75",
+                    "-q:v", "70",
                     "-loop", "0",
                     "-an",
+                    "-map_metadata", "-1",
                     output_webp_path
                 ]
                 subprocess.run(cmd_webp, capture_output=True, text=True, timeout=60)
@@ -244,9 +250,10 @@ def handle_sticker_to_gif(message):
                 cmd_gif = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
-                    "[0:v] scale='min(320,iw)':-1:flags=lanczos,split [a][b];"
-                    "[a] palettegen=reserve_transparent=on:max_colors=160 [p];"
+                    "[0:v] scale='min(240,iw)':-1:flags=lanczos,split [a][b];"
+                    "[a] palettegen=reserve_transparent=on:max_colors=128 [p];"
                     "[b][p] paletteuse=alpha_threshold=128",
+                    "-map_metadata", "-1",
                     output_gif_path
                 ]
                 subprocess.run(cmd_gif, capture_output=True, text=True, timeout=60)
@@ -254,7 +261,8 @@ def handle_sticker_to_gif(message):
                 # 2. 转换为 静态 PNG
                 cmd_apng = [
                     ffmpeg_bin, "-y", "-i", input_path,
-                    "-vf", "scale='min(320,iw)':-1:flags=lanczos",
+                    "-vf", "scale='min(240,iw)':-1:flags=lanczos",
+                    "-map_metadata", "-1",
                     output_apng_path
                 ]
                 subprocess.run(cmd_apng, capture_output=True, text=True, timeout=60)
@@ -262,11 +270,12 @@ def handle_sticker_to_gif(message):
                 # 3. 转换为 标准 WebP
                 cmd_webp = [
                     ffmpeg_bin, "-y", "-i", input_path,
-                    "-vf", "scale='min(320,iw)':-1:flags=lanczos",
+                    "-vf", "scale='min(240,iw)':-1:flags=lanczos",
                     "-c:v", "libwebp",
                     "-lossless", "0",
                     "-q:v", "75",
                     "-an",
+                    "-map_metadata", "-1",
                     output_webp_path
                 ]
                 subprocess.run(cmd_webp, capture_output=True, text=True, timeout=60)
