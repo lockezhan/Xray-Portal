@@ -115,11 +115,12 @@ def handle_sticker_to_gif(message):
         )
         return
 
-    status_msg = bot.reply_to(message, f"{emoji} 正在下载贴纸并基于 WebM 调色板引擎转换为高质量 GIF...")
+    status_msg = bot.reply_to(message, f"{emoji} 正在下载贴纸并转码为 APNG / WebP / GIF 全套动图...")
 
     import tempfile
     import subprocess
     import shutil
+    import zipfile
 
     with tempfile.TemporaryDirectory() as tmpdir:
         local_source_file = None
@@ -178,6 +179,8 @@ def handle_sticker_to_gif(message):
             unique_id = getattr(sticker, 'file_unique_id', 'temp')
             input_path = os.path.join(tmpdir, f"input_{unique_id}{ext}")
             output_gif_path = os.path.join(tmpdir, f"sticker_{unique_id}.gif")
+            output_apng_path = os.path.join(tmpdir, f"sticker_{unique_id}.png")
+            output_webp_path = os.path.join(tmpdir, f"sticker_{unique_id}.webp")
 
             with open(input_path, 'wb') as f:
                 f.write(downloaded_bytes)
@@ -187,13 +190,12 @@ def handle_sticker_to_gif(message):
                 bot.edit_message_text("❌ 服务器环境未找到 ffmpeg，请先安装 ffmpeg 工具。", chat_id=message.chat.id, message_id=status_msg.message_id)
                 return
 
+            gifsicle_bin = shutil.which("gifsicle")
+
             if is_video or ext == '.webm':
-                # WebM 视频贴纸转换为轻量高清 GIF (体积深度优化算法):
-                # 1. scale='min(320,iw)':-1 采用表情包黄金分辨率 320px，比 512px 面积暴减 61%
-                # 2. fps=14 兼顾流畅动作与轻量帧数
-                # 3. max_colors=160 限制自适应调色板上限，大幅提升 LZW 压缩比
-                # 4. palettegen=reserve_transparent=on 保留透明通道
-                cmd = [
+                # 动态贴纸处理:
+                # 1. 转换为 GIF (采用表情包黄金分辨率 320px + fps=14 + max_colors=160 + Gifsicle 优化)
+                cmd_gif = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
                     "[0:v] fps=fps=14:round=near,scale='min(320,iw)':-1:flags=lanczos,split [a][b];"
@@ -201,9 +203,45 @@ def handle_sticker_to_gif(message):
                     "[b][p] paletteuse=alpha_threshold=128:dither=bayer:bayer_scale=3",
                     output_gif_path
                 ]
+                subprocess.run(cmd_gif, capture_output=True, text=True, timeout=60)
+                if gifsicle_bin and os.path.exists(output_gif_path):
+                    opt_gif_path = os.path.join(tmpdir, f"opt_{unique_id}.gif")
+                    try:
+                        subprocess.run(
+                            [gifsicle_bin, "-O3", "--lossy=80", output_gif_path, "-o", opt_gif_path],
+                            capture_output=True, text=True, timeout=30
+                        )
+                        if os.path.exists(opt_gif_path) and os.path.getsize(opt_gif_path) < os.path.getsize(output_gif_path):
+                            output_gif_path = opt_gif_path
+                    except Exception as opt_err:
+                        print(f"[-] Gifsicle 优化跳过: {opt_err}")
+
+                # 2. 转换为 APNG (.png) (QQ 防检测/防审查首选: 原生 24/32bit 色深 + 无损 Alpha 透明，plays=0 循环)
+                cmd_apng = [
+                    ffmpeg_bin, "-y", "-i", input_path,
+                    "-vf", "fps=fps=16:round=near,scale='min(320,iw)':-1:flags=lanczos",
+                    "-f", "apng",
+                    "-plays", "0",
+                    output_apng_path
+                ]
+                subprocess.run(cmd_apng, capture_output=True, text=True, timeout=60)
+
+                # 3. 转换为 动态 WebP (.webp) (超高压缩比 + 8-bit Alpha 边缘平滑无杂色)
+                cmd_webp = [
+                    ffmpeg_bin, "-y", "-i", input_path,
+                    "-vf", "fps=fps=16:round=near,scale='min(320,iw)':-1:flags=lanczos",
+                    "-c:v", "libwebp_anim",
+                    "-lossless", "0",
+                    "-q:v", "75",
+                    "-loop", "0",
+                    "-an",
+                    output_webp_path
+                ]
+                subprocess.run(cmd_webp, capture_output=True, text=True, timeout=60)
             else:
-                # 静态贴纸 WebP 转换为 GIF
-                cmd = [
+                # 静态贴纸处理:
+                # 1. 转换为 GIF
+                cmd_gif = [
                     ffmpeg_bin, "-y", "-i", input_path,
                     "-filter_complex",
                     "[0:v] scale='min(320,iw)':-1:flags=lanczos,split [a][b];"
@@ -211,42 +249,63 @@ def handle_sticker_to_gif(message):
                     "[b][p] paletteuse=alpha_threshold=128",
                     output_gif_path
                 ]
+                subprocess.run(cmd_gif, capture_output=True, text=True, timeout=60)
 
-            proc = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
-            if proc.returncode != 0 or not os.path.exists(output_gif_path):
-                err_msg = proc.stderr[-200:] if proc.stderr else "未知错误"
-                bot.edit_message_text(f"❌ 贴纸转 GIF 失败:\n<code>{err_msg}</code>", chat_id=message.chat.id, message_id=status_msg.message_id, parse_mode="HTML")
+                # 2. 转换为 静态 PNG
+                cmd_apng = [
+                    ffmpeg_bin, "-y", "-i", input_path,
+                    "-vf", "scale='min(320,iw)':-1:flags=lanczos",
+                    output_apng_path
+                ]
+                subprocess.run(cmd_apng, capture_output=True, text=True, timeout=60)
+
+                # 3. 转换为 标准 WebP
+                cmd_webp = [
+                    ffmpeg_bin, "-y", "-i", input_path,
+                    "-vf", "scale='min(320,iw)':-1:flags=lanczos",
+                    "-c:v", "libwebp",
+                    "-lossless", "0",
+                    "-q:v", "75",
+                    "-an",
+                    output_webp_path
+                ]
+                subprocess.run(cmd_webp, capture_output=True, text=True, timeout=60)
+
+            valid_files = []
+            if os.path.exists(output_apng_path) and os.path.getsize(output_apng_path) > 0:
+                valid_files.append((output_apng_path, "sticker.png", "APNG 动图 / PNG"))
+            if os.path.exists(output_webp_path) and os.path.getsize(output_webp_path) > 0:
+                valid_files.append((output_webp_path, "sticker.webp", "动态 WebP"))
+            if os.path.exists(output_gif_path) and os.path.getsize(output_gif_path) > 0:
+                valid_files.append((output_gif_path, "sticker.gif", "GIF 动图"))
+
+            if not valid_files:
+                bot.edit_message_text("❌ 贴纸转码失败，未能生成有效格式文件", chat_id=message.chat.id, message_id=status_msg.message_id)
                 return
 
-            # 二级深度体积瘦身：调用 Gifsicle 进行 LZW 重复像素修剪与轻量有损量化
-            gifsicle_bin = shutil.which("gifsicle")
-            if gifsicle_bin:
-                opt_gif_path = os.path.join(tmpdir, f"opt_{unique_id}.gif")
-                try:
-                    subprocess.run(
-                        [gifsicle_bin, "-O3", "--lossy=80", output_gif_path, "-o", opt_gif_path],
-                        capture_output=True,
-                        text=True,
-                        timeout=30
-                    )
-                    if os.path.exists(opt_gif_path) and os.path.getsize(opt_gif_path) < os.path.getsize(output_gif_path):
-                        output_gif_path = opt_gif_path
-                except Exception as opt_err:
-                    print(f"[-] Gifsicle 优化跳过: {opt_err}")
-
-            import zipfile
             output_zip_path = os.path.join(tmpdir, f"sticker_{unique_id}.zip")
-            with zipfile.ZipFile(output_zip_path, "w", compression=zipfile.ZIP_STORED) as zf:
-                zf.write(output_gif_path, arcname="sticker.gif")
+            with zipfile.ZipFile(output_zip_path, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+                for file_path_item, arc_name, _ in valid_files:
+                    zf.write(file_path_item, arcname=arc_name)
 
             zip_size_kb = os.path.getsize(output_zip_path) / 1024
+
+            file_details = []
+            for file_path_item, arc_name, desc in valid_files:
+                sz = os.path.getsize(file_path_item) / 1024
+                file_details.append(f"• <code>{arc_name}</code> ({desc}): <b>{sz:.1f} KB</b>")
+            details_str = "\n".join(file_details)
+
             caption_text = (
-                f"{emoji} <b>贴纸已成功转为真实 GIF 文件！</b>\n"
-                f"📦 交付格式: <code>ZIP 纯净归档 (内含无损透明 sticker.gif)</code>\n"
-                f"📊 原始转换: <code>{ext.upper().lstrip('.')} ➔ GIF</code>\n"
-                f"📁 文件大小: <code>{zip_size_kb:.1f} KB</code>\n"
-                f"🎨 特性: 保留 Alpha 透明通道 / 高画质自适应调色板\n"
-                f"💡 <b>说明:</b> Ayugram/Telegram 客户端对直发的 <code>.gif</code> 会强制展开为大图且无法保存文件。打包为 ZIP 彻底规避此限制，点击下方文件卡片即可直接下载，解压后即为真正的 <code>sticker.gif</code> 动图！"
+                f"{emoji} <b>贴纸转码成功！全套表情包已就绪</b>\n\n"
+                f"📦 <b>归档内含文件清单:</b>\n"
+                f"{details_str}\n"
+                f"📊 压缩包总大小: <code>{zip_size_kb:.1f} KB</code>\n\n"
+                f"✨ <b>格式特性与使用指南:</b>\n"
+                f"1. <b>sticker.png (APNG)</b>: ⭐ <b>QQ 添加首选！</b> 原生动态 PNG，完美避开 QQ 对 GIF 的风控拦截和黑底压缩，直接添加即享丝滑透明动效。\n"
+                f"2. <b>sticker.webp (动态 WebP)</b>: 极小体积与原生 8-bit Alpha 边缘平滑无杂色，现代应用首选。\n"
+                f"3. <b>sticker.gif (标准 GIF)</b>: 传统通用格式，经 Gifsicle 极致体积优化。\n\n"
+                f"💡 <b>说明:</b> Ayugram/Telegram 客户端对直发的动图会强制展开为大图且无法保存文件。打包为 ZIP 彻底规避此限制，点击下方文件卡片即可直接下载，解压后即可直接获取上述表情文件！"
             )
 
             zip_file_name = f"sticker_{unique_id}.zip"
