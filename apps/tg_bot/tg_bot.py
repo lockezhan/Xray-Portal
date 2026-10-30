@@ -292,9 +292,13 @@ def handle_private_message(message):
             if urls:
                 url = urls[0]
                 
+                # 检测是否包含小飞机网盘备份关键词 (按需触发: save / 备份 / 网盘 / 飞机盘 / feejii 等)
+                backup_feejii = bool(re.search(r'(save|备份|网盘|飞机盘|feejii)', message.text, re.IGNORECASE))
+
                 # 方案 A: 若配置了 HK-VPS Worker，优先将大流量媒体下载与转推委托给 HK-VPS 执行
                 if HK_WORKER_URL:
-                    status_msg = bot.reply_to(message, "⏳ 检测到 Telegram 链接，已派发至 HK-VPS 高速 Worker 处理中 (0 公网流量)...")
+                    tip_backup = " (已开启小飞机网盘备份)" if backup_feejii else ""
+                    status_msg = bot.reply_to(message, f"⏳ 检测到 Telegram 链接{tip_backup}，已派发至 HK-VPS 高速 Worker 处理中 (0 公网流量)...")
                     import requests
                     try:
                         headers = {}
@@ -308,6 +312,7 @@ def handle_private_message(message):
                                 "caption": message.text,
                                 "progress_chat_id": message.chat.id,
                                 "progress_msg_id": status_msg.message_id,
+                                "backup_feejii": backup_feejii,
                             },
                             headers=headers,
                             timeout=30  # 异步快速入队，30秒超时足够

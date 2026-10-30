@@ -74,6 +74,12 @@ SESSION_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "telegra
 DISK_SAFETY_MARGIN_MB = int(os.environ.get("DISK_SAFETY_MARGIN_MB", 500))
 TG_DOWNLOAD_WORKERS = int(os.environ.get("TG_DOWNLOAD_WORKERS", 16))
 
+# AList WebDAV 网关配置 (用于转存小飞机网盘)
+ALIST_WEBDAV_URL = os.environ.get("ALIST_WEBDAV_URL", "https://20.200.241.36:8083/dav").rstrip("/")
+ALIST_WEBDAV_USER = os.environ.get("ALIST_WEBDAV_USER", "admin")
+ALIST_WEBDAV_PASS = os.environ.get("ALIST_WEBDAV_PASS", "alistadmin123")
+FEEJII_MOUNT_DIR = os.environ.get("FEEJII_MOUNT_DIR", "feejii").strip("/")
+
 # 确保存储目录存在
 try:
     os.makedirs(CACHE_DIR, exist_ok=True)
@@ -387,12 +393,58 @@ def format_forward_caption(
 
     return final_html, final_plain
 
+async def upload_file_to_feejii_webdav(
+    file_path: str,
+    file_name: str,
+    reporter: Optional[ProgressReporter] = None
+) -> Tuple[bool, str]:
+    """
+    流式上传单个媒体文件至 Azure-VPS 上的 AList WebDAV 网关 (归档到小飞机网盘)
+    1. 内存零拷贝: 以二进制流分块直接 PUT，不将大文件一次性装入内存，零内存溢出风险
+    2. 安全容错: 即使小飞机接口波动或账号未绑定，亦不阻塞后续即下即清逻辑
+    """
+    if not os.path.exists(file_path):
+        return False, "本地媒体文件不存在"
+
+    file_size = os.path.getsize(file_path)
+    url = f"{ALIST_WEBDAV_URL}/{FEEJII_MOUNT_DIR}/{file_name}"
+    auth = aiohttp.BasicAuth(ALIST_WEBDAV_USER, ALIST_WEBDAV_PASS)
+
+    logger.info(f"[*] [小飞机网盘备份] 开始流式上传: {file_name} ({file_size / (1024*1024):.2f}MB) -> {url}")
+    if reporter:
+        await reporter.update(
+            f"☁️ <b>[4/4 正在备份至小飞机网盘]</b>\n"
+            f"📄 文件名: <code>{file_name}</code>\n"
+            f"📊 大小: {file_size / (1024*1024):.2f} MB\n"
+            f"⚡ 正在流式直传网盘 (内存0占用)...",
+            force=True
+        )
+
+    try:
+        timeout = aiohttp.ClientTimeout(total=1800)
+        connector = aiohttp.TCPConnector(ssl=False)
+        async with aiohttp.ClientSession(connector=connector, timeout=timeout) as session:
+            with open(file_path, "rb") as f:
+                async with session.put(url, data=f, auth=auth) as resp:
+                    if resp.status in (200, 201, 204):
+                        logger.info(f"[+] [小飞机网盘备份] 上传成功: {file_name} (HTTP {resp.status})")
+                        return True, "上传成功"
+                    else:
+                        resp_text = await resp.text()
+                        err_msg = f"HTTP {resp.status}: {resp_text[:120]}"
+                        logger.warning(f"[-] [小飞机网盘备份] 上传响应异常: {err_msg}")
+                        return False, err_msg
+    except Exception as e:
+        logger.error(f"[-] [小飞机网盘备份] 异常: {e}")
+        return False, str(e)
+
 async def execute_fetch_and_forward(
     url: str,
     target_chat_id: Union[int, str],
     caption: str = "",
     progress_chat_id: Optional[int] = None,
-    progress_msg_id: Optional[int] = None
+    progress_msg_id: Optional[int] = None,
+    backup_feejii: bool = False
 ):
     """
     核心执行器：
@@ -742,7 +794,19 @@ async def execute_fetch_and_forward(
                     pass
 
         # ----------------------------------------------------
-        # 核心即下即清机制 2: 成功转推后，立即删除本地媒体文件！
+        # 按需备份: 若请求指明备份小飞机网盘，在转推频道后流式 PUT 至 AList WebDAV
+        # ----------------------------------------------------
+        feejii_results = []
+        if backup_feejii:
+            for item in downloaded_items:
+                fpath = item["path"]
+                fname = item["name"]
+                if os.path.exists(fpath):
+                    ok, msg = await upload_file_to_feejii_webdav(fpath, fname, reporter)
+                    feejii_results.append({"name": fname, "success": ok, "message": msg})
+
+        # ----------------------------------------------------
+        # 核心即下即清机制 2: 无论是否备份，成功后立即删除本地媒体文件！
         # ----------------------------------------------------
         for item in downloaded_items:
             fpath = item["path"]
@@ -756,11 +820,22 @@ async def execute_fetch_and_forward(
 
         # 最终完成通知
         total_time_str = f"{int(time.time() - dl_start_time)} 秒"
+        feejii_notice = ""
+        if backup_feejii:
+            success_count = sum(1 for r in feejii_results if r["success"])
+            if success_count == len(feejii_results) and success_count > 0:
+                feejii_notice = f"\n☁️ <b>小飞机网盘</b>: 全部备份成功 ({success_count}/{len(feejii_results)})"
+            elif success_count > 0:
+                feejii_notice = f"\n☁️ <b>小飞机网盘</b>: 部分备份成功 ({success_count}/{len(feejii_results)})"
+            else:
+                fail_reason = feejii_results[0]["message"] if feejii_results else "未知错误"
+                feejii_notice = f"\n⚠️ <b>小飞机网盘</b>: 备份失败 ({fail_reason})"
+
         await reporter.update(
             f"✅ <b>[HK-VPS 分流转推成功]</b>\n"
             f"📦 文件数量: {len(downloaded_items)} 个\n"
             f"📊 媒体总计: {total_mb:.2f} MB\n"
-            f"⏱️ 总计耗时: {total_time_str}\n"
+            f"⏱️ 总计耗时: {total_time_str}{feejii_notice}\n"
             f"⚡ <b>即下即清完成</b>，HK-VPS 磁盘 0 残留\n"
             f"🛡️ Korea-VPS 流量消耗: <b>0 MB</b>",
             force=True
@@ -856,14 +931,16 @@ async def queue_consumer():
             caption = task["caption"]
             progress_chat_id = task.get("progress_chat_id")
             progress_msg_id = task.get("progress_msg_id")
+            backup_feejii = task.get("backup_feejii", False)
 
-            logger.info(f"[*] [队列开始执行] 任务ID={task_id}, URL={url}, 当前剩余排队={TASK_QUEUE.qsize()}")
+            logger.info(f"[*] [队列开始执行] 任务ID={task_id}, URL={url}, 网盘备份={backup_feejii}, 当前剩余排队={TASK_QUEUE.qsize()}")
 
             try:
                 await execute_fetch_and_forward(
                     url, target_chat_id, caption,
                     progress_chat_id=progress_chat_id,
-                    progress_msg_id=progress_msg_id
+                    progress_msg_id=progress_msg_id,
+                    backup_feejii=backup_feejii
                 )
             except DiskSpaceError as dse:
                 logger.warning(f"[-] 任务 [{task_id}] 磁盘空间超限拦截: {dse}")
@@ -909,6 +986,7 @@ async def handle_forward(request: web.Request):
     caption = data.get("caption", "")
     progress_chat_id = data.get("progress_chat_id")
     progress_msg_id = data.get("progress_msg_id")
+    backup_feejii = bool(data.get("backup_feejii", False))
 
     if not url or not target_chat_id:
         return web.json_response({"success": False, "error": "缺少必要参数: url 或 target_chat_id"}, status=400)
@@ -930,6 +1008,7 @@ async def handle_forward(request: web.Request):
         "caption": caption,
         "progress_chat_id": progress_chat_id,
         "progress_msg_id": progress_msg_id,
+        "backup_feejii": backup_feejii,
         "enqueue_time": time.time(),
     }
 
